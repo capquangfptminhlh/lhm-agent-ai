@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LHM Agent OS | Live Office</title><link rel="stylesheet" href="/office/office.css"></head>
+<body>
+<div class="app-shell">
+ <aside class="sidebar">
+  <div class="brand"><div class="brand-icon">L<span>◆</span></div><div><strong>LHM <em>Agent OS</em></strong><small>AI WORKFORCE PLATFORM</small></div></div>
+  <div class="side-caption">KHÔNG GIAN LÀM VIỆC</div>
+  <button class="nav-link active" data-page="office"><span>▦</span>Văn phòng AI <small>LIVE</small></button>
+  <button class="nav-link" data-page="tasks"><span>☷</span>Quản lý công việc</button>
+  <button class="nav-link" data-page="leads"><span>♙</span>Khách hàng & CRM</button>
+  <button class="nav-link" data-page="activity"><span>◷</span>Nhật ký hệ thống</button>
+  <div class="side-caption secondary">ĐIỀU HÀNH</div>
+  <a class="nav-link" href="/dashboard"><span>▤</span>Dashboard quản trị</a>
+  <a class="nav-link" href="/tool-hub"><span>🛠️</span>Kho công cụ Agent</a>
+  <a class="nav-link" href="http://127.0.0.1:3000" target="_blank" rel="noopener" title="Yêu cầu cài Hermes3D qua START_HERMES3D_WINDOWS.bat"><span>⬡</span>Văn phòng 3D ↗</a>
+  <a class="nav-link" href="/docs" target="_blank" rel="noopener"><span>⌘</span>Tài liệu API</a>
+  <div class="side-bottom"><span class="round-indicator" id="sideDot"></span><div><b id="sideConnection">Đang kết nối</b><small id="sideDetail">Đọc backend LHM...</small></div></div>
+ </aside>
+ <main class="content">
+  <header class="masthead">
+    <div><div class="eyebrow">LIVE OPERATIONS CENTER <span class="eyebrow-dot">●</span></div><h1 id="heading">Văn phòng AI <span>của bạn</span></h1><p>Nhân vật hiển thị trạng thái từ nhiệm vụ thực tế, không mô phỏng tiến độ.</p></div>
+    <div class="header-tools"><select id="workspace" aria-label="Chọn doanh nghiệp"></select><button class="btn muted-btn" id="newWorkspace">+ Doanh nghiệp</button><button class="btn primary" id="newTask"><span>＋</span> Giao nhiệm vụ</button></div>
+  </header>
+  <div class="live-banner" id="runtimeBanner"><span class="banner-icon">◉</span><span id="runtimeText">Đang kiểm tra kết nối...</span><button id="refreshNow" aria-label="Tải lại">↻</button></div>
+  <section class="kpi-grid" id="kpis"></section>
+  <div id="pageOffice" class="page active">
+   <section class="work-layout">
+    <div class="scene-panel">
+     <div class="section-heading"><div><h2>🏢 Văn phòng điều hành trực tiếp</h2><p>Nhấp nhân viên để xem công việc thực tế và giao nhiệm vụ</p></div><div class="legend"><span><i class="dot running"></i> Đang làm</span><span><i class="dot pending"></i> Chờ</span><span><i class="dot idle"></i> Rảnh</span></div></div>
+     <div class="office-scene"><div class="scene-topline"><div class="scene-live">● LIVE TASK STATE</div><div id="sceneTime"></div></div><div class="rooms" id="rooms"></div><div class="hall"><span>✦ LHM</span><span>ONE API · MULTIPLE ROLES · REAL EXECUTION</span><span>✦ AGENT OS</span></div></div>
+     <div class="scene-foot"><div><span class="foot-symbol">◈</span> <b>8 phòng ban</b> · <span>16 vai trò chuyên môn</span></div><div id="lastSync">Đang đồng bộ...</div></div>
+    </div>
+    <aside class="inspector" id="inspector">
+     <div class="inspector-top"><h2>Thông tin nhân viên AI</h2><span id="agentCode">AGENT / —</span></div>
+     <div id="agentDetails" class="agent-details"></div>
+    </aside>
+   </section>
+   <section class="bottom-panels"><div class="box"><div class="box-head"><h2>☷ Công việc mới nhất</h2><button class="text-button" data-goto="tasks">Xem tất cả →</button></div><div id="recentTasks"></div></div><div class="box"><div class="box-head"><h2>◷ Hoạt động gần đây</h2><button class="text-button" data-goto="activity">Nhật ký →</button></div><div id="recentActivity"></div></div></section>
+  </div>
+  <section class="page" id="pageTasks"><div class="box wide"><div class="box-head"><h2>Quản lý nhiệm vụ thật</h2><div class="actions-inline"><button class="btn" id="newWorkflow">+ Quy trình liên phòng</button><button class="btn primary" id="newTask2">+ Giao việc</button></div></div><div class="filters"><button class="filter active" data-filter="all">Tất cả</button><button class="filter" data-filter="running">Đang chạy</button><button class="filter" data-filter="queued">Hàng đợi</button><button class="filter" data-filter="awaiting_approval">Chờ duyệt</button><button class="filter" data-filter="completed">Hoàn tất</button><button class="filter" data-filter="failed">Lỗi</button></div><div id="allTasks"></div></div></section>
+  <section class="page" id="pageLeads"><div class="box wide"><div class="box-head"><h2>Khách hàng & CRM</h2><span class="subtle">Chỉ dữ liệu được nhập và có nguồn hợp lệ</span></div><div id="leadRecords"></div><div class="lead-input"><h3>Thêm lead doanh nghiệp có nguồn rõ ràng</h3><form id="leadForm"><input name="business_name" placeholder="Tên doanh nghiệp" required minlength="2"><input name="source_url" type="url" placeholder="Nguồn công khai https://..." required><input name="contact_channel" placeholder="Kênh liên hệ doanh nghiệp (nếu có)"><label>Phù hợp <input type="number" name="fit" min="0" max="10" value="5" required></label><label>Nhu cầu <input type="number" name="intent" min="0" max="10" value="5" required></label><label>Khả năng liên hệ <input type="number" name="reachable" min="0" max="10" value="5" required></label><label class="confirm"><input type="checkbox" name="data_origin_confirmed" required> Tôi xác nhận có quyền sử dụng dữ liệu này</label><button class="btn primary" type="submit">Lưu lead</button></form></div></div></section>
+  <section class="page" id="pageActivity"><div class="box wide"><div class="box-head"><h2>Nhật ký hệ thống</h2><span class="subtle">Dữ liệu từ SQLite</span></div><div id="allActivity"></div></div></section>
+ </main>
+</div>
+<div class="modal-cover" id="taskModal" role="dialog" aria-modal="true" aria-labelledby="modalHeading" hidden><div class="modal"><div class="modal-title"><div><small>ĐIỀU PHỐI CÔNG VIỆC</small><h2 id="modalHeading">Giao nhiệm vụ cho AI</h2></div><button class="close" data-close="taskModal" aria-label="Đóng">×</button></div><form id="taskForm"><label>Nhân viên thực hiện<select name="role" id="modalRole"></select></label><label>Nhiệm vụ<textarea name="instruction" required minlength="5" maxlength="8000" placeholder="Mô tả cụ thể kết quả cần tạo và điều kiện hoàn thành"></textarea></label><label>Dữ liệu đầu vào / bằng chứng<textarea name="context" maxlength="5000" placeholder="Chỉ thêm số liệu và tài liệu đã xác minh"></textarea></label><div class="form-options"><label><input name="requires_approval" type="checkbox"> Chờ phê duyệt trước khi AI chạy</label><label><input name="offpeak_only" type="checkbox"> Chỉ chạy giờ thấp điểm (nếu không gấp)</label></div><div class="modal-actions"><button type="button" class="btn muted-btn" data-close="taskModal">Hủy</button><button type="submit" class="btn primary" id="saveTask">Tạo nhiệm vụ thật</button></div></form></div></div>
+<div class="modal-cover" id="workflowModal" role="dialog" aria-modal="true" aria-labelledby="workflowHeading" hidden><div class="modal"><div class="modal-title"><div><small>LIÊN PHÒNG BAN · THỰC THI TUẦN TỰ</small><h2 id="workflowHeading">Tạo quy trình công việc</h2></div><button class="close" data-close="workflowModal" aria-label="Đóng">×</button></div><form id="workflowForm"><label>Quy trình<select name="process" id="workflowSelect"></select></label><label>Mục tiêu<textarea name="objective" minlength="8" required placeholder="Ví dụ: Lập chiến dịch tìm khách BĐS, soạn nội dung và kiểm duyệt"></textarea></label><label>Ngữ cảnh / bằng chứng<textarea name="context" placeholder="Thông tin đã được xác thực và giới hạn nghiệp vụ"></textarea></label><div class="form-options"><label><input name="requires_approval" type="checkbox"> Yêu cầu chủ doanh nghiệp duyệt trước bước đầu</label><label><input name="offpeak_only" type="checkbox"> Hẹn giờ thấp điểm</label></div><div class="modal-actions"><button type="button" class="btn muted-btn" data-close="workflowModal">Hủy</button><button type="submit" class="btn primary">Tạo quy trình thật</button></div></form></div></div>
+<div class="modal-cover" id="resultModal" role="dialog" aria-modal="true" aria-labelledby="resultHeading" hidden><div class="modal large"><div class="modal-title"><div><small>KẾT QUẢ ĐÃ LƯU</small><h2 id="resultHeading">Kết quả nhiệm vụ</h2></div><button class="close" data-close="resultModal" aria-label="Đóng">×</button></div><div id="resultMeta" class="result-meta"></div><pre id="resultBody" class="result-body"></pre></div></div>
+<div class="modal-cover" id="workspaceModal" role="dialog" aria-modal="true" aria-labelledby="workspaceHeading" hidden><div class="modal"><div class="modal-title"><div><small>ĐA NGÀNH NGHỀ</small><h2 id="workspaceHeading">Tạo doanh nghiệp</h2></div><button class="close" data-close="workspaceModal" aria-label="Đóng">×</button></div><form id="workspaceForm"><label>Mã doanh nghiệp<input name="id" required pattern="[a-z0-9][a-z0-9_-]{1,48}" placeholder="congtyabc"></label><label>Tên doanh nghiệp<input name="name" minlength="2" required placeholder="Công ty ABC"></label><label>Ngành nghề<select name="industry" id="industry"></select></label><label>Ngân sách AI ban đầu (USD)<input type="number" name="budget_usd" value="5" step="0.01" min="0.01" required></label><label>Ngữ cảnh công ty<textarea name="business_context" placeholder="Sản phẩm, thị trường, quy tắc không được vi phạm"></textarea></label><div class="modal-actions"><button type="button" class="btn muted-btn" data-close="workspaceModal">Hủy</button><button type="submit" class="btn primary">Tạo doanh nghiệp</button></div></form></div></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/office/office.js" defer></script></body></html>

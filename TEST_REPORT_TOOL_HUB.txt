@@ -1,0 +1,20 @@
+LHM Agent Operating System — Tool Hub V2
+Date: 2026-10-26
+
+31/31 PASS — Python offline regression tests
+- 19 earlier LHM Agent OS tests retained
+- 12 Tool Hub tests, including Postiz multichannel payload, WordPress receipt,
+  Activepieces webhook dispatch, approval, idempotency, timeout ambiguity,
+  provenance, pilot tenant restriction, validation and office summary.
+- All external provider calls were stubbed/mocked in tests.
+- No real DeepSeek API call (no key), no real Postiz/WordPress/Activepieces
+  publication (no connected account), no proof of social post reachability.
+
+Chromium visual checks (static HTML + internal catalogue injection):
+- 66 job items rendered
+- 19 repo cards rendered
+- Publishing form displayed
+- Real networked Chromium page load blocked by test environment security;
+  local API endpoints were tested through FastAPI TestClient instead.
+
+Status: runnable LOCAL PILOT, not production SaaS.

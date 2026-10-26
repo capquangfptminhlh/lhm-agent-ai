@@ -1,0 +1,28 @@
+LHM Agent OS Integrated — local verification
+Date: 2026-10-26
+Backend regression + integration: 19 / 19 PASS
+- Startup, roster/health/catalog
+- Role routing & multi-industry templates
+- Authorization gate for approval and budget constraints
+- Sequential dependent workflows and idempotency
+- Worker error/recovery & usage logging
+- New office endpoints & asset delivery
+- Office role state derived from persisted tasks only
+- Workspace task and lead separation for local pilot
+- Worker heartbeat shown only when process actually alive
+
+Chromium GUI via FastAPI TestClient bridge (browser localhost networking blocked by runtime policy):
+- Visible departments: 8; visible agents: 16
+- Click Research avatar -> inspector shows real role: PASS
+- Open task modal preselect research: PASS
+- Submit task -> persisted row & queued status: PASS
+- Open workflow modal -> create 3 linked workflow tasks: PASS
+- Office reads updated task state (Research queued): PASS
+- Uncaught JavaScript exceptions: 0
+- Screenshots: office_preview.png, office_with_task_preview.png
+
+NOT tested:
+- Live DeepSeek API billing/output (no API key)
+- Upstream Hermes3D UI cloning/integration/3D animations (network restricted)
+- Posting to WordPress/Facebook/Ads/CRM (not implemented)
+- Multi-tenant SaaS security or remote production deployment
