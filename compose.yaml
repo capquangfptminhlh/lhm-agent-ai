@@ -1,0 +1,19 @@
+# Local-first deployment. Public SaaS requires tenant auth, Vault, RBAC and isolation.
+x-lhm-common: &lhm-common
+  build: .
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    LHM_DB_PATH: /data/lhm.sqlite3
+  volumes:
+    - lhm_data:/data
+services:
+  api:
+    <<: *lhm-common
+    ports:
+      - "127.0.0.1:7770:7770"
+  worker:
+    <<: *lhm-common
+    command: ["python", "worker.py"]
+volumes:
+  lhm_data:
