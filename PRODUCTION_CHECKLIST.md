@@ -8,7 +8,7 @@
 4. Thêm `DEEPSEEK_API_KEY` vào `.env` nếu muốn chạy Agent thật, rồi `docker compose up -d --force-recreate`.
 5. Để thử thực thi, cấu hình Postiz/WordPress/Activepieces qua `.env` với tài khoản thử nghiệm.
 6. Một Agent hoàn thành nội dung → `POST /workspaces/demo/tool-jobs/from-agent` → người vận hành duyệt → worker gửi một lần.
-7. Xem receipt trong Tool Hub. **accepted_unverified không có nghĩa bài đã đăng công khai.**
+7. Xem receipt trong Tool Hub. Với WordPress, bấm **Xác minh URL** để đối chiếu trạng thái `publish` trên WordPress REST API và HTTP 200 của URL công khai, mới ghi `verified_published`. **accepted_unverified không có nghĩa bài đã đăng công khai.**
 
 ## Giới hạn và an toàn sản xuất
 
@@ -22,4 +22,4 @@
 
 `python -m unittest discover -s tests -v`
 
-Chưa nghiệm thu: đăng social thực với token khách, Postiz readback, media upload, thanh toán SaaS, Hermes3D render đủ và tenant isolation production.
+Chưa nghiệm thu: đăng social thực với token khách, Postiz readback, media upload, thanh toán SaaS, Hermes3D render đủ và tenant isolation production. WordPress HTTP 200 không đồng nghĩa đã được Google lập chỉ mục.

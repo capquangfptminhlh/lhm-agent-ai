@@ -398,3 +398,65 @@ async def execute_tool_job(job_id: str):
                   (json.dumps(receipt,ensure_ascii=False),now(),job_id))
         audit(c,row["workspace_id"],"tool_job.accepted",f"Provider accepted: {row['action']}",job_id)
     return {"id":job_id,"status":"accepted_unverified","receipt":receipt}
+
+async def _verify_wordpress_public(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Read-only confirmation: WP status publish AND anonymous 200 on same-origin URL.
+
+    Does not prove Google indexing or search ranking. Never follow cross-host redirects.
+    """
+    base = os.getenv("LHM_WP_URL", "").rstrip("/")
+    user, password = os.getenv("LHM_WP_USER", ""), os.getenv("LHM_WP_APP_PASSWORD", "")
+    origin = urlparse(base)
+    if not user or not password or not base or not origin.hostname:
+        raise ValueError("WordPress connection not configured")
+    if origin.scheme != "https" and not (origin.scheme == "http" and origin.hostname in {"localhost", "127.0.0.1"}):
+        raise ValueError("WordPress URL requires HTTPS or localhost")
+    post_id = receipt.get("post_id")
+    if type(post_id) is not int or post_id <= 0:
+        raise ValueError("WordPress receipt has no valid post ID")
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False, auth=(user,password)) as client:
+        response = await client.get(f"{base}/wp-json/wp/v2/posts/{post_id}")
+        response.raise_for_status()
+        post = response.json()
+    if not isinstance(post, dict) or post.get("id") != post_id:
+        raise ValueError("WordPress returned an unexpected post")
+    status, link = post.get("status"), post.get("link")
+    if status != "publish":
+        return {"verified":False,"provider_status":status,"reason":"WordPress post is not published"}
+    target = urlparse(link) if isinstance(link,str) else None
+    if not target or target.scheme != origin.scheme or target.netloc.lower() != origin.netloc.lower():
+        raise ValueError("Public link host does not match configured WordPress site")
+    # The link is issued by the authenticated site, but may still be untrusted.
+    # Never follow redirects to other hosts or internal services.
+    async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
+        check = await client.get(link)
+    return {"verified": check.status_code == 200,
+            "provider_status": status,
+            "public_url": link,
+            "public_http_status":check.status_code,
+            "reason":"HTTP 200 on public same-origin link" if check.status_code == 200 else "URL not accessible anonymously"}
+
+
+@router.post("/tool-jobs/{job_id}/verify")
+async def verify_tool_job(job_id: str):
+    """Safe read-back; WordPress only until Postiz published URL APIs are integrated."""
+    with db() as c:
+        job=c.execute("SELECT * FROM tool_jobs WHERE id=?",(job_id,)).fetchone()
+        if not job: raise HTTPException(404,"Tool job not found")
+        _pilot_ws(job["workspace_id"])
+        if job["action"] != "wordpress.create_post":
+            raise HTTPException(422,"Automatic verification is currently supported for WordPress only")
+        if job["status"] not in {"accepted_unverified", "verified_published"}:
+            raise HTTPException(409,"No accepted provider receipt available")
+        receipt=json.loads(job["result_json"] or "{}")
+    try:
+        result=await _verify_wordpress_public(receipt)
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        # A failed readback must not mutate an already-submitted job to failed.
+        raise HTTPException(502,_remote_error(exc) if isinstance(exc,httpx.HTTPError) else str(exc)[:250]) from exc
+    if result["verified"]:
+        with db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            c.execute("UPDATE tool_jobs SET status='verified_published',updated_at=? WHERE id=? AND status IN ('accepted_unverified','verified_published')",(now(),job_id))
+            audit(c,job["workspace_id"],"tool_job.verified","Verified WordPress status and public URL HTTP 200",job_id)
+    return {"id":job_id,"status":"verified_published" if result["verified"] else "accepted_unverified", "verification": result}
