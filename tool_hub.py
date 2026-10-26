@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from core import ROLES, audit, db, new_id, now, workspace
+from publication_gate import approval_digest, assert_source_approved, prepare_reviews
 
 router = APIRouter(tags=["Tool Hub"])
 CATALOG = json.loads((Path(__file__).parent / "templates" / "tool_catalog.json").read_text(encoding="utf-8"))
@@ -48,6 +49,10 @@ def prepare_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS ix_tool_jobs_workspace ON tool_jobs(workspace_id,created_at);
         """)
+        columns = {r["name"] for r in c.execute("PRAGMA table_info(tool_jobs)").fetchall()}
+        if "approval_digest" not in columns:
+            c.execute("ALTER TABLE tool_jobs ADD COLUMN approval_digest TEXT")
+        prepare_reviews(c)
 prepare_db()
 
 
@@ -188,13 +193,13 @@ def create_from_agent(ws: str, inp: FromAgentIn):
     if task['role'] not in {"content", "research", "strategy", "sales", "support"}:
         raise HTTPException(422, "Vai trò Agent này không tạo bản nháp để xuất bản")
     if inp.action == "postiz.create_post":
-        payload = {"mode": inp.mode, "content": task["result"][:15000],
+        payload = {"mode": inp.mode, "content": task["result"],
                    "channel_ids": inp.channel_ids, "media": inp.media,
                    "source_task_id": inp.source_task_id}
         if inp.mode == "schedule": payload["scheduled_at"] = inp.scheduled_at
     else:
         payload = {"title": inp.title.strip() or task["instruction"][:180],
-                   "content": task["result"][:100000], "status": inp.status,
+                   "content": task["result"], "status": inp.status,
                    "source_task_id": inp.source_task_id}
     return create_tool_job(ws, ToolJobIn(action=inp.action, payload=payload,
                                           idempotency_key=inp.idempotency_key))
@@ -255,11 +260,10 @@ def create_tool_job(ws: str, payload: ToolJobIn):
         if not isinstance(source, str):
             raise HTTPException(422, "source_task_id không hợp lệ")
         with db() as c:
-            task = c.execute("SELECT id,status FROM tasks WHERE id=? AND workspace_id=?",(source,ws)).fetchone()
-        if not task or task["status"] != "completed":
-            raise HTTPException(422, "Chỉ được dùng kết quả AI thực sự hoàn thành trong workspace này")
+            assert_source_approved(c, ws, payload.action, payload.payload)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
+        assert_source_approved(c, ws, payload.action, payload.payload)
         old = c.execute("SELECT * FROM tool_jobs WHERE workspace_id=? AND idempotency_key=?",(ws,payload.idempotency_key)).fetchone()
         if old:
             if old["action"] != payload.action or json.loads(old["payload_json"]) != payload.payload:
@@ -289,7 +293,11 @@ def approve_tool_job(job_id: str):
         if not r: raise HTTPException(404,"Không tìm thấy yêu cầu tool")
         _pilot_ws(r["workspace_id"])
         if r["status"] != "awaiting_approval": raise HTTPException(409,"Yêu cầu không ở trạng thái chờ duyệt")
-        c.execute("UPDATE tool_jobs SET status='approved',updated_at=? WHERE id=?",(now(),job_id))
+        body = json.loads(r["payload_json"])
+        assert_source_approved(c, r["workspace_id"], r["action"], body)
+        bound_digest = approval_digest(r["action"], body)
+        c.execute("UPDATE tool_jobs SET status='approved',approval_digest=?,updated_at=? WHERE id=?",
+                  (bound_digest,now(),job_id))
         audit(c,r["workspace_id"],"tool_job.approved",f"Approved: {r['action']}",job_id)
     return {"id":job_id,"status":"approved"}
 
@@ -376,6 +384,10 @@ async def execute_tool_job(job_id: str):
         if not row: raise HTTPException(404,"Không tìm thấy tool job")
         _pilot_ws(row["workspace_id"])
         if row["status"] != "approved": raise HTTPException(409,"Chỉ được thực thi yêu cầu đã duyệt và chưa gửi")
+        body = json.loads(row["payload_json"])
+        if not row["approval_digest"] or row["approval_digest"] != approval_digest(row["action"], body):
+            raise HTTPException(409,"Payload hoặc đích xuất bản đã thay đổi; cần duyệt lại")
+        assert_source_approved(c, row["workspace_id"], row["action"], body)
         c.execute("UPDATE tool_jobs SET status='executing',updated_at=? WHERE id=?",(now(),job_id))
         audit(c,row["workspace_id"],"tool_job.executing","Provider call started",job_id)
     try:
