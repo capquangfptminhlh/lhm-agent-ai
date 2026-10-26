@@ -1,0 +1,791 @@
+{
+  "version": "2026-10-26",
+  "repositories": [
+    {
+      "id": "hermes3d",
+      "name": "Hermes3D",
+      "repository": "https://github.com/iamlukethedev/Hermes3D",
+      "license": "MIT",
+      "capability": "Văn phòng 3D/2D, theo dõi trạng thái",
+      "status": "existing_partial",
+      "priority": "optional",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "postiz",
+      "name": "Postiz",
+      "repository": "https://github.com/gitroomhq/postiz-app",
+      "license": "AGPL-3.0",
+      "capability": "Đăng bài, lên lịch nhiều nền tảng qua API",
+      "status": "adapter_built",
+      "priority": "P0",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "activepieces",
+      "name": "Activepieces Community",
+      "repository": "https://github.com/activepieces/activepieces",
+      "license": "MIT core",
+      "capability": "Tự động hóa ứng dụng, webhook, workflow",
+      "status": "adapter_built",
+      "priority": "P0",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "wordpress",
+      "name": "WordPress REST API",
+      "repository": "https://github.com/WordPress/wordpress-develop",
+      "license": "GPL-2.0-or-later",
+      "capability": "Bài SEO và website theo quyền đăng nhập",
+      "status": "adapter_built",
+      "priority": "P0",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "twenty",
+      "name": "Twenty CRM",
+      "repository": "https://github.com/twentyhq/twenty",
+      "license": "AGPL-3.0/core; some commercial",
+      "capability": "Quản lý khách, cơ hội, pipeline, CRM",
+      "status": "recommended",
+      "priority": "P1",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "chatwoot",
+      "name": "Chatwoot",
+      "repository": "https://github.com/chatwoot/chatwoot",
+      "license": "MIT core",
+      "capability": "Hộp thư hội thoại, hỗ trợ khách đa kênh",
+      "status": "recommended",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "crawl4ai",
+      "name": "Crawl4AI",
+      "repository": "https://github.com/unclecode/crawl4ai",
+      "license": "Apache-2.0",
+      "capability": "Thu thập website công khai hợp lệ, đọc/chuẩn hóa dữ liệu",
+      "status": "recommended",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "mautic",
+      "name": "Mautic",
+      "repository": "https://github.com/mautic/mautic",
+      "license": "GPL-3.0",
+      "capability": "Email nurturing, marketing automation, phân khúc",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "erpnext",
+      "name": "ERPNext",
+      "repository": "https://github.com/frappe/erpnext",
+      "license": "GPL-3.0",
+      "capability": "Kho, mua hàng, vận hành, kế toán, báo giá",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "frappe_hrms",
+      "name": "Frappe HRMS",
+      "repository": "https://github.com/frappe/hrms",
+      "license": "GPL-3.0",
+      "capability": "Nhân sự, tuyển dụng, chấm công, đào tạo",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "metabase",
+      "name": "Metabase",
+      "repository": "https://github.com/metabase/metabase",
+      "license": "AGPL-3.0/core; enterprise separate",
+      "capability": "Dashboard số liệu, BI, báo cáo phòng ban",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "langfuse",
+      "name": "Langfuse",
+      "repository": "https://github.com/langfuse/langfuse",
+      "license": "MIT core; enterprise separate",
+      "capability": "Đo chi phí token, trace và đánh giá AI",
+      "status": "recommended",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "comfyui",
+      "name": "ComfyUI",
+      "repository": "https://github.com/comfyanonymous/ComfyUI",
+      "license": "GPL-3.0",
+      "capability": "Tạo ảnh, workflow sáng tạo; cần GPU/model",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "calcom",
+      "name": "Cal.com",
+      "repository": "https://github.com/calcom/cal.com",
+      "license": "Mixed/license review",
+      "capability": "Đặt lịch tư vấn và xác nhận cuộc hẹn",
+      "status": "recommended",
+      "priority": "P2",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "documenso",
+      "name": "Documenso",
+      "repository": "https://github.com/documenso/documenso",
+      "license": "Mixed/license review",
+      "capability": "Quy trình ký hồ sơ, hợp đồng có người duyệt",
+      "status": "recommended",
+      "priority": "P3",
+      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+    },
+    {
+      "id": "google_ads",
+      "name": "Google Ads API client",
+      "repository": "https://github.com/googleads/google-ads-python",
+      "license": "Apache-2.0",
+      "capability": "Báo cáo quảng cáo và thay đổi có phê duyệt",
+      "status": "official_api_required",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "meta_ads",
+      "name": "Meta Business SDK",
+      "repository": "https://github.com/facebook/facebook-python-business-sdk",
+      "license": "BSD-3-Clause",
+      "capability": "Đọc số liệu và quản lý Meta Ads khi được cấp quyền",
+      "status": "official_api_required",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "gsc",
+      "name": "Google Search Console API",
+      "repository": "https://github.com/googleapis/google-api-python-client",
+      "license": "Apache-2.0",
+      "capability": "Theo dõi từ khóa, hiển thị, CTR, index",
+      "status": "official_api_required",
+      "priority": "P1",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    },
+    {
+      "id": "zalo",
+      "name": "Zalo Official Account APIs",
+      "repository": "https://developers.zalo.me/",
+      "license": "Developer terms",
+      "capability": "CSKH, CRM, các loại tin OA được phép",
+      "status": "official_api_required",
+      "priority": "P2",
+      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+    }
+  ],
+  "jobs": [
+    {
+      "id": "director.01",
+      "role": "director",
+      "title": "Phân rã mục tiêu doanh thu",
+      "tool": "activepieces",
+      "acceptance": "Lập mục tiêu, KPI, phân công có hạn chót",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "director.02",
+      "role": "director",
+      "title": "Theo dõi việc đang tắc",
+      "tool": "hermes3d",
+      "acceptance": "Lấy trạng thái công việc thật",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "director.03",
+      "role": "director",
+      "title": "Duyệt chi tiêu/công bố",
+      "tool": "activepieces",
+      "acceptance": "Phê duyệt từng hành động rủi ro",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "director.04",
+      "role": "director",
+      "title": "Báo cáo tiến độ toàn công ty",
+      "tool": "metabase",
+      "acceptance": "Tổng hợp công việc và doanh thu",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "research.01",
+      "role": "research",
+      "title": "Tìm xu hướng theo ngành",
+      "tool": "crawl4ai",
+      "acceptance": "Đọc dữ liệu công khai có nguồn",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "research.02",
+      "role": "research",
+      "title": "Theo dõi đối thủ và bảng giá",
+      "tool": "crawl4ai",
+      "acceptance": "So sánh theo ngày và nguồn",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "research.03",
+      "role": "research",
+      "title": "Nghiên cứu thị trường địa phương",
+      "tool": "crawl4ai",
+      "acceptance": "Xác thực khu vực/giá/cơ sở pháp lý",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "research.04",
+      "role": "research",
+      "title": "Phân tích tài liệu ngành",
+      "tool": "activepieces",
+      "acceptance": "Đọc và luân chuyển báo cáo",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "strategy.01",
+      "role": "strategy",
+      "title": "Phân tích thị trường mục tiêu",
+      "tool": "crawl4ai",
+      "acceptance": "Tổng hợp dữ liệu và giả định",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "strategy.02",
+      "role": "strategy",
+      "title": "Đề xuất ngân sách đa kênh",
+      "tool": "metabase",
+      "acceptance": "Phân bổ theo ROI, CAC, biên lợi nhuận",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "strategy.03",
+      "role": "strategy",
+      "title": "Thiết kế kế hoạch quý",
+      "tool": "activepieces",
+      "acceptance": "Chuyển mục tiêu thành kế hoạch",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "strategy.04",
+      "role": "strategy",
+      "title": "Thử nghiệm thông điệp",
+      "tool": "postiz",
+      "acceptance": "Lập thử nghiệm nội dung có duyệt",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "lead.01",
+      "role": "lead",
+      "title": "Tìm doanh nghiệp phù hợp",
+      "tool": "crawl4ai",
+      "acceptance": "Thông tin doanh nghiệp công khai; đúng điều khoản",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "lead.02",
+      "role": "lead",
+      "title": "Thu lead tự nguyện qua biểu mẫu",
+      "tool": "activepieces",
+      "acceptance": "Nhận webhook/form đã được đồng ý",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "lead.03",
+      "role": "lead",
+      "title": "Kiểm tra nguồn và chất lượng lead",
+      "tool": "twenty",
+      "acceptance": "Chấm điểm có nguồn gốc",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "lead.04",
+      "role": "lead",
+      "title": "Phân loại và giao cho Sales",
+      "tool": "twenty",
+      "acceptance": "Đẩy lead, chống trùng và đặt SLA",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "content.01",
+      "role": "content",
+      "title": "Viết SEO và bài blog",
+      "tool": "wordpress",
+      "acceptance": "Soạn → duyệt → lưu nháp/đăng",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "content.02",
+      "role": "content",
+      "title": "Viết caption đa nền tảng",
+      "tool": "postiz",
+      "acceptance": "Tối ưu theo Facebook/Instagram/TikTok/LinkedIn",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "content.03",
+      "role": "content",
+      "title": "Lên lịch bài social",
+      "tool": "postiz",
+      "acceptance": "Lên lịch qua API chính thức sau khi duyệt",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "content.04",
+      "role": "content",
+      "title": "Thiết kế banner và hình ảnh",
+      "tool": "comfyui",
+      "acceptance": "Cần media API/model riêng",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "content.05",
+      "role": "content",
+      "title": "Dựng video và kịch bản",
+      "tool": "comfyui",
+      "acceptance": "Cần bổ sung render video cụ thể",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "ads.01",
+      "role": "ads",
+      "title": "Lấy dữ liệu Google Ads",
+      "tool": "google_ads",
+      "acceptance": "Đọc hiệu suất khi được cấp OAuth",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "ads.02",
+      "role": "ads",
+      "title": "Lấy dữ liệu Meta Ads",
+      "tool": "meta_ads",
+      "acceptance": "Đọc số liệu theo quyền",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "ads.03",
+      "role": "ads",
+      "title": "Đánh giá ngân sách và CAC",
+      "tool": "metabase",
+      "acceptance": "So sánh lead chất lượng với chi phí",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "ads.04",
+      "role": "ads",
+      "title": "Đề xuất thay đổi quảng cáo",
+      "tool": "activepieces",
+      "acceptance": "Duyệt trước mọi thay đổi ngân sách",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "crm.01",
+      "role": "crm",
+      "title": "Nhập và chống trùng lead",
+      "tool": "twenty",
+      "acceptance": "Phân biệt lead nguồn và consent",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "crm.02",
+      "role": "crm",
+      "title": "Theo dõi trạng thái pipeline",
+      "tool": "twenty",
+      "acceptance": "Giai đoạn bán hàng, giá trị dự kiến",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "crm.03",
+      "role": "crm",
+      "title": "Nuôi dưỡng khách có đồng ý",
+      "tool": "mautic",
+      "acceptance": "Email theo hành vi hợp lệ",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "crm.04",
+      "role": "crm",
+      "title": "Đồng bộ chat vào hồ sơ khách",
+      "tool": "chatwoot",
+      "acceptance": "Lưu tương tác theo quyền và mục đích",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "sales.01",
+      "role": "sales",
+      "title": "Xác minh nhu cầu và ngân sách",
+      "tool": "twenty",
+      "acceptance": "Ghi câu hỏi tư vấn",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "sales.02",
+      "role": "sales",
+      "title": "Đặt lịch xem nhà/gặp khách",
+      "tool": "calcom",
+      "acceptance": "Đồng bộ lịch và người phụ trách",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "sales.03",
+      "role": "sales",
+      "title": "Soạn báo giá/đề xuất",
+      "tool": "erpnext",
+      "acceptance": "Dựa trên tồn kho và bảng giá thật",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "sales.04",
+      "role": "sales",
+      "title": "Theo dõi cơ hội và chốt đơn",
+      "tool": "twenty",
+      "acceptance": "Đối soát doanh thu, không tự ký",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "quality.01",
+      "role": "quality",
+      "title": "Kiểm tra lỗi sự thật",
+      "tool": "crawl4ai",
+      "acceptance": "Đối chiếu nguồn",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "quality.02",
+      "role": "quality",
+      "title": "Kiểm tra bài trước đăng",
+      "tool": "postiz",
+      "acceptance": "Chặn công bố khi thiếu phê duyệt",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "quality.03",
+      "role": "quality",
+      "title": "Kiểm soát tính nhất quán thương hiệu",
+      "tool": "activepieces",
+      "acceptance": "Checklist phê duyệt",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "quality.04",
+      "role": "quality",
+      "title": "Kiểm tra chất lượng output AI",
+      "tool": "langfuse",
+      "acceptance": "Lưu đánh giá/tracing",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "analytics.01",
+      "role": "analytics",
+      "title": "Tổng hợp số liệu marketing",
+      "tool": "metabase",
+      "acceptance": "Leads, traffic, CPA, CAC, conversion",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "analytics.02",
+      "role": "analytics",
+      "title": "Báo cáo Search Console",
+      "tool": "gsc",
+      "acceptance": "Query, impressions, CTR, position",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "analytics.03",
+      "role": "analytics",
+      "title": "Báo cáo social post",
+      "tool": "postiz",
+      "acceptance": "Lượt đăng và số liệu hỗ trợ",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "analytics.04",
+      "role": "analytics",
+      "title": "Đo chi phí và lỗi AI",
+      "tool": "langfuse",
+      "acceptance": "Token, tỷ lệ fail, latency",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "analytics.05",
+      "role": "analytics",
+      "title": "A/B testing và cảnh báo",
+      "tool": "activepieces",
+      "acceptance": "Đặt ngưỡng và thông báo",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "operations.01",
+      "role": "operations",
+      "title": "Tạo SOP và checklist",
+      "tool": "activepieces",
+      "acceptance": "Quy trình theo phòng ban",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "operations.02",
+      "role": "operations",
+      "title": "Theo dõi tiến độ thực thi",
+      "tool": "hermes3d",
+      "acceptance": "Trạng thái Agent và nhiệm vụ",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "operations.03",
+      "role": "operations",
+      "title": "Tự chạy tác vụ định kỳ",
+      "tool": "activepieces",
+      "acceptance": "Webhook/scheduler từ tool",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "operations.04",
+      "role": "operations",
+      "title": "Phối hợp bàn giao giữa phòng ban",
+      "tool": "activepieces",
+      "acceptance": "Workflow, retry, biên nhận",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "finance.01",
+      "role": "finance",
+      "title": "Đọc doanh thu và chi phí",
+      "tool": "erpnext",
+      "acceptance": "Báo cáo từ sổ sách có xác minh",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "finance.02",
+      "role": "finance",
+      "title": "Phân tích công nợ",
+      "tool": "erpnext",
+      "acceptance": "Số liệu kế toán thật",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "finance.03",
+      "role": "finance",
+      "title": "Dự báo dòng tiền",
+      "tool": "metabase",
+      "acceptance": "Kịch bản và cảnh báo",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "finance.04",
+      "role": "finance",
+      "title": "Đề xuất ngân sách",
+      "tool": "activepieces",
+      "acceptance": "Duyệt mọi khoản chi",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "hr.01",
+      "role": "hr",
+      "title": "Xây JD và tiêu chí tuyển dụng",
+      "tool": "frappe_hrms",
+      "acceptance": "Mô tả và quy trình duyệt",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "hr.02",
+      "role": "hr",
+      "title": "Theo dõi pipeline tuyển dụng",
+      "tool": "frappe_hrms",
+      "acceptance": "Bảo vệ dữ liệu ứng viên",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "hr.03",
+      "role": "hr",
+      "title": "Lập kế hoạch đào tạo",
+      "tool": "frappe_hrms",
+      "acceptance": "Theo năng lực cần đạt",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "hr.04",
+      "role": "hr",
+      "title": "Đánh giá hiệu quả nhóm",
+      "tool": "metabase",
+      "acceptance": "KPI có giải thích, tránh quyết định tự động",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "procurement.01",
+      "role": "procurement",
+      "title": "Tìm nhà cung cấp",
+      "tool": "crawl4ai",
+      "acceptance": "Bằng chứng công khai, không spam",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "procurement.02",
+      "role": "procurement",
+      "title": "So sánh báo giá và MOQ",
+      "tool": "erpnext",
+      "acceptance": "Chuẩn hóa đơn giá, thuế, vận chuyển",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "procurement.03",
+      "role": "procurement",
+      "title": "Đề xuất đặt hàng",
+      "tool": "erpnext",
+      "acceptance": "Dựa trên tồn kho và dự báo",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "procurement.04",
+      "role": "procurement",
+      "title": "Tạo yêu cầu mua hàng",
+      "tool": "erpnext",
+      "acceptance": "Phải duyệt trước khi đặt thật",
+      "phase": "roadmap",
+      "approval_required": true
+    },
+    {
+      "id": "support.01",
+      "role": "support",
+      "title": "Nhận chat đa kênh",
+      "tool": "chatwoot",
+      "acceptance": "Hộp thư tập trung",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "support.02",
+      "role": "support",
+      "title": "Phân loại và gán yêu cầu",
+      "tool": "chatwoot",
+      "acceptance": "SLA và tuyến xử lý",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "support.03",
+      "role": "support",
+      "title": "Soạn phản hồi theo KB",
+      "tool": "chatwoot",
+      "acceptance": "Con người duyệt ca nhạy cảm",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "support.04",
+      "role": "support",
+      "title": "Theo dõi khiếu nại và tái liên hệ",
+      "tool": "twenty",
+      "acceptance": "Trạng thái và phản hồi hợp lệ",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "compliance.01",
+      "role": "compliance",
+      "title": "Kiểm tra quyền liên hệ lead",
+      "tool": "twenty",
+      "acceptance": "Consent/mục đích/nguồn",
+      "phase": "roadmap",
+      "approval_required": false
+    },
+    {
+      "id": "compliance.02",
+      "role": "compliance",
+      "title": "Kiểm duyệt quảng cáo và tài liệu",
+      "tool": "activepieces",
+      "acceptance": "Checklist ngành và luật",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "compliance.03",
+      "role": "compliance",
+      "title": "Quản lý duyệt thay đổi có rủi ro",
+      "tool": "activepieces",
+      "acceptance": "Audit trail, quyền người duyệt",
+      "phase": "connected_adapter",
+      "approval_required": true
+    },
+    {
+      "id": "compliance.04",
+      "role": "compliance",
+      "title": "Kiểm tra log và dữ liệu",
+      "tool": "langfuse",
+      "acceptance": "Giới hạn thông tin cá nhân trong trace",
+      "phase": "roadmap",
+      "approval_required": false
+    }
+  ]
+}

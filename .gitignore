@@ -1,0 +1,46 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Runtime data
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+logs/
+data/
+uploads/
+backups/
+
+# Secret configuration and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+service-account*.json
+*.token
+*.secret
+
+# Local config, dev tools
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+.next/
+coverage/
