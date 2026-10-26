@@ -86,6 +86,39 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(row['status'],'needs_reconciliation')
         self.assertEqual(self.client.post(f'/tool-jobs/{ident}/execute').status_code,409)
 
+    def test_wordpress_readback_only_marks_verified_if_live(self):
+        payload={'title':'Bài test','content':'Nội dung','status':'publish'}
+        r=self.client.post('/workspaces/demo/tool-jobs',json={
+            'action':'wordpress.create_post','idempotency_key':'verify-post-001','payload':payload})
+        job=r.json()['id']
+        self.client.post(f'/tool-jobs/{job}/approve')
+        with core.db() as c:
+            c.execute("UPDATE tool_jobs SET status='accepted_unverified',result_json=? WHERE id=?",
+                      ('{"provider":"wordpress","post_id":42}',job))
+        async def verified(receipt):
+            self.assertEqual(receipt['post_id'],42)
+            return {'verified':True,'provider_status':'publish','public_url':'https://site.example/post','public_http_status':200}
+        with patch.object(tool_hub,'_verify_wordpress_public',side_effect=verified):
+            r=self.client.post(f'/tool-jobs/{job}/verify')
+        self.assertEqual(r.status_code,200,r.text)
+        self.assertEqual(r.json()['status'],'verified_published')
+        self.assertEqual(self.client.post(f'/tool-jobs/{job}/execute').status_code,409)
+
+    def test_wordpress_readback_not_public_keeps_unverified(self):
+        r=self.client.post('/workspaces/demo/tool-jobs',json={
+            'action':'wordpress.create_post','idempotency_key':'verify-post-002',
+            'payload':{'title':'Draft','content':'Nội dung','status':'draft'}})
+        job=r.json()['id']
+        with core.db() as c:
+            c.execute("UPDATE tool_jobs SET status='accepted_unverified',result_json=? WHERE id=?",
+                      ('{"provider":"wordpress","post_id":43}',job))
+        async def not_public(receipt):
+            return {'verified':False,'provider_status':'draft','reason':'Not published'}
+        with patch.object(tool_hub,'_verify_wordpress_public',side_effect=not_public):
+            r=self.client.post(f'/tool-jobs/{job}/verify')
+        self.assertEqual(r.status_code,200,r.text)
+        self.assertEqual(r.json()['status'],'accepted_unverified')
+
     def test_sensitive_provider_fields_redacted(self):
         result=tool_hub._sanitize_response({'client_secret':'test','token':'abc',
                      'nested':{'authorization':'Bearer xyz','message':'ok'}})
