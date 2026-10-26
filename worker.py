@@ -9,6 +9,7 @@ import time
 from fastapi import HTTPException
 from core import db, now, audit
 from app import execute_task
+from openrouter_provider import model_configured
 from tool_hub import execute_tool_job, configured, TOOL_ACTIONS
 
 
@@ -69,24 +70,28 @@ async def main() -> None:
             last_recover=time.time()
         # Approved external actions run even if no DeepSeek key is configured.
         await process_one_approved_tool()
-        if not os.getenv("DEEPSEEK_API_KEY"):
-            await asyncio.sleep(3)
-            continue
         with db() as c:
             rows=c.execute("""SELECT t.id FROM tasks t LEFT JOIN tasks dep ON t.depends_on=dep.id
                 WHERE t.status='queued' AND t.next_run_at<=?
                 AND (t.depends_on IS NULL OR dep.status='completed')
-                ORDER BY t.created_at,t.rowid LIMIT 1""",(now(),)).fetchall()
+                ORDER BY t.created_at,t.rowid LIMIT 20""",(now(),)).fetchall()
         if not rows:
             await asyncio.sleep(2)
             continue
         for t in rows:
+            with db() as c:
+                queued = c.execute("SELECT model FROM tasks WHERE id=?", (t["id"],)).fetchone()
+            # A missing provider key must not starve other providers' ready work.
+            if not queued or not model_configured(queued["model"]):
+                continue
             try:
                 await execute_task(t["id"])
             except HTTPException as err:
                 print(f"Task {t['id']}: {err.status_code} {err.detail}",flush=True)
             except Exception as err:
                 print(f"Unexpected worker error: {type(err).__name__}",flush=True)
+            # One AI request per loop prevents a burst from consuming free quota.
+            break
 
 
 if __name__=="__main__":
