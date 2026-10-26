@@ -76,8 +76,10 @@ def _sanitize_response(value: Any) -> Any:
     if isinstance(value, list):
         return [_sanitize_response(x) for x in value[:50]]
     if isinstance(value, dict):
+        blocked = {"token", "access_token", "refresh_token", "api_key", "password", "authorization",
+                   "client_secret", "secret", "private_key", "cookie", "set-cookie", "credential", "credentials"}
         return {k: _sanitize_response(v) for k, v in list(value.items())[:70]
-                if str(k).lower() not in {"token", "access_token", "refresh_token", "api_key", "password", "authorization"}}
+                if str(k).lower().replace("-", "_") not in blocked}
     if isinstance(value, str):
         return value[:1800]
     return value
@@ -157,6 +159,45 @@ class ToolJobIn(BaseModel):
     action: Literal["postiz.create_post", "wordpress.create_post", "activepieces.trigger"]
     payload: dict[str, Any]
     idempotency_key: str = Field(min_length=6, max_length=120)
+
+
+class FromAgentIn(BaseModel):
+    source_task_id: str = Field(min_length=10, max_length=80)
+    action: Literal["postiz.create_post", "wordpress.create_post"]
+    idempotency_key: str = Field(min_length=6, max_length=120)
+    mode: Literal["draft", "now", "schedule"] = "draft"
+    channel_ids: list[str] = Field(default_factory=list)
+    scheduled_at: str | None = None
+    title: str = ""
+    status: Literal["draft", "publish"] = "draft"
+    media: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.post("/workspaces/{ws}/tool-jobs/from-agent", status_code=201)
+def create_from_agent(ws: str, inp: FromAgentIn):
+    """Copy the exact completed Agent output into a reviewed external-action request.
+
+    No AI text is executed without the separate approval state transition.
+    """
+    _pilot_ws(ws)
+    with db() as c:
+        task = c.execute("SELECT role,instruction,result,status FROM tasks WHERE id=? AND workspace_id=?",
+                         (inp.source_task_id, ws)).fetchone()
+    if not task or task["status"] != "completed" or not task["result"]:
+        raise HTTPException(422, "Agent chưa hoàn thành hoặc đầu ra trống")
+    if task['role'] not in {"content", "research", "strategy", "sales", "support"}:
+        raise HTTPException(422, "Vai trò Agent này không tạo bản nháp để xuất bản")
+    if inp.action == "postiz.create_post":
+        payload = {"mode": inp.mode, "content": task["result"][:15000],
+                   "channel_ids": inp.channel_ids, "media": inp.media,
+                   "source_task_id": inp.source_task_id}
+        if inp.mode == "schedule": payload["scheduled_at"] = inp.scheduled_at
+    else:
+        payload = {"title": inp.title.strip() or task["instruction"][:180],
+                   "content": task["result"][:100000], "status": inp.status,
+                   "source_task_id": inp.source_task_id}
+    return create_tool_job(ws, ToolJobIn(action=inp.action, payload=payload,
+                                          idempotency_key=inp.idempotency_key))
 
 
 def _assert_payload(action: str, p: dict[str, Any]) -> None:

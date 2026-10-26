@@ -38,12 +38,33 @@ async def local_only_or_auth(request: Request, call_next):
     than loopback/testclient, including LAN and proxy traffic.
     """
     from fastapi.responses import JSONResponse
+    import base64
+    import binascii
     import secrets
+    from urllib.parse import urlsplit
     token = os.getenv("LHM_ADMIN_TOKEN", "").strip()
     if token:
         presented = request.headers.get("Authorization", "")
-        if not secrets.compare_digest(presented, "Bearer " + token):
-            return JSONResponse({"detail": "Access denied"}, status_code=401)
+        bearer_ok = secrets.compare_digest(presented, "Bearer " + token)
+        basic_ok = False
+        if presented.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(presented[6:], validate=True).decode("utf-8")
+                username, password = decoded.split(":", 1)
+                basic_ok = secrets.compare_digest(username, "admin") and secrets.compare_digest(password, token)
+            except (ValueError, UnicodeDecodeError, binascii.Error):
+                pass
+        if not (bearer_ok or basic_ok):
+            return JSONResponse({"detail": "Authentication required"}, status_code=401,
+                                headers={"WWW-Authenticate": 'Basic realm="LHM Agent OS"'})
+        # Basic authentication is automatically attached by browsers. Reject cross-site
+        # form/fetch writes, while bearer-token API clients remain unaffected.
+        if basic_ok and request.method not in {"GET", "HEAD", "OPTIONS"}:
+            if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+                return JSONResponse({"detail": "Cross-site requests blocked"}, status_code=403)
+            origin = request.headers.get("origin")
+            if origin and urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower():
+                return JSONResponse({"detail": "Cross-origin writes blocked"}, status_code=403)
     elif (request.client.host if request.client else "") not in {"127.0.0.1", "::1", "localhost", "testclient"}:
         return JSONResponse({"detail": "Configure LHM_ADMIN_TOKEN; localhost access only"}, status_code=403)
     return await call_next(request)

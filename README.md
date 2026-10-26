@@ -77,3 +77,10 @@ Production cần PostgreSQL, RBAC đa tenant, secrets manager, hard limit từ p
 ## Tích hợp mã nguồn repo 3D
 
 Tôn trọng giấy phép MIT của Hermes3D, giữ copyright nếu phân phối bản fork. Tham chiếu kỹ thuật: https://github.com/iamlukethedev/Hermes3D/blob/main/docs/integrations/custom-provider-reference.md .
+## Nâng cấp vận hành Tool Hub (2026-10-26)
+
+Bản thử nghiệm hỗ trợ **trình duyệt quản trị có Basic Auth**, vẫn chấp nhận Bearer token cho API client. Khi đặt `LHM_ADMIN_TOKEN`, mở `/office` hoặc `/dashboard`, đăng nhập user **admin** với mật khẩu là token; **chỉ sử dụng HTTP trên localhost** hoặc HTTPS khi ở sau proxy/VPN.
+
+Luồng vận hành: Agent tạo nội dung → xem nhiệm vụ hoàn thành → `POST /workspaces/demo/tool-jobs/from-agent` → **con người duyệt** → worker tự thực hiện yêu cầu đã duyệt qua Postiz / WordPress / Activepieces (nếu có credentials). Tool job không bao giờ tự động retry khi phản hồi nhà cung cấp không chắc chắn. `accepted_unverified` không phải là bằng chứng bài đã công khai.
+
+Có thêm cấu hình [Docker Compose và hướng dẫn nghiệm thu](PRODUCTION_CHECKLIST.md). Chỉ phục vụ **local pilot**; **chưa** có OAuth/credential vault đa doanh nghiệp, xác minh post URL tự động, media uploader hay lớp xác thực SaaS production.
