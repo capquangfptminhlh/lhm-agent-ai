@@ -84,3 +84,50 @@ Bản thử nghiệm hỗ trợ **trình duyệt quản trị có Basic Auth**, 
 Luồng vận hành: Agent tạo nội dung → xem nhiệm vụ hoàn thành → `POST /workspaces/demo/tool-jobs/from-agent` → **con người duyệt** → worker tự thực hiện yêu cầu đã duyệt qua Postiz / WordPress / Activepieces (nếu có credentials). Tool job không bao giờ tự động retry khi phản hồi nhà cung cấp không chắc chắn. `accepted_unverified` không phải là bằng chứng bài đã công khai.
 
 Có thêm cấu hình [Docker Compose và hướng dẫn nghiệm thu](PRODUCTION_CHECKLIST.md). Chỉ phục vụ **local pilot**; **chưa** có OAuth/credential vault đa doanh nghiệp, xác minh post URL tự động, media uploader hay lớp xác thực SaaS production.
+
+
+## OpenRouter Free-first (tùy chọn, không tự tính phí)
+
+LHM hiện có hai đường AI: DeepSeek gốc và OpenRouter free qua API tương thích chat.
+**Mặc định vẫn là DeepSeek** để không làm thay đổi các tác vụ cũ. Muốn dùng
+OpenRouter cho các tác vụ *mới*, tạo `.env` từ `.env.example` và đặt:
+
+```dotenv
+LHM_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=YOUR_OWN_KEY_HERE
+OPENROUTER_MODEL=openrouter/free
+LHM_OPENROUTER_24H_LIMIT=40
+LHM_OPENROUTER_1M_LIMIT=15
+```
+
+Khởi động lại server và worker. Đọc `GET /health` và `GET /llm/providers`
+để kiểm tra loại model, key đã cấu hình (chỉ có boolean), số lượt gọi *local*
+trong 24 giờ và một phút. `GET /registry` trả về model đang dùng cho Hermes3D.
+Có thể thay `OPENROUTER_MODEL` bằng **slug chính xác kết thúc `:free`**
+mà OpenRouter đang cung cấp; không dùng model trả phí qua adapter này.
+
+- **An toàn ngân sách:** không chuyển sang trả phí nếu free hết quota/429.
+  Task được hẹn lại khi bộ đếm local chạm trần; HTTP 429 từ upstream sẽ
+  báo lỗi rõ ràng để người quản trị xử lý. Các lượt gọi *thất bại* cũng được
+  tính trong bộ đếm local. Adapter ghi chi phí token **$0** cho model free,
+  không dùng đơn giá DeepSeek để tính sai.
+- **Không phải lời hứa 24/7 miễn phí:** OpenRouter có giới hạn theo tài khoản
+  và toàn bộ ứng dụng chung API key. Bộ đếm local không biết tổng số lần
+  gọi từ các ứng dụng khác; sự sẵn có/model free thay đổi theo nhà cung cấp.
+- **Dữ liệu:** free providers có chính sách lưu trữ/huấn luyện khác nhau;
+  không gửi dữ liệu khách, email, số điện thoại, chứng từ hay bí mật doanh
+  nghiệp tới model miễn phí. Bộ lọc mặc định chặn một số mẫu số điện thoại/
+  email, **không đảm bảo phát hiện hết PII**. Chỉ đặt
+  `LHM_OPENROUTER_ALLOW_CONTACT_DATA=1` sau khi đã đánh giá rủi ro và
+  được phép xử lý dữ liệu.
+- **Tác vụ quan trọng:** chọn DeepSeek hoặc nhà cung cấp có cam kết dữ liệu
+  thích hợp, kiểm tra đầu ra bằng QA và người duyệt. Chế độ
+  `complexity=high` hiện vẫn cần cấu hình DeepSeek và `LHM_ALLOW_PRO=1`.
+- **Thiết lập không ảnh hưởng tác vụ cũ:** model lưu trên từng task khi tạo.
+  Các task DeepSeek đã xếp hàng sẽ tiếp tục yêu cầu DeepSeek API key;
+  không chuyển chúng ngầm sang một model free bất kỳ.
+
+Tài liệu nhà cung cấp: https://openrouter.ai/collections/free-models ,
+https://openrouter.ai/openrouter/free và https://openrouter.ai/pricing .
+Đây là adapter đã kiểm thử offline với phản hồi mô phỏng, **chưa gọi thử
+một tài khoản OpenRouter thật** và chưa chạy production tải lớn.
