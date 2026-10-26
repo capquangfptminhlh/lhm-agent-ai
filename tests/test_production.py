@@ -56,6 +56,10 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(self.client.post('/workspaces/demo/tool-jobs/from-agent',json=base).status_code,422)
         with core.db() as c:
             c.execute("UPDATE tasks SET status='completed',result=? WHERE id=?", ('Nội dung thật do Agent tạo',task))
+            import publication_gate as pg
+            c.execute("""INSERT INTO qa_reviews(qa_task_id,workspace_id,source_task_id,source_digest,role,verdict)
+                         VALUES(?,?,?,?,?,?)""",
+                      (core.new_id(),'demo',task,pg.digest('Nội dung thật do Agent tạo'),'quality','pass'))
         x=self.client.post('/workspaces/demo/tool-jobs/from-agent',json=base)
         self.assertEqual(x.status_code,201,x.text)
         self.assertEqual(x.json()['status'],'awaiting_approval')

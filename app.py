@@ -18,6 +18,8 @@ from fastapi.responses import FileResponse
 from office_api import router as office_router
 from tool_hub import router as tool_hub_router
 from pydantic import BaseModel, Field
+from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
+                              review_task_passed, scrub_output)
 
 from core import (CATALOG, DATABASE, MODEL, ROLES, DEPARTMENTS, WORKFLOWS, TASK_RESERVE, audit, connect, db,
                   financials, new_id, now, recorded_cost, request_reservation,
@@ -387,9 +389,11 @@ def retry_task(task_id: str):
         if t['status'] not in ('failed','blocked_budget','blocked_dependency'):
             raise HTTPException(409,"Chỉ retry tác vụ lỗi/bị chặn sau khi đã kiểm tra")
         if t['depends_on']:
-            prev=c.execute("SELECT status FROM tasks WHERE id=?",(t['depends_on'],)).fetchone()
+            prev=c.execute("SELECT id,role,status FROM tasks WHERE id=?",(t['depends_on'],)).fetchone()
             if not prev or prev['status']!='completed':
                 raise HTTPException(409,"Phải xử lý công đoạn trước")
+            if prev["role"] in REVIEW_ROLES and not review_task_passed(c,prev["id"]):
+                raise HTTPException(409,"QA chưa pass; chưa thể chạy bước phụ thuộc")
         c.execute("UPDATE tasks SET status='queued',attempts=0, next_run_at=0,error=NULL,reserve_usd=0,updated_at=? WHERE id=?",(now(),task_id))
         audit(c,t['workspace_id'],"task.manual_retry","Manually retried after review",task_id)
     return {"id":task_id,"status":"queued"}
@@ -471,7 +475,9 @@ async def deepseek_request(role: str, ws: sqlite3.Row, instruction: str, context
     if not api_key:
         raise HTTPException(503,"Chưa cấu hình DEEPSEEK_API_KEY; không thực thi giả lập")
     system = role_prompt(role,ws["industry"],ws["business_context"])
-    user = instruction[:8000] + ("\n\nDỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):\n" + context[:5000] if context else "")
+    if len(context) > MAX_HANDOFF_CHARS:
+        raise HTTPException(422, "Context quá dài; yêu cầu chia phần QA rõ ràng, không cắt âm thầm")
+    user = instruction[:8000] + ("\n\nDỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):\n" + context if context else "")
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(90,connect=10)) as client:
             response=await client.post(API_URL,headers={"Authorization":f"Bearer {api_key}"},
@@ -510,9 +516,22 @@ def claim_task(task_id: str) -> dict[str,Any]:
             raise HTTPException(409,"Tác vụ đã hẹn giờ; chưa đến lúc chạy")
         prev = t["depends_on"]
         if prev:
-            predecessor=c.execute("SELECT status,result FROM tasks WHERE id=? AND workspace_id=?",(prev,t["workspace_id"])).fetchone()
+            predecessor=c.execute("SELECT id,role,status,result FROM tasks WHERE id=? AND workspace_id=?",(prev,t["workspace_id"])).fetchone()
             if not predecessor or predecessor["status"] != "completed":
                 raise HTTPException(409,"Phụ thuộc chưa hoàn tất")
+            if predecessor["role"] in REVIEW_ROLES and not review_task_passed(c, predecessor["id"]):
+                message = "Bước QA chưa pass; nội dung phải sửa và kiểm tra lại"
+                c.execute("UPDATE tasks SET status='blocked_dependency',error=?,updated_at=? WHERE id=?",
+                          (message,now(),task_id))
+                audit(c,t["workspace_id"],"task.qa_blocked",message,task_id)
+                return {"dependency_blocked": True, "task_id": task_id, "reason": message}
+            full = (t["context"] or "") + "\n\nĐẦU RA GIAI ĐOẠN TRƯỚC:\n" + (predecessor["result"] or "")
+            if not predecessor["result"] or len(full) > MAX_HANDOFF_CHARS:
+                message = "Bàn giao vượt giới hạn; phải chia tài liệu để QA bao phủ toàn bộ"
+                c.execute("UPDATE tasks SET status='blocked_dependency',error=?,updated_at=? WHERE id=?",
+                          (message,now(),task_id))
+                audit(c,t["workspace_id"],"task.handoff_blocked",message,task_id)
+                return {"dependency_blocked": True, "task_id": task_id, "reason": message}
         if not request_reservation(c,t["workspace_id"],TASK_RESERVE,task_id):
             c.execute("UPDATE tasks SET status='blocked_budget',updated_at=? WHERE id=?",(now(),task_id))
             audit(c,t["workspace_id"],"task.budget_blocked","Insufficient remaining budget",task_id)
@@ -521,7 +540,7 @@ def claim_task(task_id: str) -> dict[str,Any]:
         audit(c,t["workspace_id"],"task.started",f"AI role={t['role']}, model={t['model']}",task_id)
         out=dict(t)
         if prev:
-            out["context"] += "\n\nĐẦU RA GIAI ĐOẠN TRƯỚC:\n" + predecessor["result"][:3500]
+            out["context"] = full
         return out
 
 
@@ -529,19 +548,29 @@ async def execute_task(task_id: str) -> dict[str,Any]:
     t=claim_task(task_id)
     if t.get("budget_blocked"):
         raise HTTPException(402,"Ngân sách không đủ; tác vụ chuyển blocked_budget")
+    if t.get("dependency_blocked"):
+        raise HTTPException(409,t.get("reason", "Bàn giao chưa đủ điều kiện"))
     with db() as c:
         ws=fetch_workspace_or_404(c,t["workspace_id"])
         ws_data=dict(ws)
     try:
         response=await deepseek_request(t["role"],ws_data,t["instruction"],t["context"],t["model"])
         content=response["choices"][0]["message"]["content"]
+        safe_content, pii_rejected = scrub_output(t["role"], content)
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
             upper=store_usage(c,t["workspace_id"],task_id,t["model"],response["usage"])
-            c.execute("UPDATE tasks SET status='completed',result=?,reserve_usd=0,error=NULL,updated_at=? WHERE id=?",
-                      (content,now(),task_id))
-            audit(c,t["workspace_id"],"task.completed",f"Draft created; estimated upper cost ${upper:.6f}",task_id)
-        return {"id":task_id,"status":"completed","result":content,"cost_upper_usd":upper}
+            if pii_rejected:
+                c.execute("UPDATE tasks SET status='failed',result=?,reserve_usd=0,error=?,updated_at=? WHERE id=?",
+                          (safe_content,"PII detected: general Agent output rejected; no raw PII stored",now(),task_id))
+                audit(c,t["workspace_id"],"task.pii_blocked","PII redacted before persistence",task_id)
+            else:
+                c.execute("UPDATE tasks SET status='completed',result=?,reserve_usd=0,error=NULL,updated_at=? WHERE id=?",
+                          (safe_content,now(),task_id))
+                record_review(c,t,safe_content)
+                audit(c,t["workspace_id"],"task.completed",f"Draft created; estimated upper cost ${upper:.6f}",task_id)
+        return {"id":task_id,"status":"failed" if pii_rejected else "completed",
+                "result":safe_content,"cost_upper_usd":upper}
     except Exception as exc:
         message=exc.detail if isinstance(exc,HTTPException) else "Internal execution error"
         transient=isinstance(exc,HTTPException) and exc.status_code==503
