@@ -1,0 +1,29 @@
+name: LHM Agent OS Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests (no production credentials)
+        env:
+          LHM_DB_PATH: ${{ runner.temp }}/lhm-agent-os-test.sqlite3
+        run: python -m unittest discover -s tests -v
