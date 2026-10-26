@@ -1,6 +1,6 @@
 # LHM Agent Operating System — Open-source MVP
 
-**License: MIT | Visibility target: Public | GitHub: capquangfptminhlh/lhm-agent-ai**
+**License: MIT | Public repository | GitHub: capquangfptminhlh/lhm-agent-ai**
 
 This is an experimental local MVP, not a production-ready SaaS. See [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), and [`PUBLIC_REPOSITORY_SETUP.md`](PUBLIC_REPOSITORY_SETUP.md) before sharing, deploying, or modifying.
 
@@ -62,9 +62,9 @@ Repo nguồn MIT: https://github.com/iamlukethedev/Hermes3D
 python -m unittest discover -s tests -v
 ```
 
-**19/19 kiểm thử tự động PASS:** bao gồm 4 kiểm thử mới về web office, trạng thái từ task thật, cô lập dữ liệu doanh nghiệp và heartbeat worker; 15 kiểm thử lõi trước đây còn giữ nguyên.
+**31/31 kiểm thử tự động PASS (local):** bao gồm 4 kiểm thử mới về web office, trạng thái từ task thật, cô lập dữ liệu doanh nghiệp và heartbeat worker; 15 kiểm thử lõi trước đây còn giữ nguyên.
 
-**Kiểm thử trình duyệt Chromium qua API bridge:** 8 phòng ban, 16 agent, chọn avatar, mở form, tạo task lưu SQLite, không có pageerror; ảnh thật tại `office_preview.png`. Trình duyệt trong môi trường đóng này không được phép truy cập localhost trực tiếp nên thử qua FastAPI TestClient bridge, không phải chạy qua public URL.
+**Kiểm thử trình duyệt Chromium qua API bridge:** 8 phòng ban, 16 agent, chọn avatar, mở form, tạo task lưu SQLite, không có pageerror; ảnh kiểm thử được cung cấp trong bản đóng gói demo riêng (không commit tệp ảnh vào mã nguồn). Trình duyệt trong môi trường đóng này không được phép truy cập localhost trực tiếp nên thử qua FastAPI TestClient bridge, không phải chạy qua public URL.
 
 **Chưa thực nghiệm:** API DeepSeek thật (không có key), trình duyệt Hermes3D 3D bên ngoài, cập nhật Ads hay đăng bài ngoài dịch vụ, đăng ký/SSO đa người dùng, chạy liên tục nhiều ngày.
 
