@@ -21,7 +21,8 @@ from dotenv import load_dotenv
 load_dotenv(ROOT / '.env', override=False)
 DATABASE = Path(os.environ.get("LHM_DB_PATH", str(ROOT / "lhm.sqlite3"))).resolve()
 CATALOG = json.loads((ROOT / "templates" / "industries.json").read_text(encoding="utf-8"))
-MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")
+MODEL = (os.environ.get("OPENROUTER_MODEL", "openrouter/free") if os.environ.get("LHM_LLM_PROVIDER", "deepseek").lower() == "openrouter"
+         else os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"))
 TASK_RESERVE = float(os.environ.get("LHM_TASK_RESERVE_USD", "0.02"))
 # Upper-bound peak prices per 1M tokens, USD. Adjust if upstream prices change.
 PEAK_PRICES = {
@@ -129,6 +130,10 @@ def new_id() -> str:
 def setup() -> None:
     with db() as c:
         c.executescript("""
+        CREATE TABLE IF NOT EXISTS openrouter_attempts (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_openrouter_attempts_created ON openrouter_attempts(created_at);
         CREATE TABLE IF NOT EXISTS worker_heartbeats (
           id TEXT PRIMARY KEY, updated_at INTEGER NOT NULL
         );
@@ -232,6 +237,9 @@ def recorded_cost(usage: dict[str, Any], model: str) -> tuple[int, int, int, flo
     hit = max(0, min(i, int(usage.get("prompt_cache_hit_tokens", 0) or 0)))
     miss = i - hit
     out = max(0, int(usage.get("completion_tokens", 0) or 0))
+    # Free endpoints have no token fee; never treat their usage as a paid DeepSeek rate.
+    if model == "openrouter/free" or model.endswith(":free"):
+        return hit, miss, out, 0.0
     rates = PEAK_PRICES.get(model, PEAK_PRICES["deepseek-v4-pro"])
     upper = (hit * rates["hit"] + miss * rates["miss"] + out * rates["output"]) / 1_000_000
     return hit, miss, out, upper
