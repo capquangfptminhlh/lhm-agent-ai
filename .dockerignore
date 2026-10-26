@@ -1,0 +1,16 @@
+.git
+.github
+.env
+.env.*
+!.env.example
+.venv
+__pycache__
+*.sqlite*
+*.db*
+*.log
+*.zip
+node_modules
+*.png
+*.jpg
+*.webp
+TEST_REPORT*
