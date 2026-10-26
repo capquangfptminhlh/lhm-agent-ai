@@ -9,6 +9,7 @@ import time
 from fastapi import HTTPException
 from core import db, now, audit
 from app import execute_task
+from tool_hub import execute_tool_job, configured, TOOL_ACTIONS
 
 
 async def recover_stuck() -> None:
@@ -22,14 +23,41 @@ async def recover_stuck() -> None:
         for t in blockers:
             c.execute("UPDATE tasks SET status='blocked_dependency',updated_at=? WHERE id=?",(now(),t['id']))
             audit(c,t['workspace_id'],"task.dependency_blocked","Predecessor failed or stopped",t['id'])
+        stale_tools = c.execute("SELECT id,workspace_id FROM tool_jobs WHERE status='executing' AND updated_at<?", (now()-600,)).fetchall()
+        for job in stale_tools:
+            c.execute("UPDATE tool_jobs SET status='needs_reconciliation',error=?,updated_at=? WHERE id=?",
+                      ("Worker interrupted; remote outcome must be verified manually", now(), job['id']))
+            audit(c,job['workspace_id'],"tool_job.stale","Reconciliation required after interrupted execution",job['id'])
         stale = c.execute("SELECT id,workspace_id FROM tasks WHERE status='running' AND updated_at<?",(now()-600,)).fetchall()
         for t in stale:
             c.execute("UPDATE tasks SET status='failed',reserve_usd=0,error='Stale run: manual review required',updated_at=? WHERE id=?",(now(),t["id"]))
             audit(c,t["workspace_id"],"task.stale","Manual review required after interruption",t["id"])
 
 
+async def process_one_approved_tool() -> bool:
+    """Execute at most one approved, configured external action per invocation.
+
+    A job is claimed atomically inside execute_tool_job. Multiple workers cannot
+    successfully execute the same approved job twice.
+    """
+    with db() as c:
+        jobs = c.execute("SELECT id,action FROM tool_jobs WHERE status='approved' ORDER BY created_at,rowid LIMIT 10").fetchall()
+    for job in jobs:
+        provider = TOOL_ACTIONS.get(job['action'], {}).get('tool')
+        if not provider or not configured(provider):
+            continue
+        try:
+            await execute_tool_job(job['id'])
+        except HTTPException as err:
+            print(f"Tool job {job['id']}: {err.status_code} {err.detail}", flush=True)
+        except Exception as err:
+            print(f"Unexpected tool worker error: {type(err).__name__}", flush=True)
+        return True
+    return False
+
+
 async def main() -> None:
-    print("LHM Agent Worker running. Ctrl+C stops. No external posting is implemented.", flush=True)
+    print("LHM Agent Worker running. Approved tool jobs execute once, with reconciliation on errors.", flush=True)
     last_recover=0
     while True:
         # This timestamp is observed by the office: never fake an online worker.
@@ -39,6 +67,8 @@ async def main() -> None:
         if time.time()-last_recover>60:
             await recover_stuck()
             last_recover=time.time()
+        # Approved external actions run even if no DeepSeek key is configured.
+        await process_one_approved_tool()
         if not os.getenv("DEEPSEEK_API_KEY"):
             await asyncio.sleep(3)
             continue
