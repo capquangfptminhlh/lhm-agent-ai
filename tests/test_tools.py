@@ -170,7 +170,7 @@ class ToolHubTests(unittest.TestCase):
         # Cannot claim an uncompleted AI text was a completed Agent result.
         t=self.c.post('/workspaces/demo/tasks',json={'role':'content','instruction':'Viết bài giới thiệu dự án để đăng website'}).json()['id']
         bad=self.create(action='wordpress.create_post',p={'title':'T','content':'T','source_task_id':t},idem='provenance-bad')
-        self.assertEqual(bad.status_code,422)
+        self.assertEqual(bad.status_code,409)  # source exists but is not yet cleared by QA
         with core.db() as c:
             c.execute("UPDATE tasks SET status='completed',result='Bản nháp AI có nguồn' WHERE id=?",(t,))
             import publication_gate as pg
