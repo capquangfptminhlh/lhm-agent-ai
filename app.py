@@ -20,6 +20,8 @@ from tool_hub import router as tool_hub_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
+from openrouter_provider import (is_free_model, model_configured, provider_for_model,
+                                 validate_model, local_free_quota, call_free_model)
 
 from core import (CATALOG, DATABASE, MODEL, ROLES, DEPARTMENTS, WORKFLOWS, TASK_RESERVE, audit, connect, db,
                   financials, new_id, now, recorded_cost, request_reservation,
@@ -211,9 +213,25 @@ def dashboard():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "status": "ready" if os.getenv("DEEPSEEK_API_KEY") else "waiting_for_key",
-            "deepseek_configured": bool(os.getenv("DEEPSEEK_API_KEY")), "runtime": "LHM Universal Agent OS",
-            "database": "sqlite", "mode": "local_mvp"}
+    return {"ok": True, "status": "ready" if model_configured(MODEL) else "waiting_for_key",
+            "llm_provider": provider_for_model(MODEL), "active_model": MODEL,
+            "openrouter_configured": bool(os.getenv("OPENROUTER_API_KEY")),
+            "deepseek_configured": bool(os.getenv("DEEPSEEK_API_KEY")),
+            "runtime": "LHM Universal Agent OS", "database": "sqlite", "mode": "local_mvp"}
+
+
+@app.get("/llm/providers")
+def llm_providers():
+    # Reports local observed attempts only, not the provider's account-wide quota.
+    with db() as c:
+        quota = local_free_quota(c, now())
+    return {"active_model": MODEL, "provider": provider_for_model(MODEL),
+            "configured": model_configured(MODEL),
+            "providers": {"openrouter": {"configured": bool(os.getenv("OPENROUTER_API_KEY")),
+                                         "free_router": "openrouter/free",
+                                         "local_quota": quota},
+                          "deepseek": {"configured": bool(os.getenv("DEEPSEEK_API_KEY"))}},
+            "no_paid_fallback": True, "quota_source": "local_only"}
 
 
 @app.get("/catalog")
@@ -287,6 +305,7 @@ def get_workspace(ws: str):
 def create_task(ws: str, inp: TaskIn):
     role = inp.role or choose_role(inp.instruction)
     model = "deepseek-v4-pro" if inp.complexity == "high" else MODEL
+    validate_model(model)
     if inp.complexity == "high" and os.getenv("LHM_ALLOW_PRO", "0") != "1":
         raise HTTPException(422, "Model nâng cao chưa được chủ doanh nghiệp bật để tránh phát sinh chi phí")
     with db() as c:
@@ -457,7 +476,7 @@ def state():
         finance = financials(c,ACTIVE_WORKSPACE)
     return {"profileName":f"LHM Agent OS — {ws['name']}",
             "runtime":{"name":"LHM Universal Agent OS","version":"1.0.0","vendor":"LHM",
-                       "status":"ready" if os.getenv("DEEPSEEK_API_KEY") else "degraded", "active_model":MODEL},
+                       "status":"ready" if model_configured(MODEL) else "degraded", "active_model":MODEL},
             "identity":{"name":"AI Director","role":"director","lane":"director","model_id":MODEL},
             "active":{r:MODEL for r in ROLES},
             "agent_states":{r:"working" if r in running else "idle" for r in ROLES},
@@ -466,11 +485,17 @@ def state():
 
 @app.get("/registry")
 def registry():
-    return {"models":{MODEL:{"provider":"deepseek","label":"DeepSeek Flash"}},
+    return {"models":{MODEL:{"provider":provider_for_model(MODEL),
+                              "label":"OpenRouter Free" if is_free_model(MODEL) else "DeepSeek"}},
             "roles":{k:{"name":v[0],"description":v[1]} for k,v in ROLES.items()},"industries":list(CATALOG.keys())}
 
 
 async def deepseek_request(role: str, ws: sqlite3.Row, instruction: str, context: str, model: str) -> dict[str, Any]:
+    # Historical name retained for compatibility with callers/tests.
+    # OpenRouter free models use a separate transport, no paid failover.
+    validate_model(model)
+    if is_free_model(model):
+        return await call_free_model(role, ws, instruction, context, model)
     api_key=os.getenv("DEEPSEEK_API_KEY", "")
     if not api_key:
         raise HTTPException(503,"Chưa cấu hình DEEPSEEK_API_KEY; không thực thi giả lập")
@@ -510,8 +535,9 @@ def claim_task(task_id: str) -> dict[str,Any]:
             raise HTTPException(404,"Không tìm thấy tác vụ")
         if t["status"] != "queued":
             raise HTTPException(409,f"Tác vụ chưa sẵn sàng: {t['status']}")
-        if not os.getenv("DEEPSEEK_API_KEY"):
-            raise HTTPException(503,"Chưa có DEEPSEEK_API_KEY; nhiệm vụ giữ nguyên")
+        validate_model(t["model"])
+        if not model_configured(t["model"]):
+            raise HTTPException(503, "Chưa cấu hình API key cho model của nhiệm vụ; giữ nguyên trạng thái")
         if t["next_run_at"]>now():
             raise HTTPException(409,"Tác vụ đã hẹn giờ; chưa đến lúc chạy")
         prev = t["depends_on"]
@@ -532,10 +558,23 @@ def claim_task(task_id: str) -> dict[str,Any]:
                           (message,now(),task_id))
                 audit(c,t["workspace_id"],"task.handoff_blocked",message,task_id)
                 return {"dependency_blocked": True, "task_id": task_id, "reason": message}
-        if not request_reservation(c,t["workspace_id"],TASK_RESERVE,task_id):
+        if is_free_model(t["model"]):
+            quota = local_free_quota(c, now())
+            delay = 3600 if quota["used_24h"] >= quota["limit_24h"] else (
+                60 if quota["used_1m"] >= quota["limit_1m"] else 0)
+            if delay:
+                reason = "OpenRouter free: giới hạn lượt gọi local, tự chờ để tránh lỗi/quota"
+                c.execute("UPDATE tasks SET next_run_at=?,error=?,updated_at=? WHERE id=?",
+                          (now()+delay,reason,now(),task_id))
+                audit(c,t["workspace_id"],"task.free_quota_wait",reason,task_id)
+                return {"quota_delayed":True, "retry_after_seconds":delay, "task_id":task_id}
+        if not request_reservation(c,t["workspace_id"],0.0 if is_free_model(t["model"]) else TASK_RESERVE,task_id):
             c.execute("UPDATE tasks SET status='blocked_budget',updated_at=? WHERE id=?",(now(),task_id))
             audit(c,t["workspace_id"],"task.budget_blocked","Insufficient remaining budget",task_id)
             return {"budget_blocked":True,"task_id":task_id}
+        if is_free_model(t["model"]):
+            # Count *attempts*, not successes: 429/5xx requests may consume quota.
+            c.execute("INSERT INTO openrouter_attempts(created_at) VALUES(?)",(now(),))
         c.execute("UPDATE tasks SET status='running',attempts=attempts+1,updated_at=? WHERE id=?",(now(),task_id))
         audit(c,t["workspace_id"],"task.started",f"AI role={t['role']}, model={t['model']}",task_id)
         out=dict(t)
@@ -548,6 +587,8 @@ async def execute_task(task_id: str) -> dict[str,Any]:
     t=claim_task(task_id)
     if t.get("budget_blocked"):
         raise HTTPException(402,"Ngân sách không đủ; tác vụ chuyển blocked_budget")
+    if t.get("quota_delayed"):
+        raise HTTPException(429, "OpenRouter free đã chạm giới hạn local; tác vụ được hẹn chạy lại")
     if t.get("dependency_blocked"):
         raise HTTPException(409,t.get("reason", "Bàn giao chưa đủ điều kiện"))
     with db() as c:
@@ -597,8 +638,8 @@ async def custom_chat(inp:ChatIn):
     """Hermes3D custom runtime contract with spend cap; no pretend streaming."""
     if inp.stream:
         raise HTTPException(422,"Streaming chưa hỗ trợ")
-    if not os.getenv("DEEPSEEK_API_KEY"):
-        raise HTTPException(503,"Chưa cấu hình DEEPSEEK_API_KEY")
+    if not model_configured(MODEL):
+        raise HTTPException(503,"Chưa cấu hình API key cho model hiện tại")
     role=inp.role or inp.lane or "director"
     if role not in ROLES: role="director"
     messages=[m for m in inp.messages if m.role in {"user","assistant"}]
