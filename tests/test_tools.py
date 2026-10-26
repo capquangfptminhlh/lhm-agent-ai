@@ -173,6 +173,10 @@ class ToolHubTests(unittest.TestCase):
         self.assertEqual(bad.status_code,422)
         with core.db() as c:
             c.execute("UPDATE tasks SET status='completed',result='Bản nháp AI có nguồn' WHERE id=?",(t,))
+            import publication_gate as pg
+            c.execute("""INSERT INTO qa_reviews(qa_task_id,workspace_id,source_task_id,source_digest,role,verdict)
+                         VALUES(?,?,?,?,?,?)""",
+                      (core.new_id(),self.ws,t,pg.digest('Bản nháp AI có nguồn'),'quality','pass'))
         good=self.create(action='wordpress.create_post',p={'title':'T','content':'Bản nháp AI có nguồn','source_task_id':t},idem='provenance-good')
         self.assertEqual(good.status_code,201,good.text)
         self.assertTrue(any(x['id']==t for x in self.c.get('/workspaces/demo/tools/ready-tasks').json()['drafts']))
