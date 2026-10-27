@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from office_api import router as office_router
 from tool_hub import router as tool_hub_router
+from workflow_builder import router as workflow_builder_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
@@ -32,6 +33,7 @@ ACTIVE_WORKSPACE = os.getenv("LHM_ACTIVE_WORKSPACE", "demo")
 app = FastAPI(title="LHM Agent Operating System", version="1.1.0")
 app.include_router(office_router)
 app.include_router(tool_hub_router)
+app.include_router(workflow_builder_router)
 
 
 @app.middleware("http")
