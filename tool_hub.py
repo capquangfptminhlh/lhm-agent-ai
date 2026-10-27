@@ -237,7 +237,8 @@ def specialist_readiness():
     return {"providers":[{"name":k,"configured":specialist_configured(k),
             "connection_verified":False,"actions":[a for a,v in SPECIALIST_ACTIONS.items() if v["tool"]==k]}
             for k in ("crawl4ai","twenty","chatwoot","comfyui")],
-            "scope":"single_pilot_workspace_only"}
+            "scope":"single_pilot_workspace_only",
+            "role_actions":{role:sorted(actions) for role,actions in SPECIALIST_ROLE_ACTIONS.items()}}
 
 
 @router.get("/tools/comfyui/jobs/{prompt_id}")
