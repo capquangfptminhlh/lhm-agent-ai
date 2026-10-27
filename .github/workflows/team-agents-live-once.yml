@@ -29,6 +29,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_team_collaboration.py -v
       - name: Real OpenRouter Free multi-agent handoff - MAX FOUR live requests
         env:
+          PYTHONPATH: .
           OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
           LHM_LLM_PROVIDER: openrouter
           OPENROUTER_MODEL: openrouter/free
