@@ -11,6 +11,7 @@ AI does not receive bearer credentials or arbitrary HTTP/JS execution powers.
 """
 from __future__ import annotations
 
+import json
 import ipaddress
 import os
 import re
@@ -94,6 +95,20 @@ def _url_allowed(target: str) -> bool:
 def validate_payload(action: str, p: dict[str,Any]) -> None:
     if action not in ACTIONS:
         raise HTTPException(422,"Agent tool chưa được phép sử dụng")
+    if not isinstance(p,dict):
+        raise HTTPException(422,"Payload phải là JSON object")
+    permitted={
+        "crawl4ai.crawl":{"url"},
+        "twenty.create_person":{"first_name","last_name","email","data_origin_confirmed"},
+        "chatwoot.create_contact":{"name","email","data_origin_confirmed"},
+        "comfyui.generate_image":{"prompt","negative_prompt","width","height","steps","seed"},
+    }[action]
+    # Reject unexpected user-provided fields, including arbitrary GPU graphs,
+    # scripting/hook options, custom headers, and unapproved provider settings.
+    if set(p)-permitted:
+        raise HTTPException(422,"Payload chứa trường ngoài danh sách được cấp phép")
+    if len(json.dumps(p,ensure_ascii=False))>6500:
+        raise HTTPException(422,"Payload vượt giới hạn kích thước")
     if action=="crawl4ai.crawl":
         url=_text(p,"url",2000)
         try:
