@@ -66,12 +66,17 @@ function status(x){return '<span class="status '+esc(x)+'">'+esc(x)+'</span>'}
 function bytes(x){return esc(JSON.stringify(x,null,2))}
 async function initialize(){
  try{const [workspaces,catalog]=await Promise.all([api("/workspaces"),api("/catalog")]);
- const w=workspaces.workspaces||[];ws=w.some(x=>x.id==="demo")?"demo":w[0]?.id;
+ const w=workspaces.workspaces||[],params=new URLSearchParams(location.search);
+ const preferred=params.get("workspace");
+ ws=w.some(x=>x.id===preferred)?preferred:(w.some(x=>x.id==="demo")?"demo":w[0]?.id);
  $("workspace").innerHTML=w.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join("");
  $("workspace").value=ws;
  const roles=catalog.roles||{};
  $("role").innerHTML=Object.entries(roles).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.name||k)+'</option>').join("");
+ const requestedRole=params.get("role");
+ if(Object.prototype.hasOwnProperty.call(roles,requestedRole))$("role").value=requestedRole;
  await loadRuns();
+ if(requestedRole&&runs.some(r=>r.role===requestedRole)){selected=runs.find(r=>r.role===requestedRole).id;renderSelected();}
  }catch(e){report("Không kết nối backend: "+e.message,true)}
 }
 $("workspace").onchange=async()=>{ws=$("workspace").value;selected=null;await loadRuns()};
