@@ -109,7 +109,7 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertEqual(task["status"], "queued")
         self.assertEqual(task["model"], "openrouter/free")
         self.assertIn("autotax", task["context"])
-        self.assertIn("Kiểm tra CI", task["instruction"])
+        self.assertIn("Chẩn đoán CI", task["instruction"])
 
 
 if __name__ == "__main__":
