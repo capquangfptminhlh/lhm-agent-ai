@@ -49,12 +49,22 @@ def store_redacted_png(run_id: str, step_id: str, phase: str,
     if not (1 <= w <= 8000 and 1 <= h <= 8000):
         raise HTTPException(422, "Invalid screenshot dimensions")
     db=db_path or os.environ.get("LHM_DB_PATH", "lhm.sqlite3")
-    root=Path(db).resolve().parent / "evidence"
+    base=Path(db).resolve().parent
+    root=base/"evidence"
+    # Never follow user-controlled junctions/symlinks when writing screenshots.
+    if root.is_symlink():
+        raise HTTPException(403,"Evidence root is a symlink")
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    os.chmod(root, 0o700)
+    if root.is_symlink() or root.resolve().parent!=base:
+        raise HTTPException(403,"Evidence root is not private")
+    os.chmod(root,0o700)
     directory=root/_name(run_id)
-    directory.mkdir(exist_ok=True, mode=0o700)
-    os.chmod(directory, 0o700)
+    if directory.is_symlink():
+        raise HTTPException(403,"Session evidence folder is a symlink")
+    directory.mkdir(exist_ok=True,mode=0o700)
+    if directory.is_symlink() or directory.resolve().parent!=root.resolve():
+        raise HTTPException(403,"Unsafe evidence path")
+    os.chmod(directory,0o700)
     target=directory / f"{_name(step_id)}-{phase}.png"
     # Exclusive open: never replace an earlier audit record after crash/retry.
     try:
