@@ -334,7 +334,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
             audit(c,run["workspace_id"],"computer.tool_completed",f"{tool} executed in sidecar sandbox",rid)
         return {"status":"queued","id":rid,"last_tool":tool}
     except Exception as exc:
-        msg=exc.detail if isinstance(exc,HTTPException) else "Computer model/runner error"
+        msg=exc.detail if isinstance(exc,HTTPException) else ("Computer model/runner error: "+type(exc).__name__)
         # Ambiguous remote outcome after a side-effecting call: do not retry automatically.
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
