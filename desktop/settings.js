@@ -6,6 +6,8 @@ async function load(){
   $("provider").value=x.provider;
   $("allowedApps").value=x.allowedApps||"";
   $("allowedHosts").value=x.allowedHosts||"";
+  $("visionEnabled").checked=x.visionEnabled===true;
+  $("visionModel").value=x.visionModel||"";
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("deepStatus").textContent=x.hasDeepseekKey?"(đã lưu)": "(chưa có)";
   if(!x.secureStorage)$("status").textContent="Windows secureStorage không khả dụng; không thể lưu API key.";
@@ -17,6 +19,8 @@ $("save").onclick=async()=>{
    await window.lhmSettings.save({
     provider:$("provider").value,allowedApps:$("allowedApps").value,
     allowedHosts:$("allowedHosts").value,
+    visionEnabled:$("visionEnabled").checked,
+    visionModel:$("visionModel").value,
     openrouterKey:$("openKey").value,deepseekKey:$("deepKey").value,
     clearOpenrouter:$("clearOpenrouter").checked,
     clearDeepseek:$("clearDeepseek").checked
