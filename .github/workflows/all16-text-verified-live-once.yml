@@ -1,0 +1,43 @@
+name: All 16 Agent Roles Verified Text Free Live (one-shot)
+
+on:
+  push:
+    branches: [test/all16-verified-free-text-live-20261027]
+    paths:
+      - '.github/workflows/all16-text-verified-live-once.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  all16-verified-free:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install backend
+        run: python -m pip install -r requirements.txt
+      - name: Guardrail and capability offline tests
+        run: python -m unittest discover -s tests -p test_free_chat_reliability.py -v
+      - name: All 16 real Free Agent roles — one each, no paid fallback
+        env:
+          PYTHONPATH: .
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+          LHM_LLM_PROVIDER: openrouter
+          OPENROUTER_MODEL: openrouter/free
+          LHM_OPENROUTER_FREE_ONLY: '1'
+          DEEPSEEK_API_KEY: ''
+          LHM_ALLOW_PRO: '0'
+        run: python scripts/live_all_16_verified_text.py
+      - name: Preserve no-secret role-level results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all16-verified-text-free-live-proof
+          path: all16-agent-live-free-result.json
+          if-no-files-found: ignore
+          retention-days: 7
