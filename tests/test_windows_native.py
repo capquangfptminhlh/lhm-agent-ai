@@ -5,7 +5,9 @@ machine. GitHub CI runs fail-closed tests, not fake successful GUI actions.
 """
 from __future__ import annotations
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -26,10 +28,15 @@ class WindowsNativeTests(unittest.TestCase):
             "LHM_COMPUTER_HOME":"/tmp/lhm-test"
         })
         self.env.start()
+        self.tmp=tempfile.TemporaryDirectory(prefix="lhm-pause-test-")
+        self.root_patch=patch.object(exe,"ROOT",Path(self.tmp.name))
+        self.root_patch.start()
         exe.PAUSED=False
 
     def tearDown(self):
         exe.PAUSED=False
+        self.root_patch.stop()
+        self.tmp.cleanup()
         self.env.stop()
 
     def _post(self,tool,args,auth=True):
@@ -76,6 +83,24 @@ class WindowsNativeTests(unittest.TestCase):
         self.assertEqual(self.client.post("/v1/pause",headers=self.auth,
                       json={"paused":False}).status_code,200)
         self.assertFalse(self.client.get("/health",headers=self.auth).json()["paused"])
+
+    def test_emergency_stop_persists_restart_and_corruption_stays_paused(self):
+        paused=self.client.post("/v1/pause",headers=self.auth,json={"paused":True})
+        self.assertEqual(paused.status_code,200,paused.text)
+        self.assertTrue(exe._pause_file().is_file())
+        # Simulate service restart (the volatile in-memory flag is gone).
+        exe.PAUSED=False
+        self.assertTrue(self.client.get("/health",headers=self.auth).json()["paused"])
+        self.assertEqual(self._post("write_file",{"path":"blocked.txt","content":"x"}).status_code,423)
+        # Invalid stop state is fail-closed, never interpreted as resumed.
+        exe._pause_file().write_text("not-json",encoding="utf-8")
+        self.assertTrue(self.client.get("/health",headers=self.auth).json()["paused"])
+        self.assertEqual(self._post("windows_click",{"hwnd":1,"x":1,"y":1}).status_code,423)
+        resumed=self.client.post("/v1/pause",headers=self.auth,json={"paused":False})
+        self.assertEqual(resumed.status_code,200,resumed.text)
+        exe.PAUSED=False
+        self.assertFalse(self.client.get("/health",headers=self.auth).json()["paused"])
+
 
     def test_safe_shortcuts_never_allow_os_launcher(self):
         # ALT+TAB / ALT+SHIFT+TAB were deliberately added for multi-app work
