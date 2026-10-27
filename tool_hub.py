@@ -15,7 +15,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -116,6 +116,75 @@ async def _postiz_request(method: str, endpoint: str, data: Any = None) -> Any:
                       json=data if method in {"POST", "PUT"} else None)
         response.raise_for_status()
         return response.json()
+
+
+MAX_POSTIZ_UPLOAD_BYTES = 25 * 1024 * 1024
+POSTIZ_MEDIA = {
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/png": {".png"},
+    "image/webp": {".webp"},
+    "image/gif": {".gif"},
+    "video/mp4": {".mp4"},
+    "video/quicktime": {".mov"},
+}
+
+
+def _media_signature_valid(data: bytes, media_type: str) -> bool:
+    if media_type == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    if media_type == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if media_type == "image/webp":
+        return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    if media_type == "image/gif":
+        return data.startswith((b"GIF87a", b"GIF89a"))
+    if media_type in {"video/mp4", "video/quicktime"}:
+        return len(data) >= 12 and data[4:8] == b"ftyp"
+    return False
+
+
+@router.post("/tools/postiz/media")
+async def upload_postiz_media(file: UploadFile = File(...), workspace_id: str = Form("demo")):
+    """Upload a local file directly to a configured Postiz pilot account.
+
+    No arbitrary upload URL is accepted (to avoid SSRF); no media is published.
+    The provider's ID and HTTPS path can later be attached to a reviewed post.
+    """
+    _pilot_ws(workspace_id)
+    if not configured("postiz"):
+        raise HTTPException(409, "Chưa kết nối Postiz API key")
+    filename = Path(file.filename or "").name
+    media_type = str(file.content_type or "").lower().split(";", 1)[0].strip()
+    suffix = Path(filename).suffix.lower()
+    if not filename or media_type not in POSTIZ_MEDIA or suffix not in POSTIZ_MEDIA[media_type]:
+        raise HTTPException(422, "Chỉ hỗ trợ JPEG, PNG, WEBP, GIF, MP4, MOV đúng định dạng")
+    data = await file.read(MAX_POSTIZ_UPLOAD_BYTES + 1)
+    if len(data) == 0 or len(data) > MAX_POSTIZ_UPLOAD_BYTES:
+        raise HTTPException(413, "Media rỗng hoặc quá 25 MB; hãy nén file trước")
+    if not _media_signature_valid(data, media_type):
+        raise HTTPException(422, "Dữ liệu file không khớp định dạng ảnh/video khai báo")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120, connect=10), follow_redirects=False) as client:
+            resp = await client.post(_postiz_base() + "/upload",
+                headers={"Authorization": os.environ["LHM_POSTIZ_API_KEY"].strip()},
+                files={"file": (filename, data, media_type)})
+        resp.raise_for_status()
+        result = resp.json()
+        if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not isinstance(result.get("path"), str):
+            raise ValueError("Postiz không trả id/path")
+        if urlparse(result["path"]).scheme != "https":
+            raise ValueError("Postiz không trả HTTPS media URL")
+        return {"id": result["id"], "path": result["path"],
+                "bytes": len(data), "media_type":media_type,
+                "confirmation":"uploaded_to_postiz_not_published"}
+    except httpx.HTTPStatusError as err:
+        code = err.response.status_code
+        raise HTTPException(429 if code == 429 else 502,
+                            f"Postiz upload lỗi HTTP {code}; không lưu media ID giả") from err
+    except (httpx.RequestError, ValueError, TypeError, KeyError) as err:
+        raise HTTPException(502, "Không xác minh được media trên Postiz; thử lại sau khi kiểm tra tài khoản") from err
+    finally:
+        await file.close()
 
 
 @router.get("/tool-hub")
