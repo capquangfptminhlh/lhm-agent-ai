@@ -1,3 +1,21 @@
+## OpenRouter Free — kiểm tra API ngay trên Electron và GitHub
+
+Trong **LHM Robot Desktop → LHM Robot → Thiết lập Robot** anh lưu
+OpenRouter API key, sau đó bấm **Thử gọi OpenRouter Free**. Một câu
+hỏi mẫu được gửi tới `openrouter/free` để xác minh kết nối thực;
+giao diện hiển thị model, câu trả lời, token và phí do API báo cáo.
+Không đưa API key qua chat hoặc renderer, không fallback model trả phí.
+
+GitHub CI tự động chạy bài test mô phỏng cho Free API và lỗi quota/khóa.
+Muốn test **OpenRouter thật trên GitHub**, lưu một key kiểm thử riêng
+vào **repository secret `OPENROUTER_TEST_API_KEY`**, sau đó kích hoạt
+thủ công workflow `OpenRouter Free API live smoke (manual only)`.
+Nếu chưa có secret hoặc chưa kích hoạt, không có live API test.
+
+Chi tiết: **[OPENROUTER_FREE_TEST.md](OPENROUTER_FREE_TEST.md)**.
+
+---
+
 ## Robot Vision + Sandbox + AI nhân viên song song
 
 Trong phần mềm Electron **LHM Robot → Thiết lập Robot**, anh có thể
