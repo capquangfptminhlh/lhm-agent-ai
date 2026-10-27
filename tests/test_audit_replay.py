@@ -8,6 +8,8 @@ import tempfile
 import unittest
 import zipfile
 import zlib
+import os
+from unittest.mock import patch
 from pathlib import Path
 
 from audit_replay import export_session
@@ -114,6 +116,19 @@ class AuditReplayTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     export_session(self.db,invalid,self.root/"other.zip")
+
+    def test_http_download_requires_auth_and_explicit_opt_in(self):
+        from fastapi.testclient import TestClient
+        import app
+        client=TestClient(app.app)
+        url="/computer/runs/run_1/evidence/download"
+        with patch.dict(os.environ,{"LHM_ADMIN_TOKEN":"owner-local-token",
+                                    "LHM_EVIDENCE_CAPTURE_ENABLED":"0"}):
+            missing_auth=client.post(url)
+            self.assertEqual(missing_auth.status_code,401)
+            disabled=client.post(url,headers={
+                "Authorization":"Bearer owner-local-token"})
+            self.assertEqual(disabled.status_code,403)
 
     def test_missing_session_and_nonexistent_db(self):
         with self.assertRaises(ValueError):
