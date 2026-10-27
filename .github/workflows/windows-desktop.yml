@@ -16,6 +16,12 @@ on:
       - 'openrouter_user_allowlist.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
+      - 'scripts/windows_gui_acceptance.py'
+      - 'scripts/smoke_computer_browser.py'
+      - 'evidence_artifacts.py'
+      - 'audit_replay.py'
+      - 'tests/test_m2_evidence.py'
+      - 'tests/test_audit_replay.py'
       - '.github/workflows/windows-desktop.yml'
   push:
     branches: [main]
@@ -126,6 +132,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 8
         run: python scripts/windows_electron_gui_e2e.py
+
+      - name: Real Windows app actions T1-T5 (Notepad, Alt+Tab, drag, target-loss)
+        shell: pwsh
+        timeout-minutes: 8
+        run: python scripts/windows_gui_acceptance.py
 
       - name: Upload actual Electron GUI screenshot
         if: always()
