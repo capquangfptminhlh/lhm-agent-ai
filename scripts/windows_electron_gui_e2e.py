@@ -25,10 +25,15 @@ DEST = ROOT / "windows-electron-gui-smoke.png"
 def main():
     assert os.name == "nt", "Electron GUI acceptance requires Windows"
     assert DESKTOP.exists(), f"Real packaged desktop app missing: {DESKTOP}"
-    with tempfile.TemporaryDirectory(prefix="lhm-electron-real-gui-") as folder:
+    with tempfile.TemporaryDirectory(prefix="lhm-electron-real-gui-", ignore_cleanup_errors=True) as folder:
         profile = Path(folder)
         env = os.environ.copy()
         env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "1"
+        # Point the app's writable Windows Roaming profile to an isolated CI dir.
+        env["APPDATA"] = str(profile / "AppData" / "Roaming")
+        env["LOCALAPPDATA"] = str(profile / "AppData" / "Local")
+        Path(env["APPDATA"]).mkdir(parents=True, exist_ok=True)
+        Path(env["LOCALAPPDATA"]).mkdir(parents=True, exist_ok=True)
         env["OPENROUTER_API_KEY"] = ""
         env["DEEPSEEK_API_KEY"] = ""
         env.pop("ELECTRON_RUN_AS_NODE", None)
@@ -68,7 +73,8 @@ def main():
                             page = pages[0]
                             break
                         time.sleep(0.75)
-                    assert page is not None, "Electron main window did not load local backend"
+                    assert page is not None, ("Electron main window did not load local backend; "
+                                                  "CDP pages=" + repr([p.url for c in contexts for p in c.pages]))
                     console_errors = []
                     page.on("pageerror", lambda err: console_errors.append(str(err)[:180]))
                     paths = ["/office3d", "/team-chat", "/computer", "/workflow-builder",
@@ -91,6 +97,13 @@ def main():
                     browser.close()
             except BaseException:
                 logfile.flush()
+                for base in [profile / "AppData" / "Roaming", 
+                             Path(os.environ.get("APPDATA", ""))]:
+                    logs = base / "LHM Robot Desktop" / "logs"
+                    for path in sorted(logs.glob("*.log")) if logs.is_dir() else []:
+                        print(f"--- {path.name} tail ---\n"
+                              + path.read_text(encoding="utf-8", errors="replace")[-2500:],
+                              flush=True)
                 print("--- Electron stdout/stderr tail ---\n"
                       + (profile / "electron.log").read_text(encoding="utf-8",
                                                              errors="replace")[-3500:],
