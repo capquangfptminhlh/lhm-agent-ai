@@ -38,7 +38,33 @@ $("save").onclick=async()=>{
  }catch(e){$("status").textContent=e.message;$("status").classList.add("error")}
  finally{$("save").disabled=false}
 };
-load();
+async function checkReadiness(){
+ const area=$("readiness"),refresh=$("refreshReadiness");
+ area.textContent="Đang kiểm tra...";
+ refresh.disabled=true;
+ try{
+   const state=await window.lhmSettings.readiness();
+   area.textContent="Phiên bản: "+state.version+"\n"+
+     state.services.map(x=>(x.ok?"✓ ":"✕ ")+x.label+": "+x.detail).join("\n");
+   area.style.color=state.backendReady?"#365d78":"#b14353";
+ }catch(error){
+   area.textContent="Không đọc được trạng thái dịch vụ: "+(error?.message||"lỗi không xác định");
+   area.style.color="#b14353";
+ }finally{refresh.disabled=false}
+}
+$("refreshReadiness").onclick=checkReadiness;
+$("quickStart").onclick=()=>{
+ if(!$("openKey").value.trim() && $("openStatus").textContent.includes("chưa có")){
+   $("status").textContent="Nhập OpenRouter API key ở trên để Agent có thể trả lời.";
+   $("status").classList.add("error");
+   $("openKey").focus();
+   return;
+ }
+ // Explicit click grants ONLY three demo apps; any unrelated app stays denied.
+ if(!$("allowedApps").value.trim()) $("allowedApps").value="notepad.exe, explorer.exe, calc.exe";
+ $("save").click();
+};
+load().then(checkReadiness);
 
 $("openTest").onclick=async()=>{
   const button=$("openTest"),panel=$("openTestResult");

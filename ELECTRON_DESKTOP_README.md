@@ -21,19 +21,17 @@ native Windows desktop controller. No cloud computer is required.
 - Chrome/Edge browser automation is optional; Windows native automation can
   operate an ordinary allowed application without a website API.
 
-## How to install and run
-1. Open the Windows Electron Robot Desktop workflow in GitHub Actions.
-2. Choose a successful workflow run and download its
-   LHM-Robot-Desktop-Windows-x64-Installer artifact.
-3. Install the unsigned pilot setup using a normal Windows user account.
-4. Launch LHM Robot Desktop from Start Menu; Electron launches the local
-   FastAPI server, Agent worker and native Windows runner.
-5. Use LHM Robot > Thiết lập Robot to enter OpenRouter or DeepSeek key,
-   allowed apps (example: notepad.exe) and browser domains.
-6. Save, restart the application, then open Agent Computer.
-7. Choose a role, give an objective and inspect actions. Windows mouse/keyboard
-   actions require human approval. The Windows preview panel can list
-   allowlisted app windows and capture their actual pixels.
+## Cài đặt và dùng nhanh — bản 0.2.0
+
+1. Tải đúng installer `LHM-Robot-Desktop-Setup-0.2.0-x64.exe` từ Windows GitHub Actions của commit mới, không dùng lại installer `0.1.0`.
+2. Cài đặt và mở LHM Robot Desktop. Lần đầu, cửa sổ **Bắt đầu nhanh** tự mở; chỉ cần điền OpenRouter API key riêng của mình (được mã hoá bằng Windows secureStorage).
+3. Bấm **Lưu & bắt đầu — cho phép 3 ứng dụng thử nghiệm**. Thao tác này là sự đồng ý cho phép `notepad.exe`, `explorer.exe`, `calc.exe`; không tự cấp quyền bất kỳ ứng dụng khác hoặc website nào.
+4. Chọn **Khởi động lại** để backend/Worker/Controller nhận cấu hình mới. Trang chính vào **Máy tính Agent**. Chọn việc thử trong Notepad, theo dõi từng bước và duyệt các thao tác thay đổi máy.
+5. Nếu tác vụ không chạy, mở **LHM Robot → Thiết lập Robot → Trạng thái phần mềm → Kiểm tra lại**. Mục nào có dấu **✕** sẽ cho biết: Backend 7770, Windows Controller 7782, Worker, OpenRouter key hay quyền ứng dụng/website.
+6. Để kiểm chứng API, bấm **Thử gọi OpenRouter Free**. Nếu API báo 401/429/402 hoặc không có model Free khả dụng, robot **dừng và báo lỗi**, không tự chuyển model trả phí.
+7. Các tính năng nâng cao (Vision, Tin cậy, Docker, thêm website/app) được thu gọn, không bắt buộc cho thử nghiệm Notepad. Website ngoài vẫn phải được phê duyệt theo tên miền trong phần nâng cao. Chế độ mặc định là Giám sát.
+
+**Quan trọng:** Không tồn tại zero-setup AI hoàn toàn khi chưa có API key/tài khoản cấp quyền. Phiên bản này giảm cấu hình xuống một key và một thao tác đồng ý dùng app mẫu; không tuyên bố đạt GrokBot Parity+ hay xử lý được mọi phần mềm tự động. GitHub Windows CI chưa thay thế nghiệm thu trực tiếp trên máy người dùng.
 
 No Docker Desktop is required for native GUI automation in this mode.
 However, do NOT run model-generated Python or arbitrary terminal commands on
