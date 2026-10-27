@@ -50,7 +50,8 @@ function unwrapSecret(encoded) {
 }
 function saveSettings(input) {
   const current = readRawSettings();
-  const provider = input.provider === "deepseek" ? "deepseek" : "openrouter";
+  if (input.provider && input.provider !== "openrouter") throw new Error("Chỉ hỗ trợ OpenRouter Free.");
+  const provider = "openrouter";
   const allowedHosts = String(input.allowedHosts || "").toLowerCase()
       .split(",").map(x=>x.trim()).filter(Boolean);
   const allowedApps = String(input.allowedApps || "").toLowerCase()
@@ -78,11 +79,11 @@ function saveSettings(input) {
     sandboxEnabled:input.sandboxEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
-    deepseekKey:current.deepseekKey || ""
+    deepseekKey:""
   };
   if ((input.clearOpenrouter === true)) data.openrouterKey="";
   if ((input.clearDeepseek === true)) data.deepseekKey="";
-  for (const [key, field] of [["openrouterKey","openrouterKey"],["deepseekKey","deepseekKey"]]) {
+  for (const [key, field] of [["openrouterKey","openrouterKey"]]) {
     const raw=input[field];
     if (isSecureSecret(raw)) {
       if (raw.length > 600 || !safeStorage.isEncryptionAvailable()) {
@@ -100,14 +101,14 @@ function saveSettings(input) {
 function settingsForUI() {
   const c=readRawSettings();
   return {
-    provider:c.provider||"openrouter",
+    provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
-    hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:!!c.deepseekKey,
+    hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
   };
 }
@@ -130,9 +131,13 @@ function envForRuntime() {
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
     LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
-    LHM_LLM_PROVIDER:c.provider==="deepseek"?"deepseek":"openrouter",
+    LHM_LLM_PROVIDER:"openrouter",
+    OPENROUTER_MODEL:"openrouter/free",
+    LHM_OPENROUTER_FREE_ONLY:"1",
+    LHM_OPENROUTER_FREE_AUTO_SELECT:"1",
+    LHM_ALLOW_PRO:"0",
     OPENROUTER_API_KEY:unwrapSecret(c.openrouterKey),
-    DEEPSEEK_API_KEY:unwrapSecret(c.deepseekKey)
+    DEEPSEEK_API_KEY:""
   };
 }
 function nativeEnv(runtimeEnv) {
