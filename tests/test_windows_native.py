@@ -47,7 +47,7 @@ class WindowsNativeTests(unittest.TestCase):
         with patch.dict(os.environ,{
             "LHM_DESKTOP_ALLOWED_APPS":"notepad.exe, fake.exe, powershell,calc.exe,*.exe,cmd.exe,notepad.exe"
         }):
-            self.assertEqual(wn._allowlist(),{"notepad.exe","fake.exe","calc.exe","cmd.exe"})
+            self.assertEqual(wn._allowlist(),{"notepad.exe","fake.exe","calc.exe"})
         with patch.dict(os.environ,{"LHM_DESKTOP_ALLOWED_APPS":" " }):
             self.assertEqual(wn._allowlist(),set())
 
