@@ -184,8 +184,10 @@ class ToolHubTests(unittest.TestCase):
         self.assertGreaterEqual(summary['counts']['awaiting_approval'],1)
 
     def test_all_actions_are_approval_only(self):
-        for action in hub.TOOL_ACTIONS:
-            self.assertTrue(hub.TOOL_ACTIONS[action]['writes_external'])
-            self.assertTrue(hub.TOOL_ACTIONS[action]['approval_required'])
+        # Read-only crawling still requires approval because it sends traffic
+        # to third-party hosts. It must NOT inherit CRM/publishing write powers.
+        for action, meta in hub.TOOL_ACTIONS.items():
+            self.assertTrue(meta['approval_required'], action)
+            self.assertEqual(meta['writes_external'], action != 'crawl4ai.crawl', action)
 
 if __name__=='__main__': unittest.main()
