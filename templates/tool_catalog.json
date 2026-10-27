@@ -47,9 +47,9 @@
       "repository": "https://github.com/twentyhq/twenty",
       "license": "AGPL-3.0/core; some commercial",
       "capability": "Quản lý khách, cơ hội, pipeline, CRM",
-      "status": "recommended",
+      "status": "adapter_built",
       "priority": "P1",
-      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+      "notes": "Adapter HTTP và phê duyệt đã tích hợp trong LHM Agent OS. Phần mềm riêng chưa cài; cần endpoint, token và nghiệm thu live."
     },
     {
       "id": "chatwoot",
@@ -57,9 +57,9 @@
       "repository": "https://github.com/chatwoot/chatwoot",
       "license": "MIT core",
       "capability": "Hộp thư hội thoại, hỗ trợ khách đa kênh",
-      "status": "recommended",
+      "status": "adapter_built",
       "priority": "P1",
-      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+      "notes": "Adapter HTTP và phê duyệt đã tích hợp trong LHM Agent OS. Phần mềm riêng chưa cài; cần endpoint, token và nghiệm thu live."
     },
     {
       "id": "crawl4ai",
@@ -67,9 +67,9 @@
       "repository": "https://github.com/unclecode/crawl4ai",
       "license": "Apache-2.0",
       "capability": "Thu thập website công khai hợp lệ, đọc/chuẩn hóa dữ liệu",
-      "status": "recommended",
+      "status": "adapter_built",
       "priority": "P1",
-      "notes": "Không đồng nghĩa đã cài; cần cấu hình/kết nối và test thực tế."
+      "notes": "Adapter HTTP và phê duyệt đã tích hợp trong LHM Agent OS. Phần mềm riêng chưa cài; cần endpoint, token và nghiệm thu live."
     },
     {
       "id": "mautic",
@@ -127,9 +127,9 @@
       "repository": "https://github.com/comfyanonymous/ComfyUI",
       "license": "GPL-3.0",
       "capability": "Tạo ảnh, workflow sáng tạo; cần GPU/model",
-      "status": "recommended",
+      "status": "adapter_built",
       "priority": "P2",
-      "notes": "Kiểm tra giấy phép của từng phiên bản/tệp và chính sách API trước phát hành SaaS."
+      "notes": "Adapter HTTP và phê duyệt đã tích hợp trong LHM Agent OS. Phần mềm riêng chưa cài; cần endpoint, token và nghiệm thu live."
     },
     {
       "id": "calcom",

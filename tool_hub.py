@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -21,6 +22,9 @@ from pydantic import BaseModel, Field
 
 from core import ROLES, audit, db, new_id, now, workspace
 from publication_gate import approval_digest, assert_source_approved, prepare_reviews
+from agent_tool_providers import (ACTIONS as SPECIALIST_ACTIONS, ROLE_ACTIONS as SPECIALIST_ROLE_ACTIONS,
+    configured as specialist_configured, validate_payload as specialist_validate,
+    dispatch as specialist_dispatch, comfyui_status as specialist_comfyui_status)
 
 router = APIRouter(tags=["Tool Hub"])
 CATALOG = json.loads((Path(__file__).parent / "templates" / "tool_catalog.json").read_text(encoding="utf-8"))
@@ -28,6 +32,7 @@ TOOL_ACTIONS = {
     "postiz.create_post": {"tool": "postiz", "writes_external": True, "approval_required": True},
     "wordpress.create_post": {"tool": "wordpress", "writes_external": True, "approval_required": True},
     "activepieces.trigger": {"tool": "activepieces", "writes_external": True, "approval_required": True},
+    **SPECIALIST_ACTIONS,
 }
 
 
@@ -48,6 +53,12 @@ def prepare_db() -> None:
           UNIQUE(workspace_id, idempotency_key)
         );
         CREATE INDEX IF NOT EXISTS ix_tool_jobs_workspace ON tool_jobs(workspace_id,created_at);
+        CREATE TABLE IF NOT EXISTS specialist_handoffs (
+          tool_job_id TEXT PRIMARY KEY REFERENCES tool_jobs(id),
+          workspace_id TEXT NOT NULL, source_task_id TEXT NOT NULL,
+          role TEXT NOT NULL, source_digest TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
         """)
         columns = {r["name"] for r in c.execute("PRAGMA table_info(tool_jobs)").fetchall()}
         if "approval_digest" not in columns:
@@ -73,7 +84,7 @@ def configured(tool: str) -> bool:
         return all(os.getenv(k) for k in ("LHM_WP_URL", "LHM_WP_USER", "LHM_WP_APP_PASSWORD"))
     if tool == "activepieces":
         return bool(os.getenv("LHM_ACTIVEPIECES_WEBHOOK_URL"))
-    return False
+    return specialist_configured(tool)
 
 
 def _sanitize_response(value: Any) -> Any:
@@ -187,6 +198,12 @@ async def upload_postiz_media(file: UploadFile = File(...), workspace_id: str = 
         await file.close()
 
 
+@router.get("/agent-tools")
+def specialist_tools_page():
+    return FileResponse(Path(__file__).parent / "static" / "agent_tools.html",
+                        media_type="text/html")
+
+
 @router.get("/tool-hub")
 def tool_hub_page():
     return FileResponse(Path(__file__).parent / "static" / "tool_hub.html", media_type="text/html")
@@ -214,6 +231,40 @@ def ready_agent_drafts(ws: str):
     return {"drafts":[{"id":r["id"],"role":r["role"],"instruction":r["instruction"],"text":r["result"][:15000],"updated_at":r["updated_at"]} for r in rows]}
 
 
+@router.get("/tools/specialists/readiness")
+def specialist_readiness():
+    """Configuration presence only; does not claim provider authentication passed."""
+    return {"providers":[{"name":k,"configured":specialist_configured(k),
+            "connection_verified":False,"actions":[a for a,v in SPECIALIST_ACTIONS.items() if v["tool"]==k]}
+            for k in ("crawl4ai","twenty","chatwoot","comfyui")],
+            "scope":"single_pilot_workspace_only",
+            "role_actions":{role:sorted(actions) for role,actions in SPECIALIST_ROLE_ACTIONS.items()}}
+
+
+@router.get("/tools/comfyui/jobs/{prompt_id}")
+async def check_comfyui_image(prompt_id: str, workspace_id: str="demo"):
+    _pilot_ws(workspace_id)
+    # Only inspect jobs that were actually accepted for this pilot workspace.
+    with db() as c:
+        jobs=c.execute("SELECT result_json FROM tool_jobs WHERE workspace_id=? AND action='comfyui.generate_image' AND result_json IS NOT NULL",
+                      (workspace_id,)).fetchall()
+    known=False
+    for job in jobs:
+        try:
+            receipt=json.loads(job["result_json"])
+            if receipt.get("prompt_id")==prompt_id:
+                known=True
+                break
+        except (json.JSONDecodeError,AttributeError):
+            pass
+    if not known:
+        raise HTTPException(404,"ComfyUI prompt_id không thuộc dữ liệu đã ghi nhận")
+    try:
+        return await specialist_comfyui_status(prompt_id)
+    except httpx.HTTPError as err:
+        raise HTTPException(502,_remote_error(err)) from err
+
+
 @router.get("/tools/postiz/channels")
 async def postiz_channels(workspace_id: str = "demo"):
     _pilot_ws(workspace_id)
@@ -230,7 +281,9 @@ async def postiz_channels(workspace_id: str = "demo"):
 
 
 class ToolJobIn(BaseModel):
-    action: Literal["postiz.create_post", "wordpress.create_post", "activepieces.trigger"]
+    action: Literal["postiz.create_post", "wordpress.create_post", "activepieces.trigger",
+                    "crawl4ai.crawl", "twenty.create_person",
+                    "chatwoot.create_contact", "comfyui.generate_image"]
     payload: dict[str, Any]
     idempotency_key: str = Field(min_length=6, max_length=120)
 
@@ -308,6 +361,8 @@ def _assert_payload(action: str, p: dict[str, Any]) -> None:
             raise HTTPException(422, "Thiếu data dict")
         if len(json.dumps(p["data"], ensure_ascii=False)) > 15000:
             raise HTTPException(422, "Payload workflow quá lớn")
+    elif action in SPECIALIST_ACTIONS:
+        specialist_validate(action,p)
     else:
         raise HTTPException(422, "Tool chưa được cấp phép")
 
@@ -318,6 +373,60 @@ def _job_view(row) -> dict[str, Any]:
     raw = obj.pop("result_json")
     obj["receipt"] = json.loads(raw) if raw else None
     return obj
+
+
+class SpecialistHandoffIn(BaseModel):
+    """Bind a completed role-specific Agent task to an approved specialist action."""
+    source_task_id: str = Field(min_length=10, max_length=80)
+    action: Literal["crawl4ai.crawl","twenty.create_person",
+                    "chatwoot.create_contact","comfyui.generate_image"]
+    payload: dict[str,Any]
+    idempotency_key: str = Field(min_length=6, max_length=120)
+
+
+def _assert_specialist_origin(c, job_id: str, workspace_id: str) -> None:
+    handoff=c.execute("SELECT * FROM specialist_handoffs WHERE tool_job_id=? AND workspace_id=?",
+                      (job_id,workspace_id)).fetchone()
+    if handoff is None:
+        return
+    source=c.execute("SELECT role,status,result FROM tasks WHERE id=? AND workspace_id=?",
+                     (handoff["source_task_id"],workspace_id)).fetchone()
+    if not source or source["status"]!="completed" or source["role"]!=handoff["role"]:
+        raise HTTPException(409,"Nhiệm vụ nguồn Agent không còn hợp lệ")
+    expected=hashlib.sha256(str(source["result"] or "").encode("utf-8")).hexdigest()
+    if expected!=handoff["source_digest"]:
+        raise HTTPException(409,"Kết quả Agent thay đổi; cần phê duyệt lại yêu cầu tool")
+
+
+@router.post("/workspaces/{ws}/tool-jobs/from-specialist-agent", status_code=201)
+def create_specialist_from_agent(ws: str, inp: SpecialistHandoffIn):
+    _pilot_ws(ws)
+    with db() as c:
+        source=c.execute("SELECT role,status,result FROM tasks WHERE id=? AND workspace_id=?",
+                         (inp.source_task_id,ws)).fetchone()
+        if not source or source["status"]!="completed" or not source["result"]:
+            raise HTTPException(409,"Agent chưa hoàn thành nhiệm vụ có kết quả")
+        if inp.action not in SPECIALIST_ROLE_ACTIONS.get(source["role"],set()):
+            raise HTTPException(403,"Agent không được giao quyền sử dụng tool này")
+        origin_digest=hashlib.sha256(str(source["result"]).encode("utf-8")).hexdigest()
+    specialist_validate(inp.action,inp.payload)
+    job=create_tool_job(ws,ToolJobIn(action=inp.action,payload=inp.payload,
+                                       idempotency_key=inp.idempotency_key))
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        existing=c.execute("SELECT * FROM specialist_handoffs WHERE tool_job_id=?",
+                           (job["id"],)).fetchone()
+        if existing and (existing["source_task_id"]!=inp.source_task_id or
+                         existing["source_digest"]!=origin_digest):
+            raise HTTPException(409,"Idempotency key đã gắn với nhiệm vụ Agent khác")
+        if not existing:
+            c.execute("""INSERT INTO specialist_handoffs
+              (tool_job_id,workspace_id,source_task_id,role,source_digest,created_at)
+              VALUES (?,?,?,?,?,?)""",
+              (job["id"],ws,inp.source_task_id,source["role"],origin_digest,now()))
+            audit(c,ws,"specialist.agent_handoff",
+                  f"{source['role']} → {inp.action}; pending human approval",job["id"])
+    return {**job,"agent_source":{"task_id":inp.source_task_id,"role":source["role"]}}
 
 
 @router.post("/workspaces/{ws}/tool-jobs", status_code=201)
@@ -364,6 +473,7 @@ def approve_tool_job(job_id: str):
         if r["status"] != "awaiting_approval": raise HTTPException(409,"Yêu cầu không ở trạng thái chờ duyệt")
         body = json.loads(r["payload_json"])
         assert_source_approved(c, r["workspace_id"], r["action"], body)
+        _assert_specialist_origin(c,job_id,r["workspace_id"])
         bound_digest = approval_digest(r["action"], body)
         c.execute("UPDATE tool_jobs SET status='approved',approval_digest=?,updated_at=? WHERE id=?",
                   (bound_digest,now(),job_id))
@@ -378,6 +488,8 @@ async def dispatch_tool(action: str, p: dict[str, Any]) -> dict[str, Any]:
         return await _dispatch_wordpress(p)
     if action == "activepieces.trigger":
         return await _dispatch_activepieces(p)
+    if action in SPECIALIST_ACTIONS:
+        return await specialist_dispatch(action,p)
     raise ValueError("Unsupported action")
 
 
@@ -457,6 +569,7 @@ async def execute_tool_job(job_id: str):
         if not row["approval_digest"] or row["approval_digest"] != approval_digest(row["action"], body):
             raise HTTPException(409,"Payload hoặc đích xuất bản đã thay đổi; cần duyệt lại")
         assert_source_approved(c, row["workspace_id"], row["action"], body)
+        _assert_specialist_origin(c,job_id,row["workspace_id"])
         c.execute("UPDATE tool_jobs SET status='executing',updated_at=? WHERE id=?",(now(),job_id))
         audit(c,row["workspace_id"],"tool_job.executing","Provider call started",job_id)
     try:

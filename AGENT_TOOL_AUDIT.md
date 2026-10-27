@@ -1,3 +1,19 @@
+# Cập nhật trạng thái tích hợp (2026-10-27)
+
+Đã viết, kết nối vào Tool Hub và test offline thêm 4 adapter:
+**Crawl4AI, Twenty CRM, Chatwoot, ComfyUI**. Với ba adapter có từ trước
+(Postiz, WordPress, Activepieces), tổng cộng **7 nhóm adapter có mã nguồn**.
+**Chưa có nghĩa đã cài cả repo hoặc kết nối tài khoản thật.**
+
+Agent có thể gắn một nhiệm vụ `completed` vào specialist tool theo quyền
+vai trò tại `/agent-tools`. Lệnh được lưu riêng và luôn chờ người duyệt.
+Không có “autonomous full-access tool calling” hoặc tự gọi tất cả 19 repo.
+Các hàng “Đề xuất” bên dưới phản ánh báo cáo kiểm kê ban đầu, không
+phản ánh đầy đủ trạng thái sau bản cập nhật này. Trạng thái từng connector
+đang lấy từ `templates/tool_catalog.json` và `/tools/specialists/readiness`.
+
+---
+
 # Báo cáo kiểm kê toàn bộ đầu việc Agent và công cụ phù hợp
 
 **Phạm vi:** 16 vai trò, 8 phòng ban, 66 đầu mục, 19 repo/công cụ. Bản đồ khả năng không khẳng định tất cả đã cài.
