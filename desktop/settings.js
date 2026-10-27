@@ -12,7 +12,6 @@ async function load(){
   $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("openTest").disabled=!x.hasOpenrouterKey || !x.secureStorage;
-  $("deepStatus").textContent=x.hasDeepseekKey?"(đã lưu)": "(chưa có)";
   if(!x.secureStorage)$("status").textContent="Windows secureStorage không khả dụng; không thể lưu API key.";
  }catch(e){$("status").textContent=e.message;$("status").classList.add("error")}
 }
@@ -26,11 +25,10 @@ $("save").onclick=async()=>{
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
     agentParallelism:Number($("agentParallelism").value),
-    openrouterKey:$("openKey").value,deepseekKey:$("deepKey").value,
-    clearOpenrouter:$("clearOpenrouter").checked,
-    clearDeepseek:$("clearDeepseek").checked
+    openrouterKey:$("openKey").value,
+    clearOpenrouter:$("clearOpenrouter").checked
    });
-   $("openKey").value="";$("deepKey").value="";
+   $("openKey").value="";
    $("status").textContent="Đã lưu. Cần khởi động lại ứng dụng để áp dụng.";
    await load();
  }catch(e){$("status").textContent=e.message;$("status").classList.add("error")}
