@@ -34,6 +34,11 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 </section>
 <section class="panel"><h2>Danh sách nghề và công cụ</h2><div id="roles"></div></section>
 </div>
+<section class="panel"><h2>Agent chuyên trách 9 dự án GitHub của anh</h2>
+<p class="muted">Mỗi Agent dự án chỉ đọc GitHub Actions của một repo đã gán cố định. Bấm kiểm tra để lấy trạng thái CI thật, rồi có thể giao Worker viết bản chẩn đoán. Không tự sửa mã/PR. Repo riêng tư cần quyền GitHub đọc qua cấu hình cục bộ, không nhập token lên bảng này.</p>
+<div id="projectAgents" class="layout"></div>
+<div id="projectStatus" class="notice" role="status" aria-live="polite">Đang tải danh sách repo được gán...</div>
+</section>
 </main>
 <script>
 "use strict";
@@ -138,5 +143,47 @@ $("submit").onclick=async()=>{
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
  finally{button.disabled=false;}
 };
-init();
+async function loadProjects(){
+ const el=$("projectAgents"),status=$("projectStatus");
+ try{
+  const d=await req("/repo-agents");el.replaceChildren();
+  for(const a of d.agents){
+   const item=document.createElement("div");item.className="role-row";
+   const label=document.createElement("strong");label.textContent=a.job;
+   const repo=document.createElement("div");
+   const link=document.createElement("a");link.href=a.repository_url;
+   link.target="_blank";link.rel="noopener noreferrer";link.textContent=a.repository;
+   repo.append(link);
+   const check=document.createElement("button");check.textContent="Kiểm tra CI";check.style.marginRight="7px";
+   check.onclick=async()=>{
+    check.disabled=true;
+    try{
+     const r=await req(a.live_check_url);
+     status.textContent="GitHub đã phản hồi cho "+a.repository+
+       "\n"+r.runs.map(x=>x.name+": "+x.status+" / "+x.conclusion+
+       " ("+x.head_sha.slice(0,8)+")").join("\n")+
+       "\nChưa đọc log chi tiết, chưa sửa code.";
+    }catch(e){status.textContent=a.repository+": "+e.message}
+    finally{check.disabled=false}
+   };
+   const diagnose=document.createElement("button");diagnose.textContent="Giao chẩn đoán";
+   diagnose.onclick=async()=>{
+    diagnose.disabled=true;
+    try{
+     const r=await req("/repo-agents/"+encodeURIComponent(a.id)+"/diagnose",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({workspace:$("ws").value.trim()})});
+     selectedOrder=r.id;
+     status.textContent="Đã giao Worker chẩn đoán CI thật của "+r.repository+
+       "\nTask: "+r.task_id+"\nChưa sửa code / chưa tạo PR.";
+     await loadResult();
+    }catch(e){status.textContent="Chưa giao được: "+e.message}
+    finally{diagnose.disabled=false}
+   };
+   item.append(label,repo,check,diagnose);el.appendChild(item);
+  }
+  status.textContent="Đã nạp "+d.agents.length+" Agent dự án. Kiểm tra từng repo để lấy dữ liệu CI thật.";
+ }catch(e){status.textContent="Không tải được Agent dự án: "+e.message}
+}
+init();loadProjects();
 </script></body></html>
