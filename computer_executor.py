@@ -133,10 +133,14 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             if _PLAYWRIGHT is None:
                 _PLAYWRIGHT=await async_playwright().start()
             profile=_home(ws,role)/"browser"
+            channel=os.environ.get("LHM_COMPUTER_BROWSER_CHANNEL","").strip()
+            # Standard sidecar uses its bundled Chromium. CI may use the
+            # system Chrome channel to exercise this real browser pathway.
+            options={"channel":channel} if channel in ("chrome","chromium") else {}
             context=await _PLAYWRIGHT.chromium.launch_persistent_context(
                 str(profile),headless=True,accept_downloads=False,
                 args=["--no-sandbox","--disable-dev-shm-usage"],
-                viewport={"width":1300,"height":850})
+                viewport={"width":1300,"height":850},**options)
             async def guard(route):
                 url=route.request.url
                 if url.startswith(("about:","data:","blob:")) or _allowed_domain(url):
