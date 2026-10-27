@@ -11,6 +11,12 @@ import argparse
 import asyncio
 import os
 import sys
+from pathlib import Path
+
+# python desktop/runtime.py normally sets sys.path[0] to desktop/; include the
+# repository root in source mode. Frozen mode uses PyInstaller's collected app.
+if not getattr(sys,"frozen",False):
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 def main(argv=None):
     cli=argparse.ArgumentParser(description="LHM Robot Desktop trusted local runtime")
