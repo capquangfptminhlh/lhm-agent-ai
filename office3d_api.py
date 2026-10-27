@@ -104,6 +104,9 @@ async def world_events(request: Request, workspace_id: str = "demo"):
                 # generated_at is not part of change detection. Idle scenes
                 # should not trigger UI changes or fictitious activity.
                 identity = {k: v for k, v in frame.items() if k != "generated_at"}
+                # The heartbeat timestamp moves every worker tick; only its
+                # online/offline transition is a meaningful scene change.
+                identity["worker"] = {"online": frame["worker"]["online"]}
                 digest = hashlib.sha256(json.dumps(
                     identity, sort_keys=True, ensure_ascii=False, separators=(",", ":")
                 ).encode("utf-8")).hexdigest()
