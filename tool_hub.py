@@ -131,9 +131,9 @@ POSTIZ_MEDIA = {
 
 def _media_signature_valid(data: bytes, media_type: str) -> bool:
     if media_type == "image/jpeg":
-        return data.startswith(b"\\xff\\xd8\\xff")
+        return data.startswith(b"\xff\xd8\xff")
     if media_type == "image/png":
-        return data.startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
     if media_type == "image/webp":
         return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
     if media_type == "image/gif":
