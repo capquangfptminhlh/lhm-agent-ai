@@ -15,6 +15,7 @@ import ctypes
 import io
 import os
 import re
+import time
 from ctypes import wintypes
 from fastapi import HTTPException
 
@@ -24,6 +25,8 @@ NAME_LIMIT = 180
 
 MOUSE_LEFT_DOWN=0x0002
 MOUSE_LEFT_UP=0x0004
+MOUSE_RIGHT_DOWN=0x0008
+MOUSE_RIGHT_UP=0x0010
 MOUSE_WHEEL=0x0800
 BLOCKED_APPS={"cmd.exe","powershell.exe","pwsh.exe","wt.exe",
               "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe",
@@ -54,6 +57,7 @@ def _user32():
     u.ShowWindow.argtypes=[wintypes.HWND,ctypes.c_int]
     u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int]
     u.SendInput.argtypes=[wintypes.UINT,ctypes.c_void_p,ctypes.c_int]
+    u.keybd_event.argtypes=[wintypes.BYTE,wintypes.BYTE,wintypes.DWORD,ctypes.c_size_t]
     return u
 
 def _window_info(hwnd):
@@ -165,6 +169,67 @@ def _type_unicode(text):
         if count!=len(seq):
             raise HTTPException(502,"Windows rejected injected key events")
 
+
+# Deliberately narrow keyboard allowlist. OS shortcuts, Run dialogs and shell
+# launchers are excluded. Every call must be explicitly approved by a human.
+KEYS = {
+    "ENTER": 0x0D, "ESC": 0x1B, "TAB": 0x09, "BACKSPACE": 0x08,
+    "DELETE": 0x2E, "LEFT": 0x25, "UP": 0x26,
+    "RIGHT": 0x27, "DOWN": 0x28, "HOME": 0x24, "END": 0x23,
+    "PAGEUP": 0x21, "PAGEDOWN": 0x22
+}
+APPROVED_SHORTCUTS = {"CTRL+A","CTRL+C","CTRL+V","CTRL+S","CTRL+F",
+                      "CTRL+Z","CTRL+Y","CTRL+SHIFT+S"}
+
+
+def _validate_hotkey(value):
+    if not isinstance(value, str) or len(value) > 20:
+        raise HTTPException(422, "Invalid keyboard shortcut")
+    normalized=value.strip().upper()
+    if normalized not in APPROVED_SHORTCUTS and normalized not in KEYS:
+        raise HTTPException(422, "Shortcut is not in the safe supervised allowlist")
+    return normalized
+
+
+def _press_hotkey(value):
+    name=_validate_hotkey(value)
+    seq=name.split("+")
+    vk={"CTRL":0x11,"SHIFT":0x10,
+        **{chr(k):k for k in range(ord("A"),ord("Z")+1)},
+        **KEYS}
+    codes=[vk[v] for v in seq]
+    u=_user32()
+    pushed=[]
+    try:
+        for code in codes:
+            u.keybd_event(code,0,0,0)
+            pushed.append(code)
+    finally:
+        for code in reversed(pushed):
+            u.keybd_event(code,0,0x0002,0)
+
+
+def _desktop_capture():
+    _require_windows()
+    # Global screen viewing is OFF by default. A separate approved Computer
+    # step + this explicit Electron opt-in are both required.
+    if os.environ.get("LHM_DESKTOP_FULL_SCREEN_ENABLED") != "1":
+        raise HTTPException(403, "Desktop capture requires explicit screen consent")
+    try:
+        from PIL import ImageGrab
+        image=ImageGrab.grab(all_screens=True)
+        image.thumbnail((1600,1000))
+        b=io.BytesIO()
+        image.save(b,format="PNG",optimize=True)
+        raw=b.getvalue()
+    except Exception as exc:
+        raise HTTPException(502, "Unable to capture Windows desktop") from exc
+    if len(raw)>2*1024*1024:
+        raise HTTPException(413, "Desktop capture exceeds safe bound")
+    # Never save a screenshot on disk, in logs, or in the computer audit log.
+    return {"png_base64":base64.b64encode(raw).decode("ascii"),
+            "scope":"desktop","width":image.width,"height":image.height}
+
 def _snap(hwnd):
     i=_window_info(hwnd)
     try:
@@ -189,6 +254,10 @@ def execute(tool: str,args: dict):
         raise HTTPException(422,"Args must be an object")
     if tool=="windows_list":
         return {"windows":_enumerate(),"allowlist":sorted(_allowlist())}
+    if tool=="windows_desktop_screenshot":
+        if args:
+            raise HTTPException(422,"Desktop screenshot accepts no parameters")
+        return _desktop_capture()
     hwnd=args.get("hwnd")
     if type(hwnd) is not int:
         raise HTTPException(422,"A selected HWND is required")
@@ -223,6 +292,27 @@ def execute(tool: str,args: dict):
         u.mouse_event(MOUSE_LEFT_DOWN,0,0,0,0)
         u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
         return {"clicked":True,"hwnd":hwnd,"x":args["x"],"y":args["y"]}
+    if tool in ("windows_right_click", "windows_double_click"):
+        i=_foreground(hwnd)
+        x,y=_coordinates(i,args)
+        u=_user32()
+        if not u.SetCursorPos(x,y):
+            raise HTTPException(502, "Unable to position mouse")
+        if tool=="windows_right_click":
+            u.mouse_event(MOUSE_RIGHT_DOWN,0,0,0,0)
+            u.mouse_event(MOUSE_RIGHT_UP,0,0,0,0)
+        else:
+            for number in range(2):
+                if number:time.sleep(0.075)
+                u.mouse_event(MOUSE_LEFT_DOWN,0,0,0,0)
+                u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
+        return {"action":"right" if tool=="windows_right_click" else "double",
+                "hwnd":hwnd,"x":args["x"],"y":args["y"]}
+    if tool=="windows_hotkey":
+        _foreground(hwnd)
+        combo=_validate_hotkey(args.get("keys"))
+        _press_hotkey(combo)
+        return {"pressed":combo,"hwnd":hwnd}
     if tool=="windows_type":
         _foreground(hwnd)
         text=args.get("text")
