@@ -222,6 +222,25 @@ def main() -> int:
         report("T4 desktop screenshot + absolute click",
                len(png) > 10_000 and click.get("clicked") is True,
                f"png_b64={len(png)}")
+        # --- Task 5: physically close the target and verify NO stray typing.
+        # This is a REAL Win32 runner call after the former HWND disappears,
+        # distinct from the unit test that mocks HTTP 404.
+        subprocess.run(["taskkill","/IM","notepad.exe","/F"],
+                       capture_output=True,timeout=12,check=False)
+        wait_for(lambda: find_window("notepad.exe") is None,
+                 20,"Notepad target process disappeared")
+        try:
+            call("windows_type",{"hwnd":hwnd,"text":"MUST-NOT-TYPE"})
+        except RuntimeError as error:
+            msg=str(error)
+            assert "HTTP 404" in msg, (
+                "Closed HWND was not rejected as target_lost: "+msg)
+            report("T5 closed target HWND denied before typing",True,
+                   "HTTP 404, no retarget")
+        else:
+            report("T5 closed target HWND denied before typing",False,
+                   "Runner wrote to closed/reused HWND — unsafe")
+
     except Exception as exc:
         report("SUITE", False, f"{type(exc).__name__}: {exc}")
         # Surface the cause as a check annotation (job logs need sign-in;
