@@ -18,6 +18,7 @@ import app
 import core
 import team_collaboration as team
 import tool_hub
+import computer_agent
 
 
 class AgentCollaborationTests(unittest.TestCase):
@@ -27,6 +28,7 @@ class AgentCollaborationTests(unittest.TestCase):
         core.DATABASE=Path(self.temp.name)/"team.sqlite3"
         core.setup()
         tool_hub.prepare_db()
+        computer_agent.prepare_db()
         team.prepare_db()
         self.env=patch.dict(os.environ,{"LHM_ADMIN_TOKEN":""})
         self.env.start()
