@@ -288,8 +288,9 @@ class PostVerifyTests(unittest.TestCase):
             if tool == "windows_click":
                 return {"clicked": True, "hwnd": 7}
             if tool == "windows_snapshot":
-                return {"hwnd": 7, "title": "Untitled - Notepad",
-                        "children": [{"n": 1}, {"n": 2}, {"n": 3}]}
+                return {"window": {"hwnd": 7, "process": "notepad.exe",
+                                   "title": "Untitled - Notepad"},
+                        "controls": [{"type": "Button"}, {"type": "Text"}, {"type": "Pane"}]}
             raise AssertionError(tool)
 
         async def fake_runner(run, called_tool, called_args):
@@ -322,6 +323,37 @@ class PostVerifyTests(unittest.TestCase):
         self.assertEqual(result["_verification"]["post"]["controls"], 3)
         self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
+
+
+    def test_window_disappears_stops_run_without_redirecting_input(self):
+        run = self.client.post("/workspaces/demo/computer/runs", json={
+            "role": "research", "objective": "Gõ vào Notepad đang mở",
+            "max_steps": 8, "idempotency_key": "m2-target-lost"})
+        self.assertEqual(run.status_code, 201, run.text)
+        rid = run.json()["id"]
+        url = f"/computer/runs/{rid}/tick"
+        action = ("windows_type", {"hwnd": 7, "text": "Xin chào"})
+        async def disappeared(_run, tool, args):
+            self.assertEqual(args["hwnd"], 7, "Must never retarget unknown HWND")
+            raise HTTPException(409, "target_lost: Cửa sổ ứng dụng đích đã biến mất.")
+        with patch.object(agent, "_next_action", AsyncMock(return_value=action)):
+            first = self.client.post(url)
+            self.assertEqual(first.json()["status"], "awaiting_approval")
+            sid = first.json()["step_id"]
+            approve = self.client.post(f"/computer/runs/{rid}/steps/{sid}/approve")
+            self.assertEqual(approve.status_code, 200)
+            with patch.object(agent, "runner_call", AsyncMock(side_effect=disappeared)) as calls:
+                second = self.client.post(url)
+                self.assertEqual(second.status_code, 200, second.text)
+                self.assertEqual(second.json()["status"], "target_lost")
+                self.assertGreaterEqual(calls.await_count, 1)
+        with core.db() as c:
+            runrow = c.execute("SELECT status,error FROM computer_runs WHERE id=?", (rid,)).fetchone()
+            steprow = c.execute("SELECT status FROM computer_steps WHERE id=?", (sid,)).fetchone()
+        self.assertEqual(runrow["status"], "target_lost")
+        self.assertIn("target_lost", runrow["error"])
+        self.assertEqual(steprow["status"], "needs_review")
+        self.assertEqual(self.client.post(url).status_code, 409)
 
 
 class ExecutorRegistryTests(unittest.TestCase):
