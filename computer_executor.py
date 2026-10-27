@@ -25,8 +25,8 @@ ROLE_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
 ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
                     "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
-ALLOWED_TOOLS = {"list_files","read_file","write_file","run_command","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_screenshot"}
+ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","browser_open",
+                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
@@ -36,8 +36,8 @@ _PLAYWRIGHT = None
 class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    tool: Literal["list_files","read_file","write_file","run_command","browser_open",
-                  "browser_snapshot","browser_click","browser_fill","browser_screenshot"]
+    tool: Literal["list_files","read_file","write_file","edit_file","run_command","browser_open",
+                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"]
     args: dict[str,Any] = Field(default_factory=dict)
 
 def _auth(authorization: str | None) -> None:
@@ -153,6 +153,14 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             if not isinstance(url,str) or not _allowed_domain(url):
                 raise HTTPException(422,"Browser URL must match an admin-approved HTTPS host")
             await page.goto(url,wait_until="domcontentloaded",timeout=16000)
+        elif tool=="browser_scroll":
+            direction=args.get("direction","down")
+            if direction not in ("up","down"):
+                raise HTTPException(422,"Scroll direction up/down required")
+            distance=args.get("pixels",450)
+            if type(distance) is not int or not 1<=distance<=1100:
+                raise HTTPException(422,"Scroll must be between 1 and 1100 pixels")
+            await page.mouse.wheel(0,distance if direction=="down" else -distance)
         elif tool in ("browser_click","browser_fill"):
             selector=args.get("selector")
             if not isinstance(selector,str) or not 1<=len(selector)<=240:
@@ -207,6 +215,33 @@ async def perform(req: ToolRequest) -> dict:
         path=_safe_path(ws,role,args["path"])
         path.write_text(data,encoding="utf-8")
         return {"path":str(path.relative_to(_files(ws,role))),"bytes":len(data.encode("utf-8"))}
+    if tool=="edit_file":
+        path=_safe_path(ws,role,args.get("path",""))
+        old=args.get("old");new=args.get("new")
+        if not path.is_file() or path.stat().st_size>MAX_FILE_BYTES:
+            raise HTTPException(422,"Existing UTF-8 file <=96KB required")
+        if not isinstance(old,str) or not old or not isinstance(new,str):
+            raise HTTPException(422,"Exact non-empty old text and replacement text required")
+        text=path.read_text(encoding="utf-8")
+        if text.count(old)!=1:
+            raise HTTPException(409,"Old text must match exactly once; reload file first")
+        updated=text.replace(old,new,1)
+        if len(updated.encode("utf-8"))>MAX_FILE_BYTES:
+            raise HTTPException(413,"Result file too large")
+        # Same-path tempfile and replace avoids partial files if process crashes.
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",dir=path.parent,
+                                         prefix=".lhm-",delete=False) as tmp:
+            tmp.write(updated);name=tmp.name
+        try:
+            # Re-check symlink/traversal before replacing target.
+            if _safe_path(ws,role,args["path"])!=path:
+                raise HTTPException(403,"Target path changed")
+            os.replace(name,path)
+        finally:
+            if os.path.exists(name):os.unlink(name)
+        return {"path":str(path.relative_to(_files(ws,role))),"edited":True,
+                "bytes":len(updated.encode("utf-8"))}
     if tool=="run_command":
         return await _command(ws,role,args)
     if tool.startswith("browser_"):
