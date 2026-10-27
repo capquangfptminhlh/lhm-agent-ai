@@ -298,11 +298,11 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 if not any(s["status"]=="completed" for s in steps):
                     raise HTTPException(422,"AI chưa thực thi công cụ; không thể tự nhận hoàn thành")
                 with db() as c:
-                    c.execute("UPDATE computer_runs SET status='completed',outcome=?,updated_at=? WHERE id=?",
+                    c.execute("UPDATE computer_runs SET status='completed_unverified',outcome=?,updated_at=? WHERE id=?",
                               (summary[:2000],now(),rid))
                     audit(c,run["workspace_id"],"computer.ai_finished",
-                          "AI marked session done; review actual tool evidence",rid)
-                return {"status":"completed","id":rid,"outcome":summary}
+                          "AI self-reported completion; human should verify the tool evidence",rid)
+                return {"status":"completed_unverified","id":rid,"outcome":summary}
             sid=new_id()
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
@@ -327,13 +327,17 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         if "png_base64" in result:
             result={"screenshot_available":True,"url":result.get("url","")}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
+        command_failed=tool=="run_command" and (
+            result.get("timed_out") is True or result.get("exit_code") != 0)
+        step_status="failed" if command_failed else "completed"
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
-            c.execute("UPDATE computer_steps SET status='completed',result_json=?,updated_at=? WHERE id=?",
-                      (clean,now(),sid))
+            c.execute("UPDATE computer_steps SET status=?,result_json=?,updated_at=? WHERE id=?",
+                      (step_status,clean,now(),sid))
             c.execute("UPDATE computer_runs SET status='queued',updated_at=? WHERE id=?",(now(),rid))
-            audit(c,run["workspace_id"],"computer.tool_completed",f"{tool} executed in sidecar sandbox",rid)
-        return {"status":"queued","id":rid,"last_tool":tool}
+            audit(c,run["workspace_id"],"computer.tool_"+step_status,
+                  f"{tool} finished with status {step_status} in sandbox",rid)
+        return {"status":"queued","id":rid,"last_tool":tool,"step_status":step_status}
     except Exception as exc:
         msg=exc.detail if isinstance(exc,HTTPException) else ("Computer model/runner error: "+type(exc).__name__)
         # Ambiguous remote outcome after a side-effecting call: do not retry automatically.
