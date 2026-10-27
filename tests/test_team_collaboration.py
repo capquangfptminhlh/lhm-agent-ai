@@ -125,15 +125,20 @@ class AgentCollaborationTests(unittest.TestCase):
         with core.db() as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],1)
 
-    def test_chat_finishes_as_unverified_not_automatically_published(self):
+    def test_chat_finishes_as_unverified_only_after_real_qa_exchange(self):
         s=self.start(roles=["director","quality"],idem="finish-unverified-2")
         self.finish_task(s["active_task_id"],to="quality",done=True,
+                         message="Director đề xuất kết thúc nhưng QA chưa xem")
+        first=team.sync_team_session(s["id"])
+        self.assertEqual(first["status"],"running")
+        self.assertEqual(first["active_task"]["role"],"quality")
+        self.finish_task(first["active_task_id"],to="director",done=True,
                          message="Kết luận: nên thử nghiệm với dữ liệu thực")
         r=team.sync_team_session(s["id"])
         self.assertEqual(r["status"],"completed_unverified")
         self.assertEqual(r["outcome"],"Kết luận: nên thử nghiệm với dữ liệu thực")
         self.assertIsNone(r["active_task_id"])
-        self.assertEqual(len(r["messages"]),2)
+        self.assertEqual(len(r["messages"]),3)
         with core.db() as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0],0)
         again=team.sync_team_session(s["id"])
