@@ -7,10 +7,12 @@ A GitHub link or successful AI draft is not an authenticated GitHub write.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 router = APIRouter(tags=["Repository Agents"])
@@ -56,6 +58,11 @@ def agent_profile(agent_id: str) -> dict[str, str]:
     if not agent:
         raise HTTPException(404, "Agent dự án không tồn tại")
     return agent
+
+
+@router.get("/repo-agents/ui")
+def repository_agent_ui():
+    return FileResponse(Path(__file__).parent / "static" / "repo_agents.html", media_type="text/html")
 
 
 @router.get("/repo-agents")
