@@ -15,7 +15,10 @@ ROLE_HINTS = {
     "research": ("gemma", "nemotron", "xingchen"),
     "director": ("nemotron", "gemma"),
     "strategy": ("nemotron", "gemma"),
-    "content": ("gemma", "nemotron"),
+    # Gemma Free returned 429 during the real Content Agent smoke while
+    # the approved Nemotron text model completed four adjacent roles.
+    # Prefer observed-working text candidates, still catalog-verify each call.
+    "content": ("nemotron", "gemma"),
     "quality": ("nemotron", "gemma"),
     "compliance": ("nemotron", "gemma"),
     "analytics": ("nemotron", "gemma"),
