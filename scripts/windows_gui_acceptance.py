@@ -46,6 +46,27 @@ def report(name: str, ok: bool, detail: str = "") -> None:
     print(f"[{'PASS' if ok else 'FAIL'}] {name} {detail}", flush=True)
 
 
+def describe_foreground() -> str:
+    """Diagnostics only: identify who held the input focus after HTTP 409."""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = int(user32.GetForegroundWindow())
+        if not hwnd:
+            return "hwnd=0, no foreground window"
+        pid = ctypes.c_ulong()
+        user32.GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(pid))
+        title = ctypes.create_unicode_buffer(200)
+        user32.GetWindowTextW(ctypes.c_void_p(hwnd), title, len(title))
+        import psutil
+        try:
+            process = psutil.Process(pid.value).name()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            process = "unknown"
+        return f"hwnd={hwnd}, pid={pid.value}, process={process}, title={title.value[:100]!r}"
+    except Exception as exc:
+        return "foreground diagnostic unavailable: " + type(exc).__name__
+
+
 def call(tool: str, args: dict, timeout: float = 20) -> dict:
     body = json.dumps({"workspace_id": "demo", "role": "research",
                        "tool": tool, "args": args}).encode()
@@ -57,6 +78,8 @@ def call(tool: str, args: dict, timeout: float = 20) -> dict:
             return json.loads(resp.read().decode("utf-8", "replace"))
     except HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
+        if exc.code == 409 and "foreground" in detail.lower():
+            print("[FOCUS-409] " + describe_foreground(), flush=True)
         raise RuntimeError(f"{tool} -> HTTP {exc.code}: {detail}") from exc
 
 
