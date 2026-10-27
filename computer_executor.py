@@ -33,9 +33,10 @@ WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
+                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press",
+                  "browser_find","browser_press"} | WINDOWS_TOOLS
 PAUSED = False
-MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
+MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill","browser_press",
              "windows_activate","windows_click","windows_type","windows_scroll",
              "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
              "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
@@ -160,7 +161,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             # system Chrome channel to exercise this real browser pathway.
             options={"channel":channel} if channel in ("chrome","chromium","msedge") else {}
             context=await _PLAYWRIGHT.chromium.launch_persistent_context(
-                str(profile),headless=True,accept_downloads=False,
+                str(profile),headless=not (os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1"),accept_downloads=False,
                 args=["--no-sandbox","--disable-dev-shm-usage"],
                 viewport={"width":1300,"height":850},**options)
             async def guard(route):
@@ -187,6 +188,27 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             if type(distance) is not int or not 1<=distance<=1100:
                 raise HTTPException(422,"Scroll must be between 1 and 1100 pixels")
             await page.mouse.wheel(0,distance if direction=="down" else -distance)
+        elif tool=="browser_find":
+            needle=args.get("text")
+            if not isinstance(needle,str) or not 1<=len(needle)<=120 or any(ord(c)<32 for c in needle):
+                raise HTTPException(422,"Search text must be 1-120 printable characters")
+            # Locate visible textual content; on a long page scroll it into
+            # the viewport. Do not synthesize a click or submit a form.
+            locator=page.get_by_text(needle,exact=False).first
+            if await locator.count()==0:
+                return {"found":False,"query":needle,"url":page.url}
+            await locator.scroll_into_view_if_needed(timeout=6000)
+            bounds=await locator.bounding_box()
+            return {"found":True,"query":needle,"url":page.url,
+                    "bounds":bounds}
+        elif tool=="browser_press":
+            key=args.get("key")
+            allowed={"Escape","PageDown","PageUp","ArrowDown","ArrowUp","Tab","Enter"}
+            if key not in allowed:
+                raise HTTPException(422,"Browser key is not approved")
+            # Every browser_press, even Escape, is manually approved at the
+            # Agent gate: Enter/Tab may submit or change an external form.
+            await page.keyboard.press(key,timeout=7000)
         elif tool in ("browser_click","browser_fill"):
             selector=args.get("selector")
             if not isinstance(selector,str) or not 1<=len(selector)<=240:
