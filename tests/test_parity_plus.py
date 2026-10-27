@@ -104,6 +104,26 @@ class ApprovalMatrixTests(unittest.TestCase):
                 self.assertTrue(agent._approval_required(tool, run), tool)
 
 
+class TargetLostTransportTests(unittest.TestCase):
+    def test_real_http_404_from_selected_window_becomes_target_lost(self):
+        class NoWindowClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self,*exc): return False
+            async def post(self,*a,**k):
+                return type("Response", (), {"status_code": 404})()
+        run={"workspace_id":"demo","role":"research"}
+        with patch.dict(os.environ,{"LHM_COMPUTER_RUNNER_TOKEN":"only-test"}):
+            with patch.object(agent.httpx,"AsyncClient",return_value=NoWindowClient()):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(agent.runner_call(run,"windows_type",
+                                                  {"hwnd":77,"text":"abc"}))
+                self.assertEqual(raised.exception.status_code,409)
+                self.assertIn("target_lost",str(raised.exception.detail))
+                with self.assertRaises(HTTPException) as other:
+                    asyncio.run(agent.runner_call(run,"read_file",{"path":"x"}))
+                self.assertEqual(other.exception.status_code,502)
+
+
 class NativeTrustedSendSafetyTests(unittest.TestCase):
     def test_native_mutations_only_autonomous_for_known_local_app(self):
         run={"mode":"trusted","workspace_id":"demo","role":"research"}
