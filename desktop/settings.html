@@ -1,0 +1,35 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none';style-src 'unsafe-inline';script-src 'self'">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>LHM Robot · Cấu hình</title>
+<style>
+:root{font:14px/1.5 Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:#f4f7fb;color:#223b56}
+*{box-sizing:border-box}body{margin:0;padding:24px}h1{font-size:22px;margin:0}
+p{font-size:12px;color:#678097;line-height:1.55}main{max-width:650px;margin:0 auto}
+.card{background:white;border:1px solid #dae4f0;border-radius:13px;padding:18px;margin-top:14px}
+h2{font-size:15px;margin:0 0 10px}label{font-size:12px;color:#4c6681;font-weight:650;display:grid;gap:5px;margin:11px 0}
+input,select{font:inherit;width:100%;border-radius:8px;border:1px solid #c9d8e9;padding:9px 11px;color:#233f5b;background:white}
+button{border:0;background:#2074d2;padding:12px 18px;border-radius:8px;color:white;font-weight:750;cursor:pointer}
+label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
+.notice{border-radius:9px;background:#fff7e7;border:1px solid #f1dfa9;color:#845e21;font-size:11px;padding:12px}
+.status{min-height:25px;color:#27774c;font-weight:700;font-size:12px;margin-top:12px}.status.error{color:#b14353}
+</style></head><body><main>
+<h1>◈ Thiết lập LHM Robot Desktop</h1>
+<p>Cấu hình này được lưu trên máy Windows của anh. Model API key được mã hóa bằng hệ thống bảo vệ dữ liệu của hệ điều hành nếu khả dụng. Không nhập token vào website bên ngoài.</p>
+<div class="card"><h2>1. Bộ não AI</h2>
+<label>Nhà cung cấp<select id="provider"><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option></select></label>
+<label>OpenRouter API key <span id="openStatus"></span><input id="openKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
+<label class="check"><input type="checkbox" id="clearOpenrouter">Xóa khóa OpenRouter đã lưu</label>
+<label>DeepSeek API key <span id="deepStatus"></span><input id="deepKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
+<label class="check"><input type="checkbox" id="clearDeepseek">Xóa khóa DeepSeek đã lưu</label>
+</div>
+<div class="card"><h2>2. Windows Controller</h2>
+<label>Tên ứng dụng được robot phép điều khiển (EXE chính xác, cách nhau dấu phẩy)<input id="allowedApps" placeholder="notepad.exe, code.exe"></label>
+<p>Để trống = không cho thao tác bất kỳ ứng dụng Windows nào. Robot chỉ hiển thị các cửa sổ thuộc ứng dụng trong danh sách.</p>
+<label>Website HTTPS được phép mở bằng browser automation<input id="allowedHosts" placeholder="example.com, docs.example.com"></label>
+<p>Để trống = robot không được mở website ngoài. Không sử dụng IP, wildcard hoặc localhost.</p>
+</div>
+<div class="notice">Robot chạy bằng quyền Windows của người đang đăng nhập; chưa có VM cách ly cho mỗi Agent. Không đưa ứng dụng ngân hàng, ví tiền, phần mềm quản lý mật khẩu hoặc ứng dụng chứa dữ liệu nhạy cảm vào danh sách cho phép. Các thao tác click/gõ vẫn yêu cầu anh duyệt từng bước.</div>
+<div style="margin-top:17px"><button id="save" type="button">Lưu cấu hình</button><p id="status" class="status" role="status"></p></div>
+</main>
+<script src="settings.js"></script>
+</body></html>
