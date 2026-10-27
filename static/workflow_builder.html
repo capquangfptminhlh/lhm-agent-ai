@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM Agent AI · Workflow Builder</title>
+<style>
+:root{color-scheme:light;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Arial,sans-serif;background:#f3f6fb;color:#1a324a}*{box-sizing:border-box}
+body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}
+.shell{min-height:100vh;display:grid;grid-template-columns:235px minmax(0,1fr)}
+aside{background:#101f36;color:#d4e4f7;padding:23px 16px;display:flex;flex-direction:column;gap:7px}
+.logo{color:white;font-size:20px;font-weight:800;line-height:1.4;margin:4px 10px 30px}.logo small{display:block;font-size:10px;color:#70c3c7;letter-spacing:1.3px}
+aside a{color:#cad9eb;text-decoration:none;padding:12px;border-radius:10px;display:block;font-size:13px}
+aside a:hover,aside a.active{background:#294461;color:#fff}.foot{margin-top:auto;color:#9fb2ca;line-height:1.5;font-size:11px;border-top:1px solid #32465e;padding:16px 9px}
+main{padding:27px 33px;max-width:1640px;width:100%;margin:auto}
+h1{font-size:29px;letter-spacing:-.9px;margin:4px 0 5px}h2{margin:0 0 12px;font-size:17px}p{line-height:1.5}
+.eyebrow{letter-spacing:1.5px;text-transform:uppercase;font-size:10px;color:#246cbf;font-weight:800}.muted{color:#73849a;font-size:13px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:24px}
+.top-right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.field{width:100%;border:1px solid #d3dfeb;background:#fff;border-radius:9px;padding:11px;color:#1e3b54}
+label{display:flex;flex-direction:column;gap:5px;font-weight:650;font-size:12px;color:#53697f}
+.btn{background:#1d6cdb;color:white;border:1px solid #1d6cdb;font-weight:730;border-radius:9px;padding:10px 14px;white-space:nowrap}
+.btn.soft{background:white;border-color:#cbd9e8;color:#225b99}.btn.ghost{background:#eef4fb;color:#2864a4;border-color:#d5e2f1}.btn.danger{background:#fff0f1;color:#b64858;border-color:#f1d3d7}
+.btn:disabled{opacity:.5;cursor:default}.grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(330px,.8fr);gap:19px;align-items:start}
+.card{background:#fff;border-radius:15px;border:1px solid #e0e7ef;padding:20px;box-shadow:0 7px 25px #28415b09;margin-bottom:17px}
+.flex{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.spread{justify-content:space-between}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}textarea{resize:vertical;min-height:75px}
+.pipeline{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-top:16px}
+.stage{border:1px solid #d8e5f2;background:#fbfdff;border-radius:13px;padding:13px;display:grid;grid-template-columns:39px minmax(0,1fr) auto;gap:11px;align-items:start}
+.stage.drag{border-style:dashed;border-color:#1676da;opacity:.7}.stage .num{display:grid;place-items:center;width:35px;height:35px;border-radius:12px;background:#e7f1ff;color:#1764be;font-weight:850}
+.stage.tool{background:#fff9ee;border-color:#f1dfb9}.stage.tool .num{background:#fff0c9;color:#b17420}
+.stage label{margin-bottom:8px}.stage input,.stage select,.stage textarea{font-size:13px;padding:8px}
+.controls{display:flex;flex-direction:column;gap:5px}.controls button{background:#fff;border:1px solid #d3dfe9;color:#4b647b;border-radius:8px;padding:5px 9px}
+.connector{align-self:center;text-align:center;color:#adc1d4;height:12px;font-size:20px;font-weight:700;line-height:12px}
+.banner{background:#edf6ff;border:1px solid #d2e6fa;padding:13px 15px;border-radius:11px;color:#315a7e;font-size:12px;line-height:1.6}
+.warn{background:#fff8e9;border-color:#f5dfb1;color:#886729}
+.pill{display:inline-block;padding:4px 9px;border-radius:20px;font-size:11px;font-weight:750;background:#eaf1fa;color:#47617b}
+.pill.completed,.pill.verified_published{background:#dff5eb;color:#12754a}.pill.failed,.pill.blocked,.pill.review_required,.pill.needs_reconciliation{background:#ffebec;color:#a92e47}
+.pill.awaiting_tool_approval,.pill.awaiting_approval{background:#fff2d8;color:#97630d}
+.run{border:1px solid #e2e9f2;padding:12px 13px;border-radius:11px;margin-top:10px}
+.run .step-line{border-left:2px solid #e1eaf5;padding:3px 0 3px 11px;margin:8px 5px;font-size:12px;color:#4a627b}
+.run .result{white-space:pre-wrap;word-break:break-word;max-height:140px;overflow:auto;background:#f3f6fa;padding:9px;border-radius:8px;font-size:12px}
+.blank{border:1px dashed #d2dfec;border-radius:12px;text-align:center;padding:18px;color:#7990a8}
+.status{margin-top:10px;font-size:12px;min-height:20px;line-height:1.6}
+.bar{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:3px solid #88bdff;outline-offset:2px}
+@media(max-width:1100px){.grid{grid-template-columns:1fr}}
+@media(max-width:750px){.shell{display:block}aside{display:flex;flex-direction:row;overflow:auto;align-items:center;padding:10px}aside a{white-space:nowrap}aside .logo{font-size:13px;white-space:nowrap;margin:0 7px}aside .logo small,aside .foot{display:none}main{padding:18px 12px}.top{display:block}.top-right{margin-top:15px}.form-grid{grid-template-columns:1fr}.stage{grid-template-columns:32px minmax(0,1fr) 34px}.stage .num{width:30px;height:30px}.controls button{padding:5px}}
+</style></head><body>
+<div class="shell">
+<aside><div class="logo">LHM Agent AI<small>WORKFLOW ENGINE</small></div>
+<a href="/office">🏢 Văn phòng AI</a>
+<a href="/dashboard">▦ Trung tâm điều hành</a>
+<a href="/tool-hub">🛠 Tool Hub</a>
+<a href="/workflow-builder" class="active">◇ Workflow Builder</a>
+<a href="/docs">⌘ API Docs</a>
+<div class="foot">Tác vụ chạy bằng worker và lưu SQLite. Node Tool không được đăng nội dung khi chưa được duyệt.</div></aside>
+<main>
+<header class="top"><div><span class="eyebrow">LHM AGENT OS · ORCHESTRATION</span><h1>Workflow Builder</h1>
+<p class="muted" style="margin:0">Tạo quy trình Agent theo ngành nghề, kiểm duyệt và bàn giao công cụ thật</p></div>
+<div class="top-right"><label style="min-width:210px">Doanh nghiệp<select id="workspace" class="field"></select></label><span id="provider" class="pill">Đang kiểm tra AI...</span></div></header>
+<div class="grid">
+<div>
+<section class="card">
+<div class="flex spread"><h2>Thiết kế quy trình</h2><div class="bar"><button class="btn soft" id="newTemplate">+ Mẫu mới</button><button class="btn" id="saveTemplate">Lưu quy trình</button></div></div>
+<div class="form-grid"><label>Tên workflow<input class="field" id="templateName" maxlength="100" placeholder="Ví dụ: Đăng social BĐS"></label>
+<label>Mẫu đã lưu<select class="field" id="templateSelect"><option value="">— Workflow mới —</option></select></label>
+<label class="full">Mô tả<input class="field" id="templateDescription" maxlength="600" placeholder="Quy trình tự động tạo nội dung, kiểm tra, chờ phê duyệt"></label></div>
+<div class="pipeline" id="pipeline"></div>
+<div class="bar" style="margin-top:14px"><select class="field" id="addRole" style="max-width:240px"></select>
+<button class="btn soft" id="addAgent">+ Thêm Agent</button><button class="btn soft" id="addTool">+ Tool đăng bài</button></div>
+<p class="muted">Kéo thả hoặc dùng ↑ ↓ để đổi thứ tự. Khi có Tool, quy trình phải kết thúc bằng <strong>Content → Quality → Tool</strong>. Tool chỉ tạo yêu cầu chờ duyệt.</p>
+</section>
+<section class="card"><h2>Chạy quy trình</h2>
+<div class="form-grid"><label class="full">Mục tiêu cụ thể<textarea id="objective" class="field" placeholder="Viết bài giới thiệu dự án đã xác minh, chuẩn bị đăng website hoặc social"></textarea></label>
+<label class="full">Dữ liệu đầu vào, nguồn kiểm chứng<textarea class="field" id="context" placeholder="Dự án, sản phẩm, khách mục tiêu, ưu đãi, thông tin được phép sử dụng..."></textarea></label>
+<label class="full" style="display:flex;flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="approval"> Yêu cầu duyệt trước khi AI bắt đầu</label></div>
+<div class="bar" style="margin-top:12px"><button class="btn" id="start">▶ Giao việc cho các Agent</button>
+<button class="btn ghost" id="refreshRuns">↻ Xem tiến độ</button></div><div id="message" class="status" role="status"></div></section>
+</div>
+<div>
+<section class="card"><h2>Quy tắc an toàn</h2><div class="banner">
+<strong>Không có thao tác ảo.</strong> AI xử lý từng bước theo kết quả trước đó. Bước Quality phải trả JSON verdict=pass mới có thể tạo yêu cầu đăng bài.
+</div><div class="banner warn" style="margin-top:10px">Postiz/WordPress dùng API key cấu hình trên server. Xuất bản ra ngoài luôn phải <strong>duyệt thủ công</strong> tại Tool Hub; gửi thành công API không đồng nghĩa bài đã công khai.</div></section>
+<section class="card"><div class="flex spread"><h2 style="margin:0">Các lần thực thi</h2><span id="runCount" class="pill">0</span></div>
+<div id="runs"><div class="blank">Chưa có lượt chạy nào.</div></div></section>
+</div>
+</div></main></div>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,k=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[k]));
+const call=async(path,options={})=>{const res=await fetch(path,{headers:{"Content-Type":"application/json"},...options});const out=await res.json().catch(()=>({}));if(!res.ok)throw Error(typeof out.detail==="string"?out.detail:JSON.stringify(out.detail||res.status));return out};
+const agent=(role="content",instruction="Viết bản nháp chính xác từ dữ liệu đã được cung cấp")=>({type:"agent",role,instruction});
+const publisher=()=>({type:"tool",action:"wordpress.create_post",mode:"draft",channel_ids:[],scheduled_at:null,title:"",status:"draft",media:[]});
+let roles={},ws="demo",toolWs="demo",templates=[],selectedId=null,steps=[agent("research","Tìm dữ liệu, phân tích nguồn kiểm chứng"),agent(),agent("quality","Soát nguồn, tính chính xác và rủi ro nội dung"),publisher()],runs=[];
+function say(message,bad=false){$("message").textContent=message;$("message").style.color=bad?"#b33546":"#24754e"}
+function safeIndex(x){const i=Number(x);return Number.isInteger(i)&&i>=0&&i<steps.length?i:-1}
+function readNode(i){const node=steps[i],card=document.querySelector('[data-node="'+i+'"]');if(!node||!card)return;
+for(const el of card.querySelectorAll("[data-key]")){const key=el.dataset.key;let val=el.value;
+if(key==="channel_ids")val=val.split(",").map(s=>s.trim()).filter(Boolean);
+if(key==="scheduled_at"&&val==="")val=null;
+node[key]=val;}
+}
+function readAll(){steps.forEach((_,i)=>readNode(i));}
+function render(){let output="";
+steps.forEach((s,i)=>{const label=s.type==="agent"?("Agent "+(roles[s.role]||s.role)):"Công cụ xuất bản";
+const roleOptions=Object.entries(roles).map(([k,v])=>'<option value="'+esc(k)+'" '+(s.role===k?"selected":"")+'>'+esc(v)+'</option>').join("");
+const form=s.type==="agent"?
+'<label>Vai trò<select class="field" data-key="role">'+roleOptions+'</select></label><label>Yêu cầu với Agent<textarea class="field" data-key="instruction" maxlength="2400">'+esc(s.instruction)+'</textarea></label>':
+'<label>Tool<select class="field" data-key="action"><option value="wordpress.create_post" '+(s.action==="wordpress.create_post"?"selected":"")+'>WordPress</option><option value="postiz.create_post" '+(s.action==="postiz.create_post"?"selected":"")+'>Postiz Social</option></select></label>'+
+'<label>Kênh Postiz (ID thật, phân tách dấu phẩy)<input class="field" data-key="channel_ids" value="'+esc((s.channel_ids||[]).join(", "))+'" placeholder="Kết nối Postiz tại Tool Hub"></label>'+
+'<div class="form-grid"><label>Chế độ Postiz<select class="field" data-key="mode">'+["draft","now","schedule"].map(v=>'<option value="'+v+'" '+(s.mode===v?"selected":"")+'>'+v+'</option>').join("")+'</select></label>'+
+'<label>Ngày hẹn ISO 8601 (nếu schedule)<input class="field" data-key="scheduled_at" value="'+esc(s.scheduled_at||"")+'" placeholder="2026-12-05T09:00:00+07:00"></label>'+
+'<label>Tiêu đề WordPress<input class="field" data-key="title" value="'+esc(s.title||"")+'" placeholder="Tiêu đề bài viết"></label>'+
+'<label>WordPress<select class="field" data-key="status"><option value="draft" '+(s.status==="draft"?"selected":"")+'>draft</option><option value="publish" '+(s.status==="publish"?"selected":"")+'>publish</option></select></label></div>';
+output+=(i?'<div class="connector">↓</div>':"")+
+'<div class="stage '+(s.type==="tool"?"tool":"")+'" draggable="true" data-node="'+i+'">'+
+'<div class="num">'+(i+1)+'</div><div><div class="flex spread"><strong>'+esc(label)+'</strong><small class="muted">'+(s.type==="agent"?"Bước AI":"Luôn chờ duyệt")+'</small></div>'+form+'</div>'+
+'<div class="controls"><button data-move="-1" data-i="'+i+'" aria-label="Lên">↑</button><button data-move="1" data-i="'+i+'" aria-label="Xuống">↓</button><button data-remove="'+i+'" aria-label="Xóa">×</button></div></div>';
+});
+$("pipeline").innerHTML=output;
+}
+function newTemplate(){selectedId=null;steps=[agent("research","Phân tích dữ liệu có nguồn xác minh"),agent(),agent("quality","Kiểm chứng thông tin và soát nội dung"),publisher()];$("templateName").value="Marketing · Nội dung đã kiểm duyệt";$("templateDescription").value="Nghiên cứu → viết bài → QA → chờ duyệt đăng";$("templateSelect").value="";render();say("Đang tạo mẫu mới")}
+$("pipeline").addEventListener("input",e=>{const card=e.target.closest("[data-node]");if(card)readNode(Number(card.dataset.node))});
+$("pipeline").addEventListener("change",e=>{const card=e.target.closest("[data-node]");if(card){readNode(Number(card.dataset.node));if(e.target.dataset.key==="role"||e.target.dataset.key==="action")render();}});
+$("pipeline").addEventListener("click",e=>{const button=e.target.closest("button");if(!button)return;readAll();if(button.dataset.move!==undefined){const i=safeIndex(button.dataset.i),j=i+Number(button.dataset.move);if(i<0||j<0||j>=steps.length)return;[steps[i],steps[j]]=[steps[j],steps[i]];render()}
+else if(button.dataset.remove!==undefined){let i=safeIndex(button.dataset.remove);if(i>=0){steps.splice(i,1);render()}}});
+let drag=-1;
+$("pipeline").addEventListener("dragstart",e=>{readAll();const card=e.target.closest("[data-node]");if(!card)return;drag=Number(card.dataset.node);card.classList.add("drag");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",String(drag))});
+$("pipeline").addEventListener("dragover",e=>{if(e.target.closest("[data-node]"))e.preventDefault()});
+$("pipeline").addEventListener("drop",e=>{const card=e.target.closest("[data-node]");if(!card)return;e.preventDefault();const j=Number(card.dataset.node);if(drag>=0&&drag<steps.length&&j>=0&&j<steps.length){const [s]=steps.splice(drag,1);steps.splice(j,0,s);render()}drag=-1});
+$("pipeline").addEventListener("dragend",()=>{drag=-1;document.querySelectorAll(".stage.drag").forEach(n=>n.classList.remove("drag"))});
+$("addAgent").onclick=()=>{readAll();let idx=steps.findIndex(s=>s.type==="tool");steps.splice(idx<0?steps.length:idx,0,agent($("addRole").value||"content"));render()};
+$("addTool").onclick=()=>{readAll();if(steps.some(s=>s.type==="tool"))return say("Chỉ hỗ trợ một công cụ cuối quy trình",true);steps.push(publisher());render()};
+$("newTemplate").onclick=newTemplate;
+async function loadTemplates(){const data=await call("/workspaces/"+encodeURIComponent(ws)+"/builder/templates");templates=data.templates;$("templateSelect").innerHTML='<option value="">— Workflow mới —</option>'+templates.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.name)+'</option>').join("");if(selectedId)$("templateSelect").value=selectedId}
+$("templateSelect").onchange=()=>{const t=templates.find(x=>x.id===$("templateSelect").value);if(!t){newTemplate();return}selectedId=t.id;steps=JSON.parse(JSON.stringify(t.definition.steps));$("templateName").value=t.name;$("templateDescription").value=t.description;render();say("Đã tải mẫu "+t.name)};
+$("saveTemplate").onclick=async()=>{try{readAll();const def={name:$("templateName").value.trim(),description:$("templateDescription").value.trim(),steps};const url="/workspaces/"+encodeURIComponent(ws)+"/builder/templates"+(selectedId?"/"+encodeURIComponent(selectedId):"");const saved=await call(url,{method:selectedId?"PUT":"POST",body:JSON.stringify(def)});selectedId=saved.id;await loadTemplates();say("Đã lưu workflow "+saved.name)}catch(e){say(e.message,true)}};
+$("start").onclick=async()=>{try{readAll();if(!selectedId)throw Error("Lưu workflow trước khi chạy");const params={objective:$("objective").value.trim(),context:$("context").value.trim(),requires_approval:$("approval").checked,idempotency_key:(crypto?.randomUUID?.()||String(Date.now())+"-run")};
+const run=await call("/workspaces/"+encodeURIComponent(ws)+"/builder/templates/"+encodeURIComponent(selectedId)+"/run",{method:"POST",body:JSON.stringify(params)});
+say("Đã giao "+run.tasks.length+" bước AI; worker xử lý tuần tự. "+(run.definition.steps.at(-1)?.type==="tool"?"Công cụ sẽ chờ duyệt sau QA.":""));await loadRuns()}catch(e){say(e.message,true)}};
+async function syncRun(id){try{const data=await call("/builder/runs/"+encodeURIComponent(id)+"/sync",{method:"POST"});say("Đã đồng bộ: "+data.status);await loadRuns()}catch(e){say(e.message,true)}}
+async function approveJob(id){if(!confirm("Duyệt yêu cầu Tool này? Worker có thể đăng bài hoặc kích hoạt workflow bên ngoài sau khi duyệt."))return;try{await call("/tool-jobs/"+encodeURIComponent(id)+"/approve",{method:"POST"});say("Đã duyệt Tool job; chờ worker hoặc mở Tool Hub.");await loadRuns()}catch(e){say(e.message,true)}}
+async function loadRuns(){try{runs=(await call("/workspaces/"+encodeURIComponent(ws)+"/builder/runs")).runs;$("runCount").textContent=String(runs.length);$("runs").innerHTML=runs.map(r=>'<div class="run"><div class="flex spread"><strong>'+esc(r.objective.slice(0,120))+'</strong><span class="pill '+esc(r.status)+'">'+esc(r.status)+'</span></div><div class="muted" style="margin-top:6px">'+new Date(r.created_at*1000).toLocaleString("vi-VN")+' · '+esc(r.id.slice(0,8))+'</div>'+
+r.tasks.map(t=>'<div class="step-line"><b>'+esc(roles[t.role]||t.role)+'</b> · <span class="pill '+esc(t.status)+'">'+esc(t.status)+'</span>'+(t.error?'<div>'+esc(t.error)+'</div>':'')+(t.result?'<details><summary>Xem kết quả</summary><pre class="result">'+esc(t.result)+'</pre></details>':'')+'</div>').join("")+
+(r.tool?'<div class="step-line"><strong>'+esc(r.tool.action)+'</strong> · <span class="pill '+esc(r.tool.status)+'">'+esc(r.tool.status)+'</span>'+(r.tool.error?'<div>'+esc(r.tool.error)+'</div>':'')+'</div>':'')+
+(r.error?'<p style="font-size:12px;color:#b23845">'+esc(r.error)+'</p>':'')+
+'<div class="bar" style="margin-top:10px"><button class="btn ghost" data-sync="'+esc(r.id)+'">↻ Đồng bộ</button>'+
+(r.tool&&r.tool.status==="awaiting_approval"?'<button class="btn" data-approve="'+esc(r.tool.id)+'">Duyệt Tool</button>':'')+
+(r.tool?'<a href="/tool-hub" class="btn soft" style="text-decoration:none">Xem Tool Hub</a>':'')+'</div></div>').join("")||'<div class="blank">Chưa chạy workflow nào trong doanh nghiệp này.</div>'
+}catch(e){say(e.message,true)}}
+$("runs").addEventListener("click",e=>{let b=e.target.closest("button");if(!b)return;if(b.dataset.sync)syncRun(b.dataset.sync);if(b.dataset.approve)approveJob(b.dataset.approve)});
+$("refreshRuns").onclick=loadRuns;
+$("workspace").onchange=async()=>{ws=$("workspace").value;selectedId=null;newTemplate();try{await loadTemplates();await loadRuns();if(ws!==toolWs)say("Tool Hub hiện chỉ cho đăng từ workspace "+toolWs+"; Agent workflow vẫn chạy được.",true)}catch(e){say(e.message,true)}};
+async function init(){try{const [wsData,catalog,hub,health]=await Promise.all([call("/workspaces"),call("/catalog"),call("/tools/catalog"),call("/health")]);roles=Object.fromEntries(Object.entries(catalog.roles).map(([k,v])=>[k,v.name]));toolWs=hub.pilot_workspace;let companies=wsData.workspaces;ws=companies.some(w=>w.id===toolWs)?toolWs:(companies[0]?.id||"demo");
+$("workspace").innerHTML=companies.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join("");$("workspace").value=ws;
+$("addRole").innerHTML=Object.entries(roles).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v)+'</option>').join("");
+$("provider").textContent=esc((health.llm_provider||"AI")+" · "+(health.active_model||"unconfigured"));newTemplate();await loadTemplates();await loadRuns();
+}catch(e){say("Không kết nối backend: "+e.message,true)}}
+init();setInterval(()=>{if(document.visibilityState==="visible")loadRuns()},12000);
+</script></body></html>
