@@ -100,12 +100,20 @@ function saveSettings(input) {
   fs.renameSync(temp,settingsPath());
   return data;
 }
+// First-run defaults so the owner only has to paste the OpenRouter key
+// (owner feedback 2026-10-28: GrokBot needs no setup). Local editors only:
+// browsers stay out because their real sessions (e.g. Google Ads) would
+// become visible to the Agent. Supervised mode and vision stay off.
+const DEFAULT_ALLOWED_APPS=Object.freeze(["notepad.exe","explorer.exe","calc.exe"]);
+function allowedAppsSetting(c) {
+  return Array.isArray(c.allowedApps)?c.allowedApps:[...DEFAULT_ALLOWED_APPS];
+}
 function settingsForUI() {
   const c=readRawSettings();
   return {
     provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
-    allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
+    allowedApps:allowedAppsSetting(c).join(","),
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
     fullScreenEnabled:c.fullScreenEnabled===true,
@@ -129,7 +137,7 @@ function envForRuntime() {
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
     LHM_DESKTOP_NATIVE:"1",
-    LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
+    LHM_DESKTOP_ALLOWED_APPS:allowedAppsSetting(c).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
@@ -261,7 +269,9 @@ function openPage(route) {
 function createMain() {
   mainWindow=new BrowserWindow({
     width:1440,height:920,minWidth:900,minHeight:620,show:false,
-    backgroundColor:"#112339",autoHideMenuBar:true,
+    // Menu stays visible: it holds Settings and Emergency Stop, and a hidden
+    // bar meant first-time owners could not find where to paste the key.
+    backgroundColor:"#112339",autoHideMenuBar:false,
     webPreferences:{
       nodeIntegration:false,contextIsolation:true,sandbox:true,
       webSecurity:true,allowRunningInsecureContent:false,
@@ -389,6 +399,9 @@ app.whenReady().then(async()=>{
     await waitBackend();
     launchService("worker",env);
     openPage("/office3d");
+    // No key yet: open Settings straight away instead of leaving the owner
+    // to discover it in the menu.
+    if(!readRawSettings().openrouterKey)createSettings();
   }catch(e){
     writeLog("electron","Startup "+e.message+"\n");
     dialog.showMessageBox(mainWindow,{

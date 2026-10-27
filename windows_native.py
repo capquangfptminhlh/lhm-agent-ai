@@ -60,6 +60,67 @@ def _user32():
     u.keybd_event.argtypes=[wintypes.BYTE,wintypes.BYTE,wintypes.DWORD,ctypes.c_size_t]
     return u
 
+# Owner-facing exe name -> the process that actually owns the window on
+# Windows 11 (calc.exe only launches the UWP CalculatorApp.exe).
+PROCESS_ALIASES={"calculatorapp.exe":"calc.exe"}
+# Apps windows_launch may start. Fixed system binaries only, no arguments
+# except a Documents folder for Explorer; a browser is never launched here.
+LAUNCHABLE={"notepad.exe","explorer.exe","calc.exe"}
+
+
+def _allowed_process(name,allowlist):
+    """Pure allowlist check including the UWP alias (unit-testable)."""
+    return name in allowlist or PROCESS_ALIASES.get(name) in allowlist
+
+
+def _hosted_pid(u,hwnd,frame_pid):
+    """PID of the UWP app hosted inside an ApplicationFrameHost window."""
+    found=[]
+    callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)
+    def visitor(child,_):
+        pid=wintypes.DWORD(0)
+        u.GetWindowThreadProcessId(child,ctypes.byref(pid))
+        if pid.value and pid.value!=frame_pid:
+            found.append(pid.value)
+            return False
+        return True
+    u.EnumChildWindows(wintypes.HWND(hwnd),callback_type(visitor),0)
+    return found[0] if found else 0
+
+
+def _documents_folder(value):
+    """Resolve an Explorer target that must stay inside the user's Documents."""
+    if not isinstance(value,str) or not value.strip() or len(value)>260:
+        raise HTTPException(422,"Folder must be a path under Documents")
+    root=os.path.realpath(os.path.join(os.environ.get("USERPROFILE",""),"Documents"))
+    raw=value.strip()
+    if raw.lower().startswith(("documents\\","documents/")):
+        raw=raw[len("documents/"):]
+    target=os.path.realpath(raw if os.path.isabs(raw) else os.path.join(root,raw))
+    if os.path.commonpath([root,target])!=root:
+        raise HTTPException(403,"Explorer may only open folders inside Documents")
+    if not os.path.isdir(target):
+        raise HTTPException(404,"Folder does not exist")
+    return target
+
+
+def _launch(args):
+    import subprocess
+    app=args.get("app")
+    if app not in LAUNCHABLE or app not in _allowlist():
+        raise HTTPException(403,"App is not on the launch allowlist")
+    windir=os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR") or r"C:\Windows"
+    exe=os.path.join(windir,"explorer.exe") if app=="explorer.exe" \
+        else os.path.join(windir,"System32",app)
+    argv=[exe]
+    if args.get("folder") is not None:
+        if app!="explorer.exe":
+            raise HTTPException(422,"Only explorer.exe accepts a folder")
+        argv.append(_documents_folder(args["folder"]))
+    subprocess.Popen(argv,close_fds=True)
+    return {"launched":app,"next":"call windows_list to get the new window HWND"}
+
+
 def _window_info(hwnd):
     """Inspect a top-level window, never bypass the executable allowlist."""
     u=_user32()
@@ -75,9 +136,14 @@ def _window_info(hwnd):
         import psutil
         process=psutil.Process(pid.value)
         name=process.name().lower()
+        if name=="applicationframehost.exe":
+            # UWP apps (Windows 11 Calculator) draw inside a frame owned by
+            # ApplicationFrameHost; judge the window by the hosted app.
+            hosted=_hosted_pid(u,hwnd,pid.value)
+            name=psutil.Process(hosted).name().lower() if hosted else name
     except (ImportError,Exception) as exc:
         raise HTTPException(403,"Cannot validate owning process") from exc
-    if name not in _allowlist():
+    if not _allowed_process(name,_allowlist()):
         raise HTTPException(403,"Window executable is not on the desktop allowlist")
     size=min(500,max(1,u.GetWindowTextLengthW(hwnd)+1))
     title=ctypes.create_unicode_buffer(size)
@@ -145,7 +211,9 @@ def _focus(hwnd):
             pass
     if u.GetForegroundWindow()!=hwnd:
         raise HTTPException(409,"Windows denied foreground focus. Click the app manually and retry.")
-    return i
+    # Re-read after restore: a minimized window reports x/y = -32000, which
+    # made every following click land outside the app (owner run 2026-10-28).
+    return _window_info(hwnd)
 
 def _foreground(hwnd):
     i=_window_info(hwnd)
@@ -370,6 +438,8 @@ def execute(tool: str,args: dict):
         raise HTTPException(422,"Args must be an object")
     if tool=="windows_list":
         return {"windows":_enumerate(),"allowlist":sorted(_allowlist())}
+    if tool=="windows_launch":
+        return _launch(args)
     if tool=="windows_desktop_screenshot":
         if args:
             raise HTTPException(422,"Desktop screenshot accepts no parameters")
