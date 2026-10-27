@@ -28,6 +28,20 @@ ACTIONS = {
     "chatwoot.create_contact": {"tool":"chatwoot","writes_external":True,"approval_required":True},
     "comfyui.generate_image": {"tool":"comfyui","writes_external":True,"approval_required":True},
 }
+# Role-scoped tool choices. No generic arbitrary HTTP execution.
+ROLE_ACTIONS = {
+    "research": {"crawl4ai.crawl"},
+    "strategy": {"crawl4ai.crawl"},
+    "lead": {"crawl4ai.crawl", "twenty.create_person"},
+    "sales": {"twenty.create_person"},
+    "crm": {"twenty.create_person", "chatwoot.create_contact"},
+    "support": {"chatwoot.create_contact"},
+    "content": {"comfyui.generate_image"},
+    "ads": {"comfyui.generate_image"},
+    "quality": {"crawl4ai.crawl"},
+    "compliance": {"crawl4ai.crawl"},
+}
+
 EMAIL = re.compile(r"^[^\s@]{1,64}@[^\s@]{1,190}$")
 HEX = re.compile(r"^[\w .()\-]{1,180}$", re.UNICODE)
 
