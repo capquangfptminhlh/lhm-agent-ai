@@ -1,3 +1,21 @@
+
+## Upload ảnh/video trực tiếp lên Postiz (pilot)
+
+Trong `/tool-hub`, tab **Đăng bài đa kênh**, chọn ảnh/video rồi bấm **Upload vào Postiz**.
+LHM gửi file qua API chính thức `POST /public/v1/upload`, không lưu media vào
+GitHub và không coi upload là bài đăng. Khi Postiz trả về `id` và `path` HTTPS,
+giao diện thêm chúng vào trường `media` của yêu cầu xuất bản.
+
+- Chỉ cho phép JPEG, PNG, WEBP, GIF, MP4, MOV; tối đa 25 MB; kiểm tra phần mở
+  rộng, MIME type và các byte đầu định dạng file.
+- Chỉ hoạt động ở `LHM_TOOLS_WORKSPACE` với `LHM_POSTIZ_API_KEY` đặt trong
+  `.env`, không gửi khóa qua trình duyệt.
+- Sau khi có media ID, vẫn phải tạo yêu cầu đăng, qua QA nếu nguồn là Agent,
+  rồi **duyệt riêng** trước khi worker gửi bài đến social.
+- Tệp lớn (video dài), cài đặt YouTube/TikTok và các nền tảng yêu cầu đặc thù
+  cần hoàn thiện theo quyền API của tài khoản; không có cam kết đăng thành công.
+- Adapter có kiểm thử offline; **chưa nghiệm thu với tài khoản Postiz thật**.
+
 ## Workflow Builder kéo thả (Pilot)
 
 Truy cập **`/workflow-builder`** từ Dashboard hoặc Tool Hub. Đây là
