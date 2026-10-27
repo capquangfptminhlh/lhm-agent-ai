@@ -1,3 +1,35 @@
+## Workflow Builder kéo thả (Pilot)
+
+Truy cập **`/workflow-builder`** từ Dashboard hoặc Tool Hub. Đây là
+một công cụ lập quy trình *chạy thật qua backend*, không phải sơ đồ demo.
+
+1. Chọn doanh nghiệp, tạo các node Agent; kéo thả hoặc dùng nút ↑/↓ để đổi thứ tự.
+2. Lưu workflow. Mỗi lần chạy sẽ snapshot cấu hình và tạo các tác vụ SQLite
+   nối tiếp (chỉ chạy bước sau khi bước trước hoàn tất).
+3. Chạy worker riêng (`python worker.py`) để AI nhận việc trong khi đóng trình duyệt.
+   Giao diện theo dõi trạng thái, lỗi và kết quả từ các task thực tế.
+4. Tùy chọn bước cuối **Tool Postiz hoặc WordPress** để chuẩn bị xuất bản.
+   Cấu trúc bắt buộc là **Content → Quality → Tool**.
+5. Quality Agent phải trả về JSON chứa `{"verdict":"pass"}`, và hệ thống
+   phải ghi được review khớp SHA-256 của đầu ra Content. Nếu QA fail hoặc
+   không hiểu verdict, workflow dừng ở `review_required`.
+6. Sau QA đạt, hệ thống **chỉ tạo yêu cầu Tool Hub ở trạng thái
+   `awaiting_approval`**. Con người phải duyệt bằng nút trong Workflow
+   Builder/Tool Hub; worker mới được gọi API bên ngoài. Yêu cầu có khóa
+   idempotency và biên nhận; API nhận yêu cầu không được xem là bài đã công khai.
+
+**Phạm vi hiện tại:** 2–8 Agent tuần tự, tối đa một Tool ở cuối; chưa hỗ trợ
+DAG rẽ nhánh, trigger lịch tự động, media uploader, tài khoản OAuth nhiều doanh
+nghiệp hoặc luồng thao tác social không cần Postiz. Publisher chỉ dùng workspace
+pilot cấu hình bằng `LHM_TOOLS_WORKSPACE`. Nhớ cấu hình API key riêng cho
+model và tool. Không có key thì task giữ trạng thái chờ, không sinh kết quả giả.
+
+Chạy `python -m unittest discover -s tests -v` để kiểm tra luồng
+Agent → QA → chờ duyệt Tool qua provider mock. **Không có bài thử live
+xuất bản ra tài khoản xã hội thật trong CI.**
+
+---
+
 # LHM Agent Operating System — Open-source MVP
 
 **License: MIT | Public repository | GitHub: capquangfptminhlh/lhm-agent-ai**
