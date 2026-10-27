@@ -106,6 +106,10 @@ def main():
                             print(f"--- {path} tail ---\n"
                                   + path.read_text(encoding="utf-8", errors="replace")[-3200:],
                                   flush=True)
+                for path in sorted(profile.rglob("logs/*.log"))[:12]:
+                    print(f"--- app userData: {path} ---\\n"
+                          + path.read_text(encoding="utf-8", errors="replace")[-3200:],
+                          flush=True)
                 for port in (7770, 7782):
                     import socket
                     with socket.socket() as sock:
