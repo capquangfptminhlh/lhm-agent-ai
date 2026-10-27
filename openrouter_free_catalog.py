@@ -12,7 +12,7 @@ import httpx
 
 CATALOG_URL = "https://openrouter.ai/api/v1/models"
 ROLE_HINTS = {
-    "research": ("gemma", "nemotron", "xingchen"),
+    "research": ("nemotron", "gemma", "xingchen"),
     "director": ("nemotron", "gemma"),
     "strategy": ("nemotron", "gemma"),
     # Gemma Free returned 429 during the real Content Agent smoke while
@@ -23,7 +23,7 @@ ROLE_HINTS = {
     "compliance": ("nemotron", "gemma"),
     "analytics": ("nemotron", "gemma"),
     "operations": ("nemotron", "gemma"),
-    "support": ("gemma", "nemotron"),
+    "support": ("nemotron", "gemma"),
 }
 # OpenRouter returned pricing may include request, image, cache rates.
 # Reject an item if ANY advertised monetary field is positive or unknown.
