@@ -8,6 +8,9 @@ on:
       - 'windows_native.py'
       - 'computer_executor.py'
       - 'computer_agent.py'
+      - 'robot_vision.py'
+      - 'robot_sandbox.py'
+      - 'worker.py'
       - '.github/workflows/windows-desktop.yml'
   push:
     branches: [main]
@@ -45,7 +48,7 @@ jobs:
       - name: Test Win32 controller safety defaults (without OS clicks)
         env:
           LHM_DB_PATH: lhm-ci-native-unit.sqlite3
-        run: python -m unittest discover -s tests -p test_windows_native.py -v
+        run: python -m unittest discover -s tests -p "test_*native.py" -v
 
       - name: Run Python runtime import test
         env:
@@ -67,7 +70,7 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --collect-submodules pywinauto desktop/runtime.py
 
       - name: Smoke test actual bundled runtime EXE
         shell: pwsh

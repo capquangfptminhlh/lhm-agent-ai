@@ -28,8 +28,12 @@ def main(argv=None):
         import computer_agent
         import computer_executor
         import windows_native
+        import robot_vision
+        import robot_sandbox
         assert callable(app.app) and callable(computer_executor.runner)
         assert "windows_click" in computer_agent.TOOLS
+        assert "vision_observe" in computer_agent.TOOLS
+        assert "sandbox_run" in computer_agent.TOOLS
         print("LHM Windows runtime imports PASS",flush=True)
         return
     if mode=="api":

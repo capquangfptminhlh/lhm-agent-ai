@@ -25,7 +25,7 @@ textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d7
 <nav><a href="/team-chat">Team Chat</a><a href="/office3d">Văn phòng 3D</a><a href="/workflow-builder">Workflows</a><a href="/agent-tools">Agent Tools</a><a href="/dashboard">Dashboard</a></nav></header>
 <main>
 <div class="line between"><div><h1>Máy tính cho từng AI Agent</h1><p class="desc">Một bảng điều khiển kiểu Codex: giao nhiệm vụ, quan sát tiến độ, duyệt thao tác và xem màn hình Chrome trong sandbox.</p></div>
-<div class="chips"><span class="chip">Terminal</span><span class="chip">Files</span><span class="chip">Chrome / Playwright</span><span class="chip">Approval Gate</span></div></div>
+<div class="chips"><span class="chip">Files / Chrome / Windows</span><span class="chip">Approval Gate</span><span class="chip" id="visionChip">Vision: kiểm tra...</span><span class="chip" id="sandboxChip">Sandbox: kiểm tra...</span><span class="chip" id="agentsChip">Agent: kiểm tra...</span></div></div>
 <div class="grid">
 <div>
 <section class="panel"><h2>Giao nhiệm vụ mới</h2>
@@ -76,7 +76,10 @@ function report(s,error=false){$("notice").textContent=s;$("notice").className=e
 function status(x){return '<span class="status '+esc(x)+'">'+esc(x)+'</span>'}
 function bytes(x){return esc(JSON.stringify(x,null,2))}
 async function initialize(){
- try{const [workspaces,catalog]=await Promise.all([api("/workspaces"),api("/catalog")]);
+ try{const [workspaces,catalog,capabilities]=await Promise.all([api("/workspaces"),api("/catalog"),api("/computer/capabilities")]);
+ $("visionChip").textContent="Vision: "+(capabilities.visual_observation?"Đã bật — duyệt mỗi ảnh":"TẮT (Electron → Thiết lập Robot)");
+ $("sandboxChip").textContent="Code sandbox: "+(capabilities.sandbox_code?"Docker — duyệt lệnh":"TẮT / chưa có Docker");
+ $("agentsChip").textContent="Agent đồng thời: "+capabilities.max_simultaneous_agent_tasks;
  const w=workspaces.workspaces||[],params=new URLSearchParams(location.search);
  const preferred=params.get("workspace");
  ws=w.some(x=>x.id===preferred)?preferred:(w.some(x=>x.id==="demo")?"demo":w[0]?.id);

@@ -60,6 +60,47 @@ async def process_one_approved_tool() -> bool:
     return False
 
 
+def agent_parallelism() -> int:
+    """Owner-set upper bound; no implicit 16-way burst on a free model."""
+    try:
+        return max(1,min(int(os.environ.get("LHM_AGENT_PARALLELISM","1")),4))
+    except ValueError:
+        return 1
+
+
+async def _run_queued_task(task_id: str) -> None:
+    try:
+        await execute_task(task_id)
+    except HTTPException as err:
+        print(f"Task {task_id}: {err.status_code} {err.detail}",flush=True)
+    except Exception as err:
+        print(f"Unexpected worker error: {type(err).__name__}",flush=True)
+
+
+async def dispatch_agent_batch(rows: list) -> int:
+    """Dispatch different role work independently with a strict concurrency cap.
+
+    Each claim_task() reserves quota and budget under BEGIN IMMEDIATE before
+    any awaited model call. Agent role+workspace pairs are not run together
+    to prevent a single coworker receiving conflicting tasks at once.
+    Windows cursor actions are not executed here.
+    """
+    selected=[]
+    seen=set()
+    for task in rows:
+        key=(task["workspace_id"],task["role"])
+        if key in seen or not model_configured(task["model"]):
+            continue
+        selected.append(task["id"])
+        seen.add(key)
+        if len(selected)>=agent_parallelism():
+            break
+    if not selected:
+        return 0
+    await asyncio.gather(*(_run_queued_task(tid) for tid in selected))
+    return len(selected)
+
+
 async def main() -> None:
     print("LHM Agent Worker running. Approved tool jobs execute once, with reconciliation on errors.", flush=True)
     last_recover=0
@@ -82,27 +123,15 @@ async def main() -> None:
         # Approved external actions run even without an AI API key.
         await process_one_approved_tool()
         with db() as c:
-            rows=c.execute("""SELECT t.id FROM tasks t LEFT JOIN tasks dep ON t.depends_on=dep.id
+            rows=c.execute("""SELECT t.id,t.workspace_id,t.role,t.model FROM tasks t
+                LEFT JOIN tasks dep ON t.depends_on=dep.id
                 WHERE t.status='queued' AND t.next_run_at<=?
                 AND (t.depends_on IS NULL OR dep.status='completed')
-                ORDER BY t.created_at,t.rowid LIMIT 20""",(now(),)).fetchall()
-        if not rows:
+                ORDER BY t.created_at,t.rowid LIMIT 40""",(now(),)).fetchall()
+        dispatched=await dispatch_agent_batch(rows)
+        if not dispatched:
             await asyncio.sleep(2)
             continue
-        for t in rows:
-            with db() as c:
-                queued = c.execute("SELECT model FROM tasks WHERE id=?", (t["id"],)).fetchone()
-            # A missing provider key must not starve other providers' ready work.
-            if not queued or not model_configured(queued["model"]):
-                continue
-            try:
-                await execute_task(t["id"])
-            except HTTPException as err:
-                print(f"Task {t['id']}: {err.status_code} {err.detail}",flush=True)
-            except Exception as err:
-                print(f"Unexpected worker error: {type(err).__name__}",flush=True)
-            # One AI request per loop prevents a burst from consuming free quota.
-            break
 
 
 if __name__=="__main__":
