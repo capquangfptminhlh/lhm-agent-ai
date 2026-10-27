@@ -69,7 +69,8 @@ async def fetch_verified_models(*, timeout: float = 10) -> list[str]:
     async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.get(CATALOG_URL)
         response.raise_for_status()
-        models = eligible_free_models(response.json())
+        from openrouter_user_allowlist import filter_approved_models
+        models = filter_approved_models(response.json())
     if not models:
         raise ValueError("No verified zero-priced :free models available")
     return models
