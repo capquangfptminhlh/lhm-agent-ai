@@ -98,6 +98,7 @@ def computer_dashboard():
 
 @router.post("/workspaces/{ws}/computer/runs",status_code=201)
 def create_computer_run(ws: str, inp: ComputerRunIn):
+    prepare_db()
     if inp.role not in ROLES:
         raise HTTPException(422,"Agent role không hợp lệ")
     with db() as c:
@@ -121,6 +122,7 @@ def create_computer_run(ws: str, inp: ComputerRunIn):
 
 @router.get("/workspaces/{ws}/computer/runs")
 def list_computer_runs(ws: str):
+    prepare_db()
     with db() as c:
         if not workspace(c,ws):raise HTTPException(404,"Workspace không tồn tại")
         rows=c.execute("SELECT * FROM computer_runs WHERE workspace_id=? ORDER BY created_at DESC,rowid DESC LIMIT 30",
@@ -129,11 +131,13 @@ def list_computer_runs(ws: str):
 
 @router.get("/computer/runs/{rid}")
 def get_computer_run(rid: str):
+    prepare_db()
     with db() as c:
         return _view(c,_get(c,rid))
 
 @router.post("/computer/runs/{rid}/cancel")
 def cancel_computer_run(rid: str):
+    prepare_db()
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         r=_get(c,rid)
@@ -147,6 +151,7 @@ def cancel_computer_run(rid: str):
 
 @router.post("/computer/runs/{rid}/steps/{sid}/approve")
 def approve_computer_step(rid: str,sid: str):
+    prepare_db()
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         r=_get(c,rid)
@@ -160,6 +165,7 @@ def approve_computer_step(rid: str,sid: str):
 
 @router.post("/computer/runs/{rid}/steps/{sid}/reject")
 def reject_computer_step(rid: str,sid: str):
+    prepare_db()
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         r=_get(c,rid)
@@ -254,6 +260,7 @@ def _approval_required(tool: str) -> bool:
     return False
 
 async def computer_tick(rid: str) -> dict[str,Any]:
+    prepare_db()
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         run=_get(c,rid)
@@ -341,6 +348,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         return {"status":"needs_review","id":rid,"error":str(msg)[:180]}
 
 async def process_one_computer_run() -> bool:
+    prepare_db()
     with db() as c:
         r=c.execute("SELECT id FROM computer_runs WHERE status='queued' AND next_run_at<=? ORDER BY created_at,rowid LIMIT 1",
                     (now(),)).fetchone()
@@ -349,6 +357,7 @@ async def process_one_computer_run() -> bool:
     return True
 
 def recover_computer_runs() -> None:
+    prepare_db()
     # Deliberately do NOT retry a command after a worker crash. Outcome may
     # have happened remotely even if our local receipt was not persisted.
     with db() as c:
@@ -368,6 +377,7 @@ async def run_one_computer_tick(rid: str):
 
 @router.get("/computer/runs/{rid}/screenshot")
 async def computer_browser_screenshot(rid: str):
+    prepare_db()
     with db() as c:
         row=_get(c,rid)
         r=dict(row)
