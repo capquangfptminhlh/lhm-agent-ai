@@ -64,3 +64,18 @@ jobs:
           path: office3d-browser-smoke.png
           if-no-files-found: ignore
           retention-days: 7
+
+  computer-sidecar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Playwright Computer Runner image
+        run: docker build --file Dockerfile.computer --tag lhm-computer:ci .
+      - name: Authenticate runner and execute sandbox file tool
+        run: |
+          docker run --rm --network none \
+            -e LHM_COMPUTER_RUNNER_TOKEN=test-only-ci-token \
+            -e LHM_COMPUTER_HOME=/tmp/agent-data \
+            lhm-computer:ci python -c "from fastapi.testclient import TestClient; from computer_executor import runner; t=TestClient(runner); auth={'Authorization':'Bearer test-only-ci-token'}; assert t.get('/health',headers=auth).status_code==200; j={'workspace_id':'demo','role':'research','tool':'write_file','args':{'path':'ci-smoke.txt','content':'Computer sandbox PASS'}}; assert t.post('/v1/tool',headers=auth,json=j).status_code==200; j['tool']='read_file'; j['args']={'path':'ci-smoke.txt'}; assert t.post('/v1/tool',headers=auth,json=j).json()['content']=='Computer sandbox PASS'; print('Computer sidecar Docker smoke OK')"
