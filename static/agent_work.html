@@ -26,6 +26,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 <label>Mục tiêu cụ thể<textarea id="objective" placeholder="Ví dụ: Soạn bài SEO về phụ kiện điện thoại, chỉ dùng thông tin được cung cấp"></textarea></label>
 <label>Dữ liệu / tài liệu đầu vào (tùy chọn)<textarea id="context" placeholder="Dán dữ liệu thực tế, không dán mật khẩu hay token"></textarea></label>
 <button id="submit">Giao việc cho Agent</button> <button id="refresh" style="background:#637b93">Kiểm tra kết quả</button>
+<button id="qa" style="background:#7353a1" hidden>Chuyển Quality kiểm duyệt bài</button>
 <button id="wpDraft" style="background:#306b55" hidden>Chuyển bản nháp sang WordPress (cần duyệt)</button>
 <p id="feedback" role="status" aria-live="polite"></p>
 <div id="report" class="notice">Chưa có nhiệm vụ.</div>
@@ -77,18 +78,34 @@ async function loadResult(){
   const data=await req("/workspaces/"+encodeURIComponent($("ws").value.trim())+
        "/agent-work-orders/"+encodeURIComponent(selectedOrder));
   selectedRecord=data;
-  $("wpDraft").hidden=!(data.role==="content" && data.task_status==="completed");
+  $("qa").hidden=!(data.role==="content" && data.task_status==="completed" && !data.qa_task_id);
+  $("wpDraft").hidden=!(data.role==="content" && data.can_submit_wordpress===true);
   $("report").textContent="Nghề: "+data.fixed_job.title+
     "\nTrạng thái Worker: "+data.task_status+
     "\nTrạng thái công việc: "+data.work_status+
+    "\nQA: "+data.qa_status+" / "+(data.qa_verdict||"chưa duyệt")+
     "\nBáo đã thực hiện bên ngoài: KHÔNG (phải đối chiếu biên nhận Tool Hub)"+
     "\nBước tiếp: "+data.next_step+(data.error?"\nLỗi: "+data.error:"");
   $("draft").hidden=!data.draft;$("draft").textContent=data.draft||"";
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
 }
+$("qa").onclick=async()=>{
+ const d=selectedRecord;if(!d || d.role!=="content" || d.task_status!=="completed")return;
+ const btn=$("qa");btn.disabled=true;
+ try{
+  const result=await req("/workspaces/"+encodeURIComponent($("ws").value.trim())+
+   "/agent-work-orders/"+encodeURIComponent(d.id)+"/quality-review",
+   {method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+  $("feedback").textContent="Đã giao việc kiểm duyệt thật cho Quality: "+result.qa_task_id+
+   ". Sau khi Worker xử lý, bấm Kiểm tra kết quả. Không thể tạo bài WordPress trước khi QA PASS.";
+  await loadResult();
+ }catch(e){$("feedback").textContent="Không giao được Quality: "+e.message;$("feedback").className="danger"}
+ finally{btn.disabled=false}
+};
 $("wpDraft").onclick=async()=>{
  const d=selectedRecord;if(!d || d.role!=="content" || d.task_status!=="completed")return;
- if(!confirm("Chuyển NỘI DUNG BẢN NHÁP này thành yêu cầu WordPress để chủ DUYỆT? Chưa đăng bài."))return;
+ if(!d.can_submit_wordpress){$("feedback").textContent="Quality chưa PASS cho đúng bản nháp; chưa chuyển sang WordPress.";return}
+ if(!confirm("Quality đã PASS. Chuyển bản nháp thành yêu cầu WordPress để chủ DUYỆT? Chưa đăng bài."))return;
  const btn=$("wpDraft");btn.disabled=true;
  try{
    const ws=$("ws").value.trim();
