@@ -137,6 +137,17 @@ def _run_view(c: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         if job:
             d["tool"] = {"id":job["id"],"action":job["action"],"status":job["status"],
                          "error":job["error"],"receipt":json.loads(job["result_json"]) if job["result_json"] else None}
+            # Derive the visible state from the actual Tool Hub receipt without
+            # claiming an API acknowledgement means the post is public.
+            d["status"] = {
+                "awaiting_approval":"awaiting_tool_approval",
+                "approved":"approved_external",
+                "executing":"publishing",
+                "accepted_unverified":"submitted_unverified",
+                "verified_published":"published_verified",
+                "needs_reconciliation":"needs_reconciliation",
+                "failed_validation":"blocked",
+            }.get(job["status"], d["status"])
     return d
 
 
