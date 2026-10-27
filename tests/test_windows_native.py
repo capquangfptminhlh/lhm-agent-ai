@@ -38,7 +38,8 @@ class WindowsNativeTests(unittest.TestCase):
                    "tool":tool,"args":args})
 
     def test_windows_mutation_unavailable_in_docker(self):
-        self.assertEqual(self._post("windows_list",{}).status_code,503)
+        response=self._post("windows_list",{})
+        self.assertEqual(response.status_code,503,response.text)
         self.assertEqual(self._post("windows_click",{"hwnd":123,"x":10,"y":20}).status_code,503)
         self.assertEqual(self._post("windows_type",{"hwnd":123,"text":"Xin chào"}).status_code,503)
 
