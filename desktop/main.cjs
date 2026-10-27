@@ -391,12 +391,19 @@ app.whenReady().then(async()=>{
   if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: instance lock acquired\n");
   adminToken=crypto.randomBytes(32).toString("base64url");
   runnerToken=crypto.randomBytes(32).toString("base64url");
-  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: registering emergency shortcut\n");
-  emergencyShortcutActive=globalShortcut.register("Control+Alt+Pause",
-    ()=>{emergencyStop().catch(()=>{});});
-  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: emergency shortcut registration returned\n");
-  if(!emergencyShortcutActive)
-    writeLog("electron","WARNING: Global emergency shortcut registration failed; menu stop remains available\\n");
+  // OS-global Ctrl+Alt+Pause hangs on the unattended GitHub Windows
+  // runner before Electron's frontend/backend is initialized. This branch
+  // tests the Console/Menu emergency stop on CI, NOT the physical hotkey.
+  // A real owner Windows session MUST test the hotkey before M2 can merge.
+  if(process.env.GITHUB_ACTIONS==="true") {
+    emergencyShortcutActive=false;
+    writeLog("electron","CI ONLY: physical Ctrl+Alt+Pause NOT TESTED; Menu Stop still active\n");
+  } else {
+    emergencyShortcutActive=globalShortcut.register("Control+Alt+Pause",
+      ()=>{emergencyStop().catch(()=>{});});
+    if(!emergencyShortcutActive)
+      writeLog("electron","WARNING: Global emergency shortcut registration failed; Menu Stop still available\n");
+  }
   if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: initializing windows and IPC\n");
   secureSession();settingsIPC();makeMenu();createMain();
   if(process.platform!=="win32"){
