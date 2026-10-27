@@ -53,6 +53,17 @@ textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d7
 <p class="meta">Hình chụp thật từ Chrome trong Computer Runner. Không dùng ảnh minh họa hoặc tiến độ giả.</p>
 <div class="screen"><span id="screenEmpty">Chưa có Browser session. Chạy browser_open rồi bấm Chụp màn hình.</span><img id="screenImage" alt="Ảnh chụp màn hình Chrome thật của Agent" hidden></div>
 </section>
+<section class="panel">
+  <div class="line between"><h2 style="margin:0">Ứng dụng Windows thật · Electron</h2><span class="status">LOCAL NATIVE</span></div>
+  <p class="meta">Chỉ liệt kê cửa sổ thuộc EXE đã được cho phép trong Electron → Thiết lập Robot. Không có quyền điều khiển toàn bộ Windows mặc định.</p>
+  <div class="line">
+    <button id="windowsRefresh" type="button" class="btn secondary" disabled>↻ Tìm cửa sổ</button>
+    <select id="windowsSelect" aria-label="Cửa sổ Windows được phép" style="flex:1;min-width:200px"><option value="">Chọn cửa sổ của Agent</option></select>
+    <button id="windowsScreenshot" type="button" class="btn secondary" disabled>◉ Xem màn hình</button>
+  </div>
+  <div class="screen" style="margin-top:12px"><span id="nativeEmpty">Cần chạy LHM Robot Desktop Electron trên Windows và tạo phiên Computer Agent.</span><img id="nativeImage" alt="Màn hình cửa sổ Windows được phép" hidden></div>
+  <div class="note">Các bước <code>windows_activate</code>, <code>windows_click</code>, <code>windows_type</code> và <code>windows_scroll</code> do AI đề xuất sẽ xuất hiện trong nhật ký phía trên và <strong>chờ anh duyệt</strong> trước khi thực hiện.</div>
+</section>
 </div></div>
 </main>
 <script>
@@ -107,6 +118,8 @@ function renderSelected(){
  $("oneTick").disabled=!r||r.status!=="queued";
  $("stop").disabled=!r||!["queued","awaiting_approval"].includes(r.status);
  $("screenshot").disabled=!r;
+ $("windowsRefresh").disabled=!r;
+ $("windowsScreenshot").disabled=!r||!$("windowsSelect").value;
  $("outcome").hidden=!r?.outcome&&!r?.error;
  $("outcome").textContent=r?.status==="completed_unverified"?("AI tự báo xong — chưa nghiệm thu thủ công: "+r.outcome):(r?.outcome||r?.error||"");
  $("steps").innerHTML=r?.steps?.length?r.steps.map(step=>{
@@ -146,5 +159,38 @@ $("screenshot").onclick=async()=>{
  const src=URL.createObjectURL(blob);image.onload=()=>URL.revokeObjectURL(src);image.src=src;image.hidden=false;$("screenEmpty").hidden=true;
  }catch(e){$("screenEmpty").textContent=e.message;report(e.message,true)}
 };
+
+$("windowsRefresh").onclick=async()=>{
+  if(!selected)return;
+  try{
+    const d=await api("/computer/runs/"+encodeURIComponent(selected)+"/windows");
+    const list=Array.isArray(d.windows)?d.windows:[];
+    $("windowsSelect").innerHTML='<option value="">Chọn cửa sổ Windows được phép</option>'+
+      list.map(w=>'<option value="'+String(w.hwnd)+'">'+esc(w.process)+' · '+esc(w.title||'Không có tiêu đề')+'</option>').join("");
+    $("windowsScreenshot").disabled=true;
+    $("nativeEmpty").textContent=list.length?
+      "Chọn cửa sổ rồi bấm Xem màn hình.":
+      "Không thấy cửa sổ thuộc ứng dụng được phép. Mở Thiết lập Robot trong Electron để cấp danh sách EXE.";
+  }catch(e){$("nativeEmpty").textContent="Native Controller chưa chạy hoặc chưa cấu hình: "+e.message}
+};
+$("windowsSelect").onchange=()=>{
+  $("windowsScreenshot").disabled=!selected||!$("windowsSelect").value;
+};
+$("windowsScreenshot").onclick=async()=>{
+  const handle=$("windowsSelect").value;if(!selected||!/^[0-9]+$/.test(handle))return;
+  const image=$("nativeImage");image.hidden=true;$("nativeEmpty").hidden=false;
+  $("nativeEmpty").textContent="Đang chụp đúng cửa sổ Windows đã được cho phép...";
+  try{
+    const response=await fetch("/computer/runs/"+encodeURIComponent(selected)+
+      "/windows/"+handle+"/screenshot",{cache:"no-store"});
+    if(!response.ok)throw Error("Windows screenshot error HTTP "+response.status);
+    const blob=await response.blob();
+    if(blob.type!=="image/png")throw Error("Native Controller không trả PNG");
+    const src=URL.createObjectURL(blob);
+    image.onload=()=>URL.revokeObjectURL(src);
+    image.src=src;image.hidden=false;$("nativeEmpty").hidden=true;
+  }catch(e){$("nativeEmpty").textContent=e.message;report(e.message,true)}
+};
+
 initialize();setInterval(()=>{if(document.visibilityState==="visible")loadRuns()},6000);
 </script></body></html>
