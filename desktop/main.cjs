@@ -20,6 +20,7 @@ const ROUTES = Object.freeze({
   "Văn phòng 3D":"/office3d",
   "Đội Agent trao đổi":"/team-chat",
   "Việc cố định Agent":"/agent-work",
+  "Agent theo repository":"/repo-agents/ui",
   "Máy tính Agent":"/computer",
   "Công cụ chuyên môn":"/agent-tools",
   "Workflow Builder":"/workflow-builder",
