@@ -61,12 +61,28 @@ async def _exec(argv: list[str],timeout: float=MAX_SECONDS) -> tuple[int,bytes,b
         env=_clean_env(),stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
         start_new_session=(os.name!="nt"))
+    # Drain pipes continuously while retaining only 10 KB each. Calling
+    # communicate() can consume unbounded host RAM if untrusted code floods
+    # stdout/stderr, despite slicing the final result afterwards.
+    async def drain(stream):
+        captured=bytearray()
+        while True:
+            chunk=await stream.read(4096)
+            if not chunk:
+                break
+            if len(captured)<SANDBOX_MAX_OUTPUT:
+                captured.extend(chunk[:SANDBOX_MAX_OUTPUT-len(captured)])
+        return bytes(captured)
+    out_task=asyncio.create_task(drain(proc.stdout))
+    err_task=asyncio.create_task(drain(proc.stderr))
     try:
-        stdout,stderr=await asyncio.wait_for(proc.communicate(),timeout=timeout)
-        return proc.returncode,stdout[:SANDBOX_MAX_OUTPUT],stderr[:SANDBOX_MAX_OUTPUT]
+        code=await asyncio.wait_for(proc.wait(),timeout=timeout)
+        stdout,stderr=await asyncio.gather(out_task,err_task)
+        return code,stdout,stderr
     except asyncio.TimeoutError:
         proc.kill()
-        await proc.communicate()
+        await proc.wait()
+        await asyncio.gather(out_task,err_task,return_exceptions=True)
         raise
 
 
