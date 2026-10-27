@@ -32,7 +32,7 @@ ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
 WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_activate","windows_click","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-                 "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
+                 "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll","windows_evidence"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press","browser_evidence"} | WINDOWS_TOOLS
 PAUSED = False  # compatibility; authoritative state is the persisted file
@@ -91,7 +91,8 @@ class ToolRequest(BaseModel):
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_type","windows_scroll",
                   "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"]
+                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll",
+                  "windows_evidence"]
     args: dict[str,Any] = Field(default_factory=dict)
 
 def _auth(authorization: str | None) -> None:
