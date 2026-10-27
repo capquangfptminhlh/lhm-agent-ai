@@ -23,3 +23,17 @@
 `python -m unittest discover -s tests -v`
 
 Chưa nghiệm thu: đăng social thực với token khách, Postiz readback, media upload, thanh toán SaaS, Hermes3D render đủ và tenant isolation production. WordPress HTTP 200 không đồng nghĩa đã được Google lập chỉ mục.
+
+## Workflow Builder — kiểm thử vận hành
+
+1. Khởi động bằng Docker Compose, xác minh `GET /health` và mở `/workflow-builder`.
+2. Tạo template Research → Content → Quality → Postiz/WordPress; lưu và bắt đầu chạy.
+3. Kiểm tra worker tạo 3 task SQLite, không bỏ qua phụ thuộc và không xuất bản khi QA chưa có verdict=`pass`.
+4. Sau khi QA đạt, kiểm tra Tool Hub có **một** request `awaiting_approval`.
+5. Chỉ sau khi người quản trị duyệt mới gọi API đích; kiểm tra trạng thái `accepted_unverified` và đối soát URL bên ngoài.
+6. Khởi động lại worker để xác nhận không tạo lại cùng một yêu cầu tool.
+7. Nếu API trả timeout sau khi gửi, yêu cầu phải ở trạng thái `needs_reconciliation`, tuyệt đối không tự lặp lại.
+8. Kiểm tra khóa workspace: chỉ `LHM_TOOLS_WORKSPACE` có quyền sử dụng token Postiz/WordPress trong pilot.
+
+GitHub CI giờ còn kiểm tra **Docker image khởi động thật**, không chỉ unittest.
+Đây vẫn là local pilot, không phải SaaS an toàn để mở thẳng ra internet.
