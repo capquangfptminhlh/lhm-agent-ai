@@ -1,0 +1,233 @@
+"""LHM Computer Runner: a separate non-root service for sandboxed agent tools.
+
+Important: one shared runner is NOT an isolated VM per agent. The OS process
+has access to its mounted volume. Use a dedicated runner/container per tenant
+and per agent for strict isolation. Never mount host directories or Docker sock.
+No GitHub/API/LLM tokens should be present inside this container.
+"""
+from __future__ import annotations
+import asyncio
+import base64
+import os
+import re
+import resource
+import shutil
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from fastapi import FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field
+from typing import Any, Literal
+
+runner = FastAPI(title="LHM Computer Runner", docs_url=None, redoc_url=None, openapi_url=None)
+ROOT = Path(os.getenv("LHM_COMPUTER_HOME", "/agent-data")).resolve()
+ROLE_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
+ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
+                    "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
+ALLOWED_TOOLS = {"list_files","read_file","write_file","run_command","browser_open",
+                 "browser_snapshot","browser_click","browser_fill","browser_screenshot"}
+MAX_FILE_BYTES = 96_000
+MAX_OUTPUT_CHARS = 12_000
+BROWSER_SESSIONS: dict[str,Any] = {}
+BROWSER_LOCKS: dict[str,asyncio.Lock] = {}
+_PLAYWRIGHT = None
+
+class ToolRequest(BaseModel):
+    workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
+    role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
+    tool: Literal["list_files","read_file","write_file","run_command","browser_open",
+                  "browser_snapshot","browser_click","browser_fill","browser_screenshot"]
+    args: dict[str,Any] = Field(default_factory=dict)
+
+def _auth(authorization: str | None) -> None:
+    import secrets
+    token=os.getenv("LHM_COMPUTER_RUNNER_TOKEN","").strip()
+    if not token:
+        raise HTTPException(503,"Runner token not configured")
+    if not authorization or not secrets.compare_digest(authorization,"Bearer "+token):
+        raise HTTPException(401,"Runner authentication required")
+
+def _home(ws: str, role: str) -> Path:
+    if not ID_RE.fullmatch(ws) or not ROLE_RE.fullmatch(role):
+        raise HTTPException(422,"Invalid workspace/agent identifier")
+    root=ROOT/ws/role
+    root.mkdir(parents=True,exist_ok=True)
+    return root
+
+def _files(ws: str, role: str) -> Path:
+    target=_home(ws,role)/"files"
+    target.mkdir(parents=True,exist_ok=True)
+    return target
+
+def _safe_path(ws: str,role: str,name: str) -> Path:
+    if not isinstance(name,str) or not name or len(name)>360 or name.startswith("/"):
+        raise HTTPException(422,"Invalid relative path")
+    base=_files(ws,role).resolve()
+    path=(base/name).resolve()
+    if not path.is_relative_to(base):
+        raise HTTPException(403,"Path outside Agent sandbox")
+    return path
+
+def _allowed_domain(url: str) -> bool:
+    allow={x.lower().rstrip(".").strip() for x in
+            os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if x.strip()}
+    try:
+        u=urlsplit(url)
+        host=(u.hostname or "").lower().rstrip(".")
+        return u.scheme=="https" and host in allow and bool(host) and (
+            u.port in (None,443)) and not u.username and not u.password
+    except ValueError:
+        return False
+
+def _child_limits() -> None:
+    # POSIX runner on Linux only. Timeout and memory are defensive limits,
+    # not a substitute for per-container / VM security boundaries.
+    resource.setrlimit(resource.RLIMIT_CPU,(15,16))
+    resource.setrlimit(resource.RLIMIT_FSIZE,(12*1024*1024,12*1024*1024))
+    resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
+
+async def _command(ws: str,role: str,args: dict[str,Any]) -> dict:
+    argv=args.get("argv")
+    if not isinstance(argv,list) or not 1<=len(argv)<=24 or any(
+         not isinstance(x,str) or len(x)>500 or "\x00" in x for x in argv):
+        raise HTTPException(422,"Command must be a bounded argv list; no shell")
+    binary=argv[0]
+    if "/" in binary or binary not in ALLOWED_COMMANDS:
+        raise HTTPException(403,"Command not in allowed sandbox toolset")
+    exe=shutil.which(binary)
+    if not exe:
+        raise HTTPException(422,"Sandbox command not installed")
+    cwd=_safe_path(ws,role,args.get("cwd","."))
+    if not cwd.is_dir():
+        raise HTTPException(422,"Working directory not found")
+    # Do not pass the runner bearer token, service account env or secrets to
+    # child processes. Commands run as non-root inside a restricted sidecar.
+    env={"PATH":"/usr/local/bin:/usr/bin:/bin","HOME":str(_home(ws,role)),
+         "LANG":"C.UTF-8","PYTHONDONTWRITEBYTECODE":"1"}
+    proc=await asyncio.create_subprocess_exec(exe,*argv[1:],cwd=str(cwd),
+        env=env,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
+        preexec_fn=_child_limits,start_new_session=True)
+    try:
+        stdout,stderr=await asyncio.wait_for(proc.communicate(),timeout=18)
+    except asyncio.TimeoutError:
+        import signal
+        os.killpg(proc.pid,signal.SIGKILL)
+        await proc.communicate()
+        return {"exit_code":-1,"timed_out":True,"stdout":"","stderr":"Command exceeded 18s"}
+    return {"exit_code":proc.returncode,"timed_out":False,
+            "stdout":stdout[:MAX_OUTPUT_CHARS].decode("utf-8","replace"),
+            "stderr":stderr[:MAX_OUTPUT_CHARS].decode("utf-8","replace")}
+
+async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
+    global _PLAYWRIGHT
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        raise HTTPException(503,"Playwright missing in Computer Runner")
+    key=ws+"/"+role
+    if key not in BROWSER_LOCKS:
+        BROWSER_LOCKS[key]=asyncio.Lock()
+    async with BROWSER_LOCKS[key]:
+        if key not in BROWSER_SESSIONS:
+            if _PLAYWRIGHT is None:
+                _PLAYWRIGHT=await async_playwright().start()
+            profile=_home(ws,role)/"browser"
+            context=await _PLAYWRIGHT.chromium.launch_persistent_context(
+                str(profile),headless=True,accept_downloads=False,
+                args=["--no-sandbox","--disable-dev-shm-usage"],
+                viewport={"width":1300,"height":850})
+            async def guard(route):
+                url=route.request.url
+                if url.startswith(("about:","data:","blob:")) or _allowed_domain(url):
+                    await route.continue_()
+                else:
+                    await route.abort()
+            await context.route("**/*",guard)
+            BROWSER_SESSIONS[key]=context
+        context=BROWSER_SESSIONS[key]
+        page=context.pages[0] if context.pages else await context.new_page()
+        page.set_default_timeout(8000)
+        if tool=="browser_open":
+            url=args.get("url","")
+            if not isinstance(url,str) or not _allowed_domain(url):
+                raise HTTPException(422,"Browser URL must match an admin-approved HTTPS host")
+            await page.goto(url,wait_until="domcontentloaded",timeout=16000)
+        elif tool in ("browser_click","browser_fill"):
+            selector=args.get("selector")
+            if not isinstance(selector,str) or not 1<=len(selector)<=240:
+                raise HTTPException(422,"Provide a bounded CSS selector")
+            element=page.locator(selector).first
+            if tool=="browser_click":
+                await element.click(timeout=7000)
+            else:
+                value=args.get("text")
+                if not isinstance(value,str) or len(value)>3000:
+                    raise HTTPException(422,"Text must be <=3000 chars")
+                await element.fill(value,timeout=7000)
+        if tool=="browser_screenshot":
+            png=await page.screenshot(type="png",full_page=False,timeout=15000)
+            if len(png)>2*1024*1024:
+                raise HTTPException(413,"Screenshot larger than 2MB")
+            return {"png_base64":base64.b64encode(png).decode("ascii"),"url":page.url}
+        # Limit observation size to keep model context and cost bounded.
+        heading=await page.title()
+        text=(await page.locator("body").inner_text(timeout=7000))[:9000]
+        links=await page.locator("a[href]").evaluate_all(
+            "(xs)=>xs.slice(0,40).map(x=>({text:(x.innerText||'').slice(0,100),href:x.href}))")
+        inputs=await page.locator("input,button,textarea,select").evaluate_all(
+            "(xs)=>xs.slice(0,60).map(x=>({tag:x.tagName.toLowerCase(),"
+            "selector:x.id?'#'+x.id:(x.getAttribute('name')?'[name='+JSON.stringify(x.getAttribute('name'))+']':x.tagName.toLowerCase()),"
+            "text:(x.innerText||x.getAttribute('aria-label')||'').slice(0,80)}))")
+        return {"url":page.url,"title":heading[:180],"text":text,
+                "links":links,"controls":inputs}
+
+async def perform(req: ToolRequest) -> dict:
+    ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
+    _home(ws,role)
+    if tool=="list_files":
+        path=_safe_path(ws,role,args.get("path","."))
+        if not path.is_dir():
+            raise HTTPException(422,"Not a directory")
+        entries=sorted(path.iterdir(),key=lambda x:x.name)[:100]
+        return {"entries":[{"name":x.name,"type":"directory" if x.is_dir() else "file",
+                            "bytes":x.stat().st_size if x.is_file() else None} for x in entries]}
+    if tool=="read_file":
+        path=_safe_path(ws,role,args.get("path",""))
+        if not path.is_file() or path.stat().st_size>MAX_FILE_BYTES:
+            raise HTTPException(422,"File unavailable or >96KB")
+        return {"path":str(path.relative_to(_files(ws,role))),"content":path.read_text(encoding="utf-8")[:MAX_OUTPUT_CHARS]}
+    if tool=="write_file":
+        path=_safe_path(ws,role,args.get("path",""))
+        data=args.get("content")
+        if not isinstance(data,str) or len(data.encode("utf-8"))>MAX_FILE_BYTES:
+            raise HTTPException(422,"File must be text <=96KB")
+        path.parent.mkdir(parents=True,exist_ok=True)
+        # Re-check after mkdir; symlinks and traversal must not escape root.
+        path=_safe_path(ws,role,args["path"])
+        path.write_text(data,encoding="utf-8")
+        return {"path":str(path.relative_to(_files(ws,role))),"bytes":len(data.encode("utf-8"))}
+    if tool=="run_command":
+        return await _command(ws,role,args)
+    if tool.startswith("browser_"):
+        return await _browser(ws,role,tool,args)
+    raise HTTPException(422,"Unsupported computer tool")
+
+@runner.get("/health")
+async def health(authorization: str | None = Header(None)):
+    _auth(authorization)
+    return {"ok":True,"mode":"separate_runner","agent_isolation":"directories_not_vms",
+            "tools":sorted(ALLOWED_TOOLS)}
+
+@runner.post("/v1/tool")
+async def tool_endpoint(request: ToolRequest,authorization: str | None = Header(None)):
+    _auth(authorization)
+    try:
+        return await perform(request)
+    except HTTPException:
+        raise
+    except (OSError,ValueError,TimeoutError) as exc:
+        raise HTTPException(422,f"Sandbox tool failed: {type(exc).__name__}") from exc
+    except Exception as exc:
+        # Do not leak browser cookies/tokens, page data or internal tracebacks.
+        raise HTTPException(502,"Browser/runner action failed; inspect runner server logs") from exc
