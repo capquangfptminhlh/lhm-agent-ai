@@ -166,6 +166,9 @@ function runtimeCommand(mode) {
   return {binary:python,args:[path.join(PROJECT_ROOT,"desktop","runtime.py"),mode]};
 }
 function writeLog(name,line) {
+  // CI-only startup diagnostics. Never output tokens, requests, or API payloads.
+  if (process.env.GITHUB_ACTIONS==="true" && name==="electron")
+    process.stderr.write("[LHM CI] "+line.slice(0,400));
   const folder=path.join(app.getPath("userData"),"logs");
   fs.mkdirSync(folder,{recursive:true});
   fs.appendFileSync(path.join(folder,name+".log"),line.slice(0,2000),{encoding:"utf8"});
@@ -226,11 +229,13 @@ async function waitBackend() {
     if(shutdown)throw new Error("Application is shutting down");
     try {
       const h=await backendFetch(BACKEND_ORIGIN+"/health",adminToken);
+      if(i===0 || h.status!==200)writeLog("electron","Backend /health HTTP "+h.status+" (attempt "+i+")\n");
       if(h.status===200)return;
       if(h.status===401)throw new Error("Port 7770 belongs to a different server");
     }catch(e){
       if(String(e.message).includes("different server"))throw e;
     }
+    if(i===0 || i===89)writeLog("electron","Backend not ready yet (attempt "+i+")\n");
     await new Promise(resolve=>setTimeout(resolve,400));
   }
   throw new Error("LHM backend did not become healthy. See the API runtime log.");
@@ -242,6 +247,7 @@ function sameOrigin(raw) {
 function openPage(route) {
   if(!mainWindow || mainWindow.isDestroyed())return;
   if(!Object.values(ROUTES).includes(route))return;
+  writeLog("electron","Navigate to "+route+"\n");
   mainWindow.loadURL(BACKEND_ORIGIN+route).catch(error=>
     writeLog("electron","Navigation failed "+error.message+"\n"));
 }
@@ -370,6 +376,7 @@ app.whenReady().then(async()=>{
   }
   try{
     const env=envForRuntime();
+    writeLog("electron","Launching native/API with model "+env.OPENROUTER_MODEL+"\n");
     launchService("native",nativeEnv(env));
     launchService("api",env);
     await waitBackend();
