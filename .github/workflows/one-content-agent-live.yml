@@ -1,0 +1,43 @@
+name: Content Agent Verified Free Live (one-shot)
+
+on:
+  push:
+    branches: [test/one-content-agent-nemotron-live-20261027]
+    paths:
+      - '.github/workflows/one-content-agent-live.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  one-content-free:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install backend
+        run: python -m pip install -r requirements.txt
+      - name: Offline Free chat regressions
+        run: python -m unittest discover -s tests -p test_free_chat_reliability.py -v
+      - name: One live Content Free model request using real worker
+        env:
+          PYTHONPATH: .
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+          LHM_LLM_PROVIDER: openrouter
+          OPENROUTER_MODEL: openrouter/free
+          LHM_OPENROUTER_FREE_ONLY: '1'
+          DEEPSEEK_API_KEY: ''
+          LHM_ALLOW_PRO: '0'
+        run: python scripts/live_one_content_free.py
+      - name: Upload metadata-only evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: content-agent-free-one-request
+          path: one-content-free-result.json
+          if-no-files-found: ignore
+          retention-days: 7
