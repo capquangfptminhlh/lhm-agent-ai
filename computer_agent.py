@@ -12,6 +12,8 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -19,9 +21,10 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
-from core import MODEL, ROLES, audit, db, new_id, now, store_usage, workspace
+from core import MODEL, ROLES, DATABASE, audit, db, new_id, now, store_usage, workspace
 from openrouter_provider import call_free_model, is_free_model, local_free_quota, model_configured
 
 router=APIRouter(tags=["Agent Computer"])
@@ -769,6 +772,37 @@ def recover_computer_runs() -> None:
 async def run_one_computer_tick(rid: str):
     # Manual operation for pilot testing; same locking/gates as worker.
     return await computer_tick(rid)
+
+@router.post("/computer/runs/{rid}/evidence/download")
+async def download_computer_evidence(rid: str):
+    """Explicit, authenticated owner download; never publishes to remote URLs.
+
+    Do not silently issue an archive on GET. The Electron Console requires
+    a direct click and confirmation; backend checks opt-in again.
+    """
+    if os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")!="1":
+        raise HTTPException(403,"Bằng chứng ảnh đang TẮT trong cài đặt Robot")
+    prepare_db()
+    with db() as c:
+        _get(c,rid)
+    from audit_replay import export_session
+    folder=Path(tempfile.mkdtemp(prefix="lhm-audit-export-",dir=DATABASE.parent))
+    destination=folder/"session.zip"
+    try:
+        result=export_session(DATABASE,rid,destination)
+        if not result.get("evidence_complete"):
+            # Do not misrepresent incomplete sessions as a verified replay.
+            # The ZIP still records missing images and includes only
+            # independently SHA256-verified, flagged-redacted evidence.
+            pass
+    except Exception:
+        shutil.rmtree(folder,ignore_errors=True)
+        raise
+    return FileResponse(destination,media_type="application/zip",
+        filename="LHM-evidence-"+rid+".zip",
+        headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"},
+        background=BackgroundTask(shutil.rmtree,folder,ignore_errors=True))
+
 
 @router.get("/computer/runs/{rid}/windows")
 async def computer_windows_list(rid: str):
