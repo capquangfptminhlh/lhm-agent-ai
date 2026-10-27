@@ -62,9 +62,14 @@ SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","win
 # Desktop-absolute tools and anything that ships a screenshot to a model are
 # approved by a human in EVERY mode, including Trusted (official operating
 # decision, 2026-10-27). Code execution likewise never becomes automatic.
+# Browser click/fill are also always approved: a click can submit a form or
+# post content and a fill can place data into an external form — the
+# decision's "send/post data out" category — and the two cannot be told
+# apart from routine clicks in advance, so the whole surface stays gated.
 ALWAYS_APPROVAL_TOOLS={"run_command","sandbox_run","vision_observe","vision_locate",
                        "windows_desktop_click","windows_desktop_drag",
-                       "windows_desktop_scroll","windows_desktop_screenshot"}
+                       "windows_desktop_scroll","windows_desktop_screenshot",
+                       "browser_click","browser_fill"}
 MAX_STEPS=15
 MAX_STEPS_TRUSTED=50
 CHECKPOINT_EVERY=25
@@ -382,11 +387,12 @@ def _approval_required(tool: str, run: dict | None = None) -> bool:
     Trusted opt-in): every sensitive tool waits for a human, exactly as
     before this change.
 
-    Trusted: routine in-scope interaction (clicks, typing, hotkeys, drag,
-    browser open/fill, file writes inside the Agent sandbox) runs
+    Trusted: routine in-scope interaction inside local apps and the
+    sandbox (window clicks, typing, hotkeys, drag, file writes) runs
     continuously. ALWAYS_APPROVAL_TOOLS still stop in every mode: code
-    execution, sending a screenshot to a vision model, and absolute
-    desktop coordinates are never automatic.
+    execution, sending a screenshot to a vision model, absolute desktop
+    coordinates, and browser click/fill (the send/post surface) are
+    never automatic.
     """
     if tool in ALWAYS_APPROVAL_TOOLS:
         return True
@@ -406,15 +412,38 @@ VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
               "windows_desktop_scroll"}
 
 
-async def _post_verify(run: dict,tool: str,args: dict,result: dict) -> dict | None:
+async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
+    """Local state evidence for a UI action (no model, no file writes).
+
+    Used for BOTH the pre-action and post-action captures stored in a
+    step's `_verification`, giving an auditable before/after pair.
+    """
+    try:
+        if tool in ("browser_click","browser_fill"):
+            snap=await runner_call(run,"browser_snapshot",{})
+            return {"url":snap.get("url"),"title":str(snap.get("title") or "")[:120]}
+        if tool.startswith("windows_"):
+            hwnd=args.get("hwnd")
+            if type(hwnd) is int:
+                snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
+                children=snap.get("children")
+                return {"title":str(snap.get("title") or "")[:120],
+                        "controls":len(children) if isinstance(children,list) else None}
+    except Exception:
+        return None
+    return None
+
+
+async def _post_verify(run: dict,tool: str,args: dict,result: dict,
+                       pre_state: dict | None = None) -> dict | None:
     """P3: observe-after-act, attached to the step as `_verification`.
 
     Deterministic where possible: file writes are read back and compared.
-    UI actions capture a local post-state (UIA tree / browser snapshot) —
-    state evidence only (ok=None), never a semantic success claim, and
-    never a screenshot sent to a model (that stays a separately approved
-    vision step). Verification trouble never crashes the tick: it is
-    recorded as unavailable instead.
+    UI actions carry a local before/after state pair (UIA tree / browser
+    snapshot) — state evidence only (ok=None), never a semantic success
+    claim, and never a screenshot sent to a model (that stays a
+    separately approved vision step). Verification trouble never
+    crashes the tick: it is recorded as unavailable instead.
     """
     try:
         if tool=="write_file":
@@ -431,20 +460,11 @@ async def _post_verify(run: dict,tool: str,args: dict,result: dict) -> dict | No
             if not isinstance(got,str) or not isinstance(new,str):
                 return {"method":"read_back","ok":None}
             return {"method":"read_back","ok":new in got}
-        if tool in ("browser_click","browser_fill"):
-            snap=await runner_call(run,"browser_snapshot",{})
-            return {"method":"browser_snapshot","ok":None,
-                    "url":snap.get("url"),"title":str(snap.get("title") or "")[:120]}
-        if tool.startswith("windows_"):
-            hwnd=args.get("hwnd")
-            if type(hwnd) is int:
-                snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
-                children=snap.get("children")
-                return {"method":"uia_snapshot","ok":None,
-                        "title":str(snap.get("title") or "")[:120],
-                        "controls":len(children) if isinstance(children,list) else None}
-            return {"method":"uia_snapshot","ok":None,
-                    "detail":"desktop-scope action; no window state captured"}
+        if tool in ("browser_click","browser_fill") or tool.startswith("windows_"):
+            post=await _capture_ui_state(run,tool,args)
+            if post is None and pre_state is None:
+                return {"method":"state_pair","ok":None,"detail":"state capture unavailable"}
+            return {"method":"state_pair","ok":None,"pre":pre_state,"post":post}
     except Exception:
         return {"method":"unavailable","ok":None}
     return None
@@ -525,6 +545,11 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         with db() as c:
             c.execute("UPDATE computer_steps SET status='executing',updated_at=? WHERE id=?",
                       (now(),sid))
+        # P3 evidence pair: capture local UI state BEFORE a UI mutation so
+        # the step record carries an auditable before/after comparison.
+        pre_state=None
+        if tool in VERIFY_TOOLS and (tool.startswith("windows_") or tool.startswith("browser_")):
+            pre_state=await _capture_ui_state(run,tool,args)
         if tool=="vision_observe":
             from robot_vision import observe
             result=await observe(run,args)
@@ -544,7 +569,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # the work (bounded by max_steps) instead of claiming success.
         verify_failed=False
         if step_status=="completed" and tool in VERIFY_TOOLS:
-            verification=await _post_verify(run,tool,args,result)
+            verification=await _post_verify(run,tool,args,result,pre_state)
             if verification is not None:
                 result={**result,"_verification":verification}
                 verify_failed=verification.get("ok") is False

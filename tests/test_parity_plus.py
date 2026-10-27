@@ -92,12 +92,15 @@ class ApprovalMatrixTests(unittest.TestCase):
             self.assertTrue(agent._approval_required("windows_click", run))
         with patch.dict(os.environ, {"LHM_COMPUTER_TRUSTED_ENABLED": "1"}):
             self.assertFalse(agent._approval_required("windows_click", run))
-            self.assertFalse(agent._approval_required("browser_fill", run))
             self.assertFalse(agent._approval_required("write_file", run))
-            # Never automatic in any mode:
+            # Never automatic in any mode. browser_click/browser_fill joined
+            # this set after review: a browser click can submit/post and a
+            # fill can send data out, which the operating decision reserves
+            # for manual approval in every mode.
             for tool in ("run_command", "sandbox_run", "vision_observe", "vision_locate",
                          "windows_desktop_click", "windows_desktop_drag",
-                         "windows_desktop_scroll", "windows_desktop_screenshot"):
+                         "windows_desktop_scroll", "windows_desktop_screenshot",
+                         "browser_click", "browser_fill"):
                 self.assertTrue(agent._approval_required(tool, run), tool)
 
 
@@ -276,8 +279,10 @@ class PostVerifyTests(unittest.TestCase):
                                   (step_id,)).fetchone())
         self.assertEqual(step["status"], "completed")
         result = __import__("json").loads(step["result_json"])
-        self.assertEqual(result["_verification"]["method"], "uia_snapshot")
-        self.assertEqual(result["_verification"]["controls"], 3)
+        self.assertEqual(result["_verification"]["method"], "state_pair")
+        self.assertEqual(result["_verification"]["pre"]["controls"], 3)
+        self.assertEqual(result["_verification"]["post"]["controls"], 3)
+        self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
 
 

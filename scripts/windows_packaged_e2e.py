@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -122,6 +123,14 @@ def main():
             print("PACKAGED WINDOWS E2E PASS: 2 real EXEs, 27 HTTP reads, "
                   "free-only, native auth and emergency pause. "
                   f"worst_route_ms={max(latencies)*1000:.0f}", flush=True)
+            # Real GUI acceptance drives actual Notepad/Explorer through
+            # the source runner on this same Windows desktop session.
+            # Kept as a subprocess so its processes/env stay isolated
+            # from the packaged runtime under test above.
+            gui = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "windows_gui_acceptance.py")],
+                cwd=str(ROOT), timeout=200, check=False)
+            assert gui.returncode == 0, "Real Windows GUI acceptance failed"
         except Exception:
             for handle in handles:
                 handle.flush()
