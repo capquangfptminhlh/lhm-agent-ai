@@ -16,6 +16,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from office_api import router as office_router
+from office3d_api import router as office3d_router
 from tool_hub import router as tool_hub_router
 from workflow_builder import router as workflow_builder_router
 from pydantic import BaseModel, Field
@@ -32,6 +33,7 @@ API_URL = os.getenv("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completio
 ACTIVE_WORKSPACE = os.getenv("LHM_ACTIVE_WORKSPACE", "demo")
 app = FastAPI(title="LHM Agent Operating System", version="1.1.0")
 app.include_router(office_router)
+app.include_router(office3d_router)
 app.include_router(tool_hub_router)
 app.include_router(workflow_builder_router)
 

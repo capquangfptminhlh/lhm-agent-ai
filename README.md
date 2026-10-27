@@ -1,3 +1,18 @@
+## Văn phòng 3D Live — đã có giao diện native Three.js
+
+**Mở `/office3d`**: 16 nhân vật chibi trong 8 phòng ban, camera 3D
+tương tác, màn hình bàn chỉ sáng khi Agent thật đang chạy, click nhân viên
+để tạo nhiệm vụ, theo dõi worker/Tool Hub và sự kiện SQLite bằng SSE.
+Không phải demo 3D mô phỏng. Chế độ `/office` 2D vẫn hoạt động.
+
+Các module 3D tự phát triển, chỉ tham khảo ý tưởng event-driven của
+`lucwj/ai-agent-3d-prompts`; repo nguồn được dẫn link nhưng **không chứa
+mã nguồn ứng dụng 3D để tích hợp trực tiếp**. Trình duyệt phải có WebGL
+và tải Three.js qua CDN; thiếu WebGL/CDN sẽ hướng người dùng về `/office`.
+**Xem [OFFICE3D_README.md](OFFICE3D_README.md)** để biết contract API,
+giới hạn, nghiệm thu trên Windows/mobile và lưu ý bảo mật.
+
+---
 
 ## Upload ảnh/video trực tiếp lên Postiz (pilot)
 
