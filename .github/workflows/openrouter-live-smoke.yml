@@ -1,0 +1,30 @@
+name: OpenRouter Free API live smoke (manual only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_free_api_call:
+        description: 'I authorize ONE outbound free-model API test using GitHub Secret OPENROUTER_TEST_API_KEY'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  openrouter-free-smoke:
+    if: ${{ inputs.confirm_free_api_call == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run offline Free-only transport/security tests first
+        run: node --test desktop/test/openrouter-free.test.cjs
+      - name: Make exactly one live OpenRouter Free request
+        env:
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+        run: node desktop/scripts/openrouter-free-live.cjs
