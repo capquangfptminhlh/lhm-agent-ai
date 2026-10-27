@@ -226,6 +226,52 @@ def cancel_computer_run(rid: str):
         audit(c,r["workspace_id"],"computer.cancelled","Human cancelled computer session",rid)
         return _view(c,_get(c,rid))
 
+async def _native_pause(paused: bool) -> None:
+    token=os.environ.get("LHM_COMPUTER_RUNNER_TOKEN","").strip()
+    if not token:
+        raise HTTPException(503,"Không thể xác nhận dừng: thiếu token Runner")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5,connect=2),trust_env=False) as client:
+            response=await client.post(_runner_base()+"/v1/pause",
+                headers={"Authorization":"Bearer "+token},
+                json={"paused":paused})
+        if response.status_code!=200 or response.json().get("paused") is not paused:
+            raise HTTPException(503,"Runner chưa xác nhận trạng thái dừng")
+    except HTTPException:
+        raise
+    except (httpx.RequestError,ValueError,TypeError,KeyError) as exc:
+        raise HTTPException(503,"Không thể xác nhận trạng thái Runner; thao tác có thể còn đang chạy") from exc
+
+@router.post("/computer/runs/{rid}/emergency-stop")
+async def emergency_stop_computer(rid: str):
+    """Stop ALL Agent runs sharing this runner; in-flight effects may have happened."""
+    prepare_db()
+    with db() as c:
+        _get(c,rid)
+    await _native_pause(True)
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        rows=c.execute("""SELECT id,workspace_id FROM computer_runs WHERE status IN
+          ('queued','processing','awaiting_approval','awaiting_checkpoint')""").fetchall()
+        for row in rows:
+            c.execute("""UPDATE computer_steps SET status='needs_review',
+                       error='Emergency stop; in-flight outcome unknown',updated_at=?
+                       WHERE run_id=? AND status IN ('executing','approved','awaiting_approval')""",
+                      (now(),row["id"]))
+            c.execute("""UPDATE computer_runs SET status='stopped',
+                       error='Đã dừng khẩn cấp. Bước đang chạy có thể đã hoàn tất; kiểm tra trước khi chạy lại.',
+                       updated_at=? WHERE id=?""",(now(),row["id"]))
+            audit(c,row["workspace_id"],"computer.stopped",
+                  "Emergency stop confirmed by Runner; in-flight actions require review",row["id"])
+        return {"paused":True,"stopped_runs":len(rows),
+                "warning":"Thao tác đã bắt đầu có thể đã hoàn tất; không tự chạy lại."}
+
+@router.post("/computer/emergency-resume")
+async def emergency_resume_runner():
+    """Unpause runner only; never revive previously stopped Agent runs."""
+    await _native_pause(False)
+    return {"paused":False,"notice":"Runner đã mở lại. Các phiên cũ vẫn ở trạng thái stopped."}
+
 @router.post("/computer/runs/{rid}/steps/{sid}/approve")
 def approve_computer_step(rid: str,sid: str):
     prepare_db()
@@ -615,6 +661,14 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
+            current_state=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+            if current_state and current_state["status"]=="stopped":
+                c.execute("""UPDATE computer_steps SET status='needs_review',
+                             result_json=?,error='Emergency stop; result requires human review',
+                             updated_at=? WHERE id=?""",(clean,now(),sid))
+                audit(c,run["workspace_id"],"computer.stopped_inflight",
+                      "Late in-flight tool result did not restart a stopped run",rid)
+                return {"status":"stopped","id":rid,"last_tool":tool}
             if verify_failed:
                 c.execute("UPDATE computer_steps SET status=?,result_json=?,error=?,updated_at=? WHERE id=?",
                           (step_status,clean,"Post-action verification failed; correct the work before finishing",now(),sid))
@@ -633,6 +687,12 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         halted="target_lost" if target_lost else "needs_review"
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
+            stopped=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+            if stopped and stopped["status"]=="stopped":
+                if current:
+                    c.execute("""UPDATE computer_steps SET status='needs_review',error=?,
+                                 updated_at=? WHERE id=?""",(str(msg)[:350],now(),current))
+                return {"status":"stopped","id":rid,"error":"Phiên đã dừng khẩn cấp; cần kiểm tra thao tác đang chạy."}
             if current:
                 c.execute("UPDATE computer_steps SET status='needs_review',error=?,updated_at=? WHERE id=?",
                           (str(msg)[:350],now(),current))
