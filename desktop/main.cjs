@@ -77,6 +77,7 @@ function saveSettings(input) {
     visionEnabled:input.visionEnabled===true,
     trustedEnabled:input.trustedEnabled===true,
     fullScreenEnabled:input.fullScreenEnabled===true,
+    evidenceEnabled:input.evidenceEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
@@ -109,6 +110,7 @@ function settingsForUI() {
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
     fullScreenEnabled:c.fullScreenEnabled===true,
+    evidenceEnabled:c.evidenceEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
@@ -134,6 +136,7 @@ function envForRuntime() {
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
     LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
+    LHM_EVIDENCE_CAPTURE_ENABLED:c.evidenceEnabled===true?"1":"0",
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
     LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
@@ -156,7 +159,7 @@ function nativeEnv(runtimeEnv) {
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
-    "LHM_DESKTOP_FULL_SCREEN_ENABLED",
+    "LHM_DESKTOP_FULL_SCREEN_ENABLED","LHM_EVIDENCE_CAPTURE_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
   return env;
