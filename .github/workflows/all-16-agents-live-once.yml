@@ -1,0 +1,47 @@
+name: All 16 Agents Live Free Role Acceptance (bounded one-shot)
+
+on:
+  push:
+    branches: [test/agents-team-live-free-once-20261027]
+    paths:
+      - '.github/workflows/all-16-agents-live-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: all16-roles-free-one-shot-20261027
+  cancel-in-progress: false
+
+jobs:
+  all16-real-agent-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install backend
+        run: python -m pip install -r requirements.txt
+      - name: Validate catalog has 16 supported roles (no credential)
+        run: python -m unittest discover -s tests -p test_team_collaboration.py -v
+      - name: Invoke each Agent via production worker / 16 REAL Free calls maximum
+        env:
+          PYTHONPATH: .
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+          LHM_LLM_PROVIDER: openrouter
+          OPENROUTER_MODEL: openrouter/free
+          LHM_OPENROUTER_FREE_ONLY: '1'
+          DEEPSEEK_API_KEY: ''
+          LHM_ALLOW_PRO: '0'
+        run: python scripts/live_all_16_roles_acceptance.py
+      - name: Upload result metadata (no customer data or keys)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all16-agent-live-free-proof
+          path: all16-agent-live-free-result.json
+          if-no-files-found: ignore
+          retention-days: 7
