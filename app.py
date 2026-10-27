@@ -20,6 +20,7 @@ from office3d_api import router as office3d_router
 from tool_hub import router as tool_hub_router
 from workflow_builder import router as workflow_builder_router
 from computer_agent import router as computer_router
+from team_collaboration import router as team_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
@@ -38,6 +39,7 @@ app.include_router(office3d_router)
 app.include_router(tool_hub_router)
 app.include_router(workflow_builder_router)
 app.include_router(computer_router)
+app.include_router(team_router)
 
 
 @app.middleware("http")

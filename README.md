@@ -1,3 +1,23 @@
+## Agent-to-Agent Team Chat — nhân viên AI tự trao đổi
+
+**Mở `/team-chat`** để tạo nhóm 2–8 Agent, đặt mục tiêu và giới hạn
+số lượt. Director hoặc người được chọn mở đầu bằng một tác vụ AI thật;
+khi hoàn thành, hệ thống lưu tin nhắn, chuyển việc cho đồng nghiệp
+trong nhóm và tạo nhiệm vụ tiếp theo trong worker. Có thể theo dõi
+từng tin nhắn, thêm ghi chú từ người quản trị, duyệt nhiệm vụ đầu tiên
+và dừng cuộc trao đổi. Chống tạo task trùng, giới hạn 2–16 lượt,
+theo dõi budget/OpenRouter quota, báo lỗi và không thực thi tool
+trực tiếp bằng tin nhắn.
+
+Đây là **bàn giao tuần tự**, không phải cuộc họp giả lập hoặc swarm AI
+chạy song song. Các Agent vẫn phụ thuộc vào API key OpenRouter/DeepSeek;
+AI tự kết luận được đánh dấu `completed_unverified`. Việc sử dụng
+máy tính thật và đăng bài vẫn qua các bước cấp quyền/phê duyệt riêng.
+
+Tài liệu: [TEAM_CHAT_README.md](TEAM_CHAT_README.md).
+
+---
+
 ## LHM Agent Computer — điều khiển máy tính kiểu Codex (local pilot)
 
 **Mới:** mỗi Agent có vùng file và phiên Chrome lưu bền vững trong
