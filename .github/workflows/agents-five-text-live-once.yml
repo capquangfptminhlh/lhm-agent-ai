@@ -1,0 +1,47 @@
+name: Five Previously Failing Agents Free Text Live (one-shot)
+
+on:
+  push:
+    branches: [test/5-free-roles-text-chat-live-20261027]
+    paths:
+      - '.github/workflows/agents-five-text-live-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-five-text-chat-one-shot-20261027
+  cancel-in-progress: false
+
+jobs:
+  five-free-text-agents:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install backend
+        run: python -m pip install -r requirements.txt
+      - name: Check strict Free text routing offline before Live
+        run: python -m unittest discover -s tests -p test_free_chat_reliability.py -v
+      - name: Five real Free Agent calls (one per failing role)
+        env:
+          PYTHONPATH: .
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+          LHM_LLM_PROVIDER: openrouter
+          OPENROUTER_MODEL: openrouter/free
+          LHM_OPENROUTER_FREE_ONLY: '1'
+          DEEPSEEK_API_KEY: ''
+          LHM_ALLOW_PRO: '0'
+        run: python scripts/live_retest_five_text_roles.py
+      - name: Save safe summary (no credentials/prompts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: free-text-five-agent-results
+          path: live-five-roles-result.json
+          if-no-files-found: ignore
+          retention-days: 7
