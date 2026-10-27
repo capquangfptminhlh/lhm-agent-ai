@@ -26,7 +26,8 @@
       "settings-preload.cjs",
       "settings.html",
       "splash.html",
-      "package.json"
+      "package.json",
+      "settings.js"
     ],
     "extraResources": [
       {
