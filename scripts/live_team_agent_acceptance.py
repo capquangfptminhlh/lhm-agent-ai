@@ -11,9 +11,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import tempfile
 import time
 from pathlib import Path
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 
 # Required before importing core/app because they bind MODEL/DATABASE on import.
 home=tempfile.TemporaryDirectory(prefix="lhm-team-live-free-")
