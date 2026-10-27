@@ -34,7 +34,7 @@ WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press"} | WINDOWS_TOOLS
+                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press","browser_evidence"} | WINDOWS_TOOLS
 PAUSED = False  # compatibility; authoritative state is the persisted file
 
 def _pause_file() -> Path:
@@ -87,7 +87,7 @@ class ToolRequest(BaseModel):
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
     tool: Literal["list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
-                  "browser_find","browser_press",
+                  "browser_find","browser_press","browser_evidence",
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_type","windows_scroll",
                   "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
@@ -268,6 +268,36 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
                 if field_type=="password":
                     raise HTTPException(403,"Agent never fills password fields; enter secrets manually")
                 await element.fill(value,timeout=7000)
+        if tool=="browser_evidence":
+            # Privacy: this evidence path never returns an unredacted image.
+            # Inputs, embeds, and media are masked BEFORE the PNG leaves Runner.
+            # If sensitive details appear in ordinary text (not maskable with
+            # confidence), fail closed and require manual evidence review.
+            try:
+                visible=(await page.locator("body").inner_text(timeout=7000))[:60000]
+                if re.search(r"(?i)\b(?:cvv|cvc|card number|credit card|"
+                             r"payment details|bank account|số thẻ|mã cvv|"
+                             r"thông tin thanh toán|mật khẩu)\b",visible):
+                    raise HTTPException(403,"Sensitive page: evidence capture denied")
+                if re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+                             visible):
+                    raise HTTPException(403,"Unmasked email: evidence capture denied")
+                if re.search(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)",visible):
+                    raise HTTPException(403,"Possible payment number: evidence denied")
+                selector=("input,textarea,select,[contenteditable],"
+                          "[role=textbox],iframe,canvas,video,img,"
+                          "[data-sensitive],[data-private],[autocomplete]")
+                png=await page.screenshot(type="png",full_page=False,
+                    mask=[page.locator(selector)],mask_color="#000000",
+                    animations="disabled",timeout=15000)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(403,"Cannot safely redact browser screenshot") from exc
+            if len(png)>2*1024*1024:
+                raise HTTPException(413,"Redacted screenshot exceeds 2 MB")
+            return {"png_base64":base64.b64encode(png).decode("ascii"),
+                    "redacted":True,"scope":"browser"}
         if tool=="browser_screenshot":
             png=await page.screenshot(type="png",full_page=False,timeout=15000)
             if len(png)>2*1024*1024:
