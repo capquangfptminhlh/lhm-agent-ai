@@ -413,7 +413,8 @@ app.whenReady().then(async()=>{
     launchService("api",env);
     await waitBackend();
     launchService("worker",env);
-    openPage("/office3d");
+    // Land on the work Console, not the decorative 3D office.
+    openPage("/computer");
   }catch(e){
     writeLog("electron","Startup "+e.message+"\n");
     dialog.showMessageBox(mainWindow,{
