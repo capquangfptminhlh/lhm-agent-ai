@@ -9,6 +9,7 @@ async function load(){
   $("visionEnabled").checked=x.visionEnabled===true;
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
+  $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("deepStatus").textContent=x.hasDeepseekKey?"(đã lưu)": "(chưa có)";
   if(!x.secureStorage)$("status").textContent="Windows secureStorage không khả dụng; không thể lưu API key.";
@@ -23,6 +24,7 @@ $("save").onclick=async()=>{
     visionEnabled:$("visionEnabled").checked,
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
+    agentParallelism:Number($("agentParallelism").value),
     openrouterKey:$("openKey").value,deepseekKey:$("deepKey").value,
     clearOpenrouter:$("clearOpenrouter").checked,
     clearDeepseek:$("clearDeepseek").checked
