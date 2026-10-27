@@ -74,6 +74,28 @@ class WorkflowBuilderTests(unittest.TestCase):
                 if t["role"]=="quality":
                     record_review(c,dict(t),text)
 
+    def test_worker_background_sync_runs_without_browser_session(self):
+        """Regression: worker must invoke builder sync, not leave it commented out."""
+        import asyncio
+        from unittest.mock import AsyncMock
+        import worker
+
+        class WorkerCycleComplete(Exception):
+            pass
+
+        async def finish_loop(*args, **kwargs):
+            raise WorkerCycleComplete()
+
+        with patch.object(worker,"recover_stuck",new_callable=AsyncMock) as recovery:
+            with patch.object(worker,"sync_ready_builder_runs") as sync:
+                with patch.object(worker,"process_one_approved_tool",new_callable=AsyncMock) as tool:
+                    with patch.object(worker.asyncio,"sleep",side_effect=finish_loop):
+                        with self.assertRaises(WorkerCycleComplete):
+                            asyncio.run(worker.main())
+        sync.assert_called_once_with()
+        tool.assert_awaited_once_with()
+        recovery.assert_awaited_once_with()
+
     def test_builder_page_and_navigation(self):
         view=self.client.get("/workflow-builder")
         self.assertEqual(view.status_code,200)
