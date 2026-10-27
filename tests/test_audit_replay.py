@@ -1,0 +1,186 @@
+"""Offline replay ZIP must not leak prompts, tool arguments, raw log or fake PNGs."""
+from __future__ import annotations
+import base64
+import json
+import sqlite3
+import struct
+import tempfile
+import unittest
+import zipfile
+import zlib
+import os
+from unittest.mock import patch
+from pathlib import Path
+
+from audit_replay import export_session
+from evidence_artifacts import store_redacted_png
+
+
+def png():
+    def chunk(kind,body):
+        return (struct.pack(">I",len(body))+kind+body+
+                struct.pack(">I",zlib.crc32(kind+body)&0xffffffff))
+    return (b"\x89PNG\r\n\x1a\n"+
+            chunk(b"IHDR",struct.pack(">IIBBBBB",1,1,8,2,0,0,0))+
+            chunk(b"IDAT",zlib.compress(b"\x00\x00\x00\x00"))+
+            chunk(b"IEND",b""))
+
+
+class AuditReplayTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root=Path(self.tmp.name)
+        self.db=self.root/"local.sqlite3"
+        self.output=self.root/"session.zip"
+        with sqlite3.connect(self.db) as c:
+            c.execute("CREATE TABLE computer_runs (id TEXT,status TEXT,created_at INTEGER,updated_at INTEGER,objective TEXT)")
+            c.execute("CREATE TABLE computer_steps (id TEXT,run_id TEXT,number INTEGER,tool TEXT,status TEXT,created_at INTEGER,updated_at INTEGER,result_json TEXT,args_json TEXT)")
+            c.execute("INSERT INTO computer_runs VALUES(?,?,?,?,?)",
+                      ("run_1","needs_review",100,200,
+                       "PRIVATE OBJECTIVE do-not-export@example.com"))
+
+    def step(self,number=1,result=None):
+        with sqlite3.connect(self.db) as c:
+            c.execute("INSERT INTO computer_steps VALUES(?,?,?,?,?,?,?,?,?)",
+                (f"step_{number}","run_1",number,"browser_click","completed",110,150,
+                 json.dumps(result or {},ensure_ascii=False),
+                 '{"selector":"#private","password":"PRIVATE-PIN-123"}'))
+
+    def saved(self,phase,step="step_1"):
+        return store_redacted_png("run_1",step,phase,{"redacted":True,
+            "png_base64":base64.b64encode(png()).decode()},
+            db_path=str(self.db))
+
+    def test_complete_replay_with_verified_images_and_static_index(self):
+        pre=self.saved("pre")
+        post=self.saved("post")
+        self.step(result={"_verification":{"method":"redacted_png_pair",
+                          "evidence":{"pre":pre,"post":post}},
+                          "danger":"SECRET-SERVER-LOG"})
+        result=export_session(self.db,"run_1",self.output)
+        self.assertEqual(result["complete_steps"],1)
+        self.assertTrue(result["evidence_complete"])
+        with zipfile.ZipFile(self.output) as z:
+            names=z.namelist()
+            self.assertEqual(names,["manifest.json","index.html",pre["path"],post["path"]])
+            data=z.read("manifest.json").decode("utf-8")
+            self.assertNotIn("PRIVATE OBJECTIVE",data)
+            self.assertNotIn("PRIVATE-PIN",data)
+            self.assertNotIn("SECRET-SERVER-LOG",data)
+            self.assertIn("SHA-256",z.read("index.html").decode("utf-8"))
+            self.assertNotIn("https://",z.read("index.html").decode("utf-8"))
+            obj=json.loads(data)
+            self.assertEqual(obj["steps_with_both_images"],1)
+            self.assertEqual(z.read(pre["path"]),png())
+
+    def test_missing_image_is_honestly_incomplete(self):
+        pre=self.saved("pre")
+        self.step(result={"_evidence":{"pre":pre}})
+        report=export_session(self.db,"run_1",self.output)
+        self.assertFalse(report["evidence_complete"])
+        self.assertEqual(report["complete_steps"],0)
+        with zipfile.ZipFile(self.output) as z:
+            manifest=json.loads(z.read("manifest.json"))
+            self.assertIn("pre",manifest["steps"][0]["evidence"])
+            self.assertNotIn("post",manifest["steps"][0]["evidence"])
+
+    def test_tampered_file_fails_sha256_without_exporting_bytes(self):
+        pre=self.saved("pre")
+        post=self.saved("post")
+        self.step(result={"_verification":{"evidence":{"pre":pre,"post":post}}})
+        (self.root/pre["path"]).write_bytes(png()+b"tampered")
+        report=export_session(self.db,"run_1",self.output)
+        self.assertFalse(report["evidence_complete"])
+        with zipfile.ZipFile(self.output) as z:
+            self.assertNotIn(pre["path"],z.namelist())
+            self.assertIn(post["path"],z.namelist())
+
+    def test_unredacted_and_unsafe_path_never_enter_export(self):
+        good=self.saved("pre")
+        forged={"path":"../../secret.png","sha256":good["sha256"],
+                "redacted":True,"bytes":good["bytes"]}
+        self.step(result={"_verification":{"evidence":{
+            "pre":{**good,"redacted":False},"post":forged}}})
+        report=export_session(self.db,"run_1",self.output)
+        self.assertFalse(report["evidence_complete"])
+        with zipfile.ZipFile(self.output) as z:
+            self.assertEqual(z.namelist(),["manifest.json","index.html"])
+
+    def test_no_overwrite_and_run_validation(self):
+        self.step()
+        export_session(self.db,"run_1",self.output)
+        with self.assertRaises(FileExistsError):
+            export_session(self.db,"run_1",self.output)
+        for invalid in ("../run_1","other/run","", "run.1"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    export_session(self.db,invalid,self.root/"other.zip")
+
+    def test_http_download_requires_auth_and_explicit_opt_in(self):
+        from fastapi.testclient import TestClient
+        import app
+        client=TestClient(app.app)
+        url="/computer/runs/run_1/evidence/download"
+        with patch.dict(os.environ,{"LHM_ADMIN_TOKEN":"owner-local-token",
+                                    "LHM_EVIDENCE_CAPTURE_ENABLED":"0"}):
+            missing_auth=client.post(url)
+            self.assertEqual(missing_auth.status_code,401)
+            disabled=client.post(url,headers={
+                "Authorization":"Bearer owner-local-token"})
+            self.assertEqual(disabled.status_code,403)
+
+    def test_authenticated_local_zip_download_returns_sanitized_manifest(self):
+        import io
+        from fastapi.testclient import TestClient
+        import core
+        import computer_agent as agent
+        import app
+        archive_db=self.root/"route.sqlite3"
+        with sqlite3.connect(archive_db) as c:
+            c.execute("CREATE TABLE workspaces(id TEXT PRIMARY KEY)")
+            c.execute("INSERT INTO workspaces(id) VALUES('demo')")
+        with patch.object(core,"DATABASE",archive_db), \
+             patch.object(agent,"DATABASE",archive_db), \
+             patch.dict(os.environ,{"LHM_ADMIN_TOKEN":"local-owner-token",
+                                   "LHM_EVIDENCE_CAPTURE_ENABLED":"1"}):
+            agent.prepare_db()
+            with sqlite3.connect(archive_db) as c:
+                c.execute("""INSERT INTO computer_runs
+                  (id,workspace_id,role,objective,model,status,max_steps,
+                   step_count,next_run_at,created_at,updated_at)
+                  VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                  ("run_1","demo","research","PRIVATE QUERY NEVER EXPORT",
+                   "openrouter/free","needs_review",10,1,0,100,200))
+                img={"redacted":True,"png_base64":base64.b64encode(png()).decode()}
+                pre=store_redacted_png("run_1","step_1","pre",img,db_path=str(archive_db))
+                post=store_redacted_png("run_1","step_1","post",img,db_path=str(archive_db))
+                c.execute("""INSERT INTO computer_steps
+                   (id,run_id,number,tool,args_json,status,result_json,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""",
+                   ("step_1","run_1",1,"browser_click",'{"secret":"DO-NOT-EXPORT"}',
+                    "completed",json.dumps({"_verification":{"evidence":{
+                        "pre":pre,"post":post}}}),120,150))
+            client=TestClient(app.app)
+            response=client.post("/computer/runs/run_1/evidence/download",
+                 headers={"Authorization":"Bearer local-owner-token"})
+            self.assertEqual(response.status_code,200,response.text[:500]
+                             if response.status_code!=200 else "")
+            self.assertEqual(response.headers.get("content-type"),"application/zip")
+            self.assertEqual(response.headers.get("cache-control"),"no-store")
+            with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                data=z.read("manifest.json").decode()
+                self.assertNotIn("PRIVATE QUERY",data)
+                self.assertNotIn("DO-NOT-EXPORT",data)
+                self.assertIn("step_1-pre.png",data)
+            self.assertFalse(list(self.root.glob("lhm-audit-export-*")))
+
+    def test_missing_session_and_nonexistent_db(self):
+        with self.assertRaises(ValueError):
+            export_session(self.db,"not_here",self.output)
+        with self.assertRaises(FileNotFoundError):
+            export_session(self.root/"missing.sqlite3","run_1",self.output)
+
+
+if __name__=="__main__":
+    unittest.main()

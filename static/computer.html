@@ -45,7 +45,9 @@ textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d7
 <section class="panel"><div class="line between"><h2 style="margin:0">Computer Console</h2><span id="runState" class="status">Chưa chọn phiên</span></div>
 <div id="sessionInfo" class="meta">Chọn phiên làm việc để xem nhật ký lệnh thật.</div>
 <div class="line" style="margin-top:12px"><button id="oneTick" class="btn secondary" type="button" disabled>▶ Chạy 1 bước</button>
-<button id="stop" class="btn danger" type="button" disabled>■ Hủy phiên</button>
+<button id="stop" class="btn danger" type="button" disabled>■ Dừng khẩn cấp</button>
+<button id="resumeRunner" class="btn secondary" type="button">▶ Mở lại Runner (chỉ khi đã kiểm tra)</button>
+<button id="auditExport" class="btn secondary" type="button" disabled>↓ Xuất audit ZIP (đã che ảnh)</button>
 <button id="checkpoint" class="btn" type="button" hidden>✓ Duyệt checkpoint 25 bước — cho chạy tiếp</button><span class="meta" id="runModel">—</span></div>
 <h2 style="margin-top:22px">Các bước thực hiện</h2><div id="steps"><div class="empty">Chưa có bước nào</div></div>
 <div id="outcome" class="note" hidden></div>
@@ -121,7 +123,8 @@ function renderSelected(){
  $("sessionInfo").textContent=r?r.role+" · "+r.objective:"Chọn phiên làm việc để xem nhật ký lệnh thật";
  $("runModel").textContent=r?.model||"—";
  $("oneTick").disabled=!r||r.status!=="queued";
- $("stop").disabled=!r||!["queued","awaiting_approval","awaiting_checkpoint"].includes(r.status);
+ $("auditExport").disabled=!r;
+ $("stop").disabled=!r; // Emergency stop also works during processing
  $("checkpoint").hidden=!r||r.status!=="awaiting_checkpoint";
  $("screenshot").disabled=!r;
  $("windowsRefresh").disabled=!r;
@@ -155,8 +158,46 @@ $("oneTick").onclick=async()=>{
  report("Đã chạy một nhịp: "+x.status);await loadRuns()
  }catch(e){report(e.message,true)}finally{$("oneTick").disabled=false}
 };
-$("stop").onclick=async()=>{if(!selected||!confirm("Hủy phiên làm việc này?"))return;try{await api("/computer/runs/"+encodeURIComponent(selected)+"/cancel",{method:"POST"});await loadRuns()}catch(e){report(e.message,true)}};
+$("stop").onclick=async()=>{
+ if(!selected)return;
+ // Emergency stop must be ONE click, even when a tool is running.
+ $("stop").disabled=true;
+ try{
+   const x=await api("/computer/runs/"+encodeURIComponent(selected)+"/emergency-stop",{method:"POST"});
+   report("ĐÃ DỪNG RUNNER: "+x.stopped_runs+" phiên. "+x.warning);
+   await loadRuns();
+ }catch(e){report("CẢNH BÁO: Chưa xác nhận dừng Runner. "+e.message,true)}
+ finally{$("stop").disabled=false}
+};
+$("resumeRunner").onclick=async()=>{
+ if(!confirm("Đã kiểm tra các phiên đang dở? Mở lại Runner sẽ KHÔNG tự chạy lại phiên cũ."))return;
+ try{const x=await api("/computer/emergency-resume",{method:"POST"});report(x.notice);await loadRuns()}
+ catch(e){report("Không thể mở lại Runner: "+e.message,true)}
+};
 $("checkpoint").onclick=async()=>{if(!selected||!confirm("Đã xem lại tiến độ phiên Tin cậy này? Duyệt checkpoint sẽ cho Agent chạy tiếp."))return;try{await api("/computer/runs/"+encodeURIComponent(selected)+"/checkpoint/approve",{method:"POST"});report("Đã duyệt checkpoint. Worker sẽ chạy tiếp.");await loadRuns()}catch(e){report(e.message,true)}};
+$("auditExport").onclick=async()=>{
+ const r=runs.find(x=>x.id===selected);if(!r)return;
+ if(!confirm("Xuất ZIP cục bộ gồm ảnh được đánh dấu đã che và SHA-256. Gói có thể thiếu ảnh; mở kiểm tra trước khi chia sẻ, tuyệt đối không tải lên nơi công cộng."))return;
+ const b=$("auditExport");b.disabled=true;
+ try{
+   const response=await fetch("/computer/runs/"+encodeURIComponent(r.id)+"/evidence/download",
+     {method:"POST",cache:"no-store"});
+   if(!response.ok){
+     const message=await response.json().catch(()=>({}));
+     throw Error(message.detail||"Không xuất được ZIP (HTTP "+response.status+")");
+   }
+   const blob=await response.blob();
+   if(blob.type!=="application/zip"||blob.size<50)
+     throw Error("Máy chủ không trả gói ZIP hợp lệ");
+   const url=URL.createObjectURL(blob);
+   const a=document.createElement("a");a.href=url;
+   a.download="LHM-evidence-"+r.id+".zip";
+   document.body.appendChild(a);a.click();a.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),30000);
+   report("Đã yêu cầu tải gói audit. Mở index.html trong ZIP để xem từng bước, kiểm tra trạng thái thiếu ảnh trước khi chia sẻ.");
+ }catch(e){report("Xuất audit thất bại: "+e.message,true)}
+ finally{b.disabled=false}
+};
 $("refresh").onclick=loadRuns;
 $("screenshot").onclick=async()=>{
  if(!selected)return;const image=$("screenImage");image.hidden=true;$("screenEmpty").hidden=false;$("screenEmpty").textContent="Đang chụp ảnh màn hình thật...";

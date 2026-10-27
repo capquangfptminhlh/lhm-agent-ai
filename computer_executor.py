@@ -8,6 +8,7 @@ No GitHub/API/LLM tokens should be present inside this container.
 from __future__ import annotations
 import asyncio
 import base64
+import json
 import os
 import re
 try:
@@ -31,14 +32,51 @@ ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
 WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_activate","windows_click","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-                 "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
+                 "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll","windows_evidence"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
-PAUSED = False
-MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
+                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press","browser_evidence"} | WINDOWS_TOOLS
+PAUSED = False  # compatibility; authoritative state is the persisted file
+
+def _pause_file() -> Path:
+    return ROOT/".emergency-pause.json"
+
+def _is_paused() -> bool:
+    state=_pause_file()
+    if not state.exists():
+        return PAUSED
+    try:
+        value=json.loads(state.read_text(encoding="utf-8"))
+        if not isinstance(value,dict) or type(value.get("paused")) is not bool:
+            return True  # invalid stop state must fail closed
+        return value["paused"]
+    except (OSError,ValueError,TypeError):
+        return True  # unreadable/corrupt persistent state => remain stopped
+
+def _persist_pause(paused: bool) -> bool:
+    import tempfile
+    global PAUSED
+    ROOT.mkdir(parents=True,exist_ok=True)
+    name=None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",dir=ROOT,
+                                         prefix=".emergency-",suffix=".tmp",delete=False) as tmp:
+            name=tmp.name
+            os.chmod(name,0o600)
+            json.dump({"paused":paused},tmp)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(name,_pause_file())
+        PAUSED=paused
+    finally:
+        if name and os.path.exists(name):
+            os.unlink(name)
+    return _is_paused()
+
+MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill","browser_press",
              "windows_activate","windows_click","windows_type","windows_scroll",
              "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-             "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
+             "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll",
+             "browser_evidence","windows_evidence"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
@@ -50,10 +88,12 @@ class ToolRequest(BaseModel):
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
     tool: Literal["list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
+                  "browser_find","browser_press","browser_evidence",
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_type","windows_scroll",
                   "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"]
+                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll",
+                  "windows_evidence"]
     args: dict[str,Any] = Field(default_factory=dict)
 
 def _auth(authorization: str | None) -> None:
@@ -141,6 +181,22 @@ async def _command(ws: str,role: str,args: dict[str,Any]) -> dict:
             "stdout":stdout[:MAX_OUTPUT_CHARS].decode("utf-8","replace"),
             "stderr":stderr[:MAX_OUTPUT_CHARS].decode("utf-8","replace")}
 
+_UNMASKED_SENSITIVE = re.compile(
+    r"(?i)\b(?:cvv|cvc|card number|credit card|payment details|"
+    r"bank account|số thẻ|mã cvv|thông tin thanh toán|mật khẩu)\b")
+_UNMASKED_EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_UNMASKED_CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
+
+
+def _check_public_browser_text_for_evidence(value: str) -> None:
+    """Refuse screenshots when non-input text is possibly confidential."""
+    if not isinstance(value,str):
+        raise HTTPException(403,"Cannot verify browser evidence redaction")
+    if _UNMASKED_SENSITIVE.search(value) or _UNMASKED_EMAIL.search(value) \
+            or _UNMASKED_CARD.search(value):
+        raise HTTPException(403,"Sensitive page cannot be safely redacted")
+
+
 async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
     global _PLAYWRIGHT
     try:
@@ -160,7 +216,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             # system Chrome channel to exercise this real browser pathway.
             options={"channel":channel} if channel in ("chrome","chromium","msedge") else {}
             context=await _PLAYWRIGHT.chromium.launch_persistent_context(
-                str(profile),headless=True,accept_downloads=False,
+                str(profile),headless=not (os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1"),accept_downloads=False,
                 args=["--no-sandbox","--disable-dev-shm-usage"],
                 viewport={"width":1300,"height":850},**options)
             async def guard(route):
@@ -187,6 +243,27 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             if type(distance) is not int or not 1<=distance<=1100:
                 raise HTTPException(422,"Scroll must be between 1 and 1100 pixels")
             await page.mouse.wheel(0,distance if direction=="down" else -distance)
+        elif tool=="browser_find":
+            needle=args.get("text")
+            if not isinstance(needle,str) or not 1<=len(needle)<=120 or any(ord(c)<32 for c in needle):
+                raise HTTPException(422,"Search text must be 1-120 printable characters")
+            # Locate visible textual content; on a long page scroll it into
+            # the viewport. Do not synthesize a click or submit a form.
+            locator=page.get_by_text(needle,exact=False).first
+            if await locator.count()==0:
+                return {"found":False,"query":needle,"url":page.url}
+            await locator.scroll_into_view_if_needed(timeout=6000)
+            bounds=await locator.bounding_box()
+            return {"found":True,"query":needle,"url":page.url,
+                    "bounds":bounds}
+        elif tool=="browser_press":
+            key=args.get("key")
+            allowed={"Escape","PageDown","PageUp","ArrowDown","ArrowUp","Tab","Enter"}
+            if key not in allowed:
+                raise HTTPException(422,"Browser key is not approved")
+            # Every browser_press, even Escape, is manually approved at the
+            # Agent gate: Enter/Tab may submit or change an external form.
+            await page.keyboard.press(key,timeout=7000)
         elif tool in ("browser_click","browser_fill"):
             selector=args.get("selector")
             if not isinstance(selector,str) or not 1<=len(selector)<=240:
@@ -209,6 +286,28 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
                 if field_type=="password":
                     raise HTTPException(403,"Agent never fills password fields; enter secrets manually")
                 await element.fill(value,timeout=7000)
+        if tool=="browser_evidence":
+            # Privacy: this evidence path never returns an unredacted image.
+            # Inputs, embeds, and media are masked BEFORE the PNG leaves Runner.
+            # If sensitive details appear in ordinary text (not maskable with
+            # confidence), fail closed and require manual evidence review.
+            try:
+                visible=(await page.locator("body").inner_text(timeout=7000))[:60000]
+                _check_public_browser_text_for_evidence(visible)
+                selector=("input,textarea,select,[contenteditable],"
+                          "[role=textbox],iframe,canvas,video,img,"
+                          "[data-sensitive],[data-private],[autocomplete]")
+                png=await page.screenshot(type="png",full_page=False,
+                    mask=[page.locator(selector)],mask_color="#000000",
+                    animations="disabled",timeout=15000)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(403,"Cannot safely redact browser screenshot") from exc
+            if len(png)>2*1024*1024:
+                raise HTTPException(413,"Redacted screenshot exceeds 2 MB")
+            return {"png_base64":base64.b64encode(png).decode("ascii"),
+                    "redacted":True,"scope":"browser"}
         if tool=="browser_screenshot":
             png=await page.screenshot(type="png",full_page=False,timeout=15000)
             if len(png)>2*1024*1024:
@@ -233,8 +332,10 @@ def __native_tool(tool: str,args: dict):
 
 async def perform(req: ToolRequest) -> dict:
     ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
-    if PAUSED and tool in MUTATIONS:
+    if _is_paused() and tool in MUTATIONS:
         raise HTTPException(423,"Emergency pause is active; no mutations allowed")
+    if tool in ("browser_evidence","windows_evidence") and os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")!="1":
+        raise HTTPException(403,"Evidence capture requires explicit local opt-in")
     if tool in WINDOWS_TOOLS:
         # Validate platform BEFORE touching the sandbox volume. A Linux
         # worker with an unmounted /agent-data must fail closed with 503.
@@ -307,7 +408,7 @@ async def health(authorization: str | None = Header(None)):
     _auth(authorization)
     return {"ok":True,
             "mode":"windows_native" if os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1" else "separate_runner",
-            "paused":PAUSED,
+            "paused":_is_paused(),
             "agent_isolation":"directories_not_vms",
             "tools":sorted(ALLOWED_TOOLS)}
 
@@ -330,7 +431,6 @@ class PauseIn(BaseModel):
 @runner.post("/v1/pause")
 async def emergency_pause(inp: PauseIn, authorization: str | None = Header(None)):
     _auth(authorization)
-    global PAUSED
-    PAUSED = inp.paused
-    return {"paused":PAUSED,
+    persisted=_persist_pause(inp.paused)
+    return {"paused":persisted,
             "notice":"In-flight Windows actions may have already completed; pause blocks NEW mutations."}

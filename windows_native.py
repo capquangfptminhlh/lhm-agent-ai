@@ -346,6 +346,69 @@ def _desktop_capture():
     return {"png_base64":base64.b64encode(raw).decode("ascii"),
             "scope":"desktop","width":image.width,"height":image.height}
 
+def _redacted_window_evidence(hwnd):
+    """Fail-closed UIA-assisted screen evidence for one allowlisted HWND.
+
+    Mask all UIA text/edit/document/image/list regions; never return raw
+    screenshot bytes. Unknown inaccessible controls are not assumed safe.
+    This is intentionally stricter than vision's separately consented snapshot.
+    """
+    i=_foreground(hwnd)
+    try:
+        from PIL import ImageGrab, ImageDraw
+        from pywinauto import Desktop
+        target=Desktop(backend="uia").window(handle=hwnd)
+        controls=target.descendants()
+        if not controls or len(controls)>600:
+            raise HTTPException(403,"Cannot safely enumerate UI controls")
+        sensitive={"Edit","Document","Text","ComboBox","DataGrid",
+                   "DataItem","ListItem","TreeItem","Image","Hyperlink"}
+        masks=[]
+        for child in controls:
+            try:
+                info=child.element_info
+                kind=str(info.control_type)
+                # Also cover payment/secret widgets even when mislabeled
+                # as Button/Pane/Custom. Never read Edit values.
+                name="" if kind in ("Edit","Document") else str(child.window_text())[:90]
+                is_sensitive=kind in sensitive or bool(re.search(
+                    r"(?i)password|passcode|secret|payment|card|cvv|pin\b|"
+                    r"mật khẩu|thanh toán|số thẻ",name))
+                if is_sensitive:
+                    rect=child.rectangle()
+                    left=max(0,rect.left-i["x"])
+                    top=max(0,rect.top-i["y"])
+                    right=min(i["width"],rect.right-i["x"])
+                    bottom=min(i["height"],rect.bottom-i["y"])
+                    if left>=right or top>=bottom:
+                        raise HTTPException(403,"Unsafe sensitive UIA control bounds")
+                    masks.append((left,top,right,bottom))
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(403,"Cannot verify UIA redaction bounds") from exc
+        if not masks:
+            raise HTTPException(403,"No verifiable UIA redaction regions")
+        # Re-check HWND ownership and foreground before grabbing pixels.
+        _foreground(hwnd)
+        image=ImageGrab.grab(bbox=(i["x"],i["y"],
+                                i["x"]+i["width"],i["y"]+i["height"]))
+        draw=ImageDraw.Draw(image)
+        for rect in masks:
+            draw.rectangle(rect, fill=(0,0,0))
+        image.thumbnail((1400,1000))
+        out=io.BytesIO()
+        image.save(out,format="PNG",optimize=True)
+        data=out.getvalue()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(403,"Cannot safely capture Windows UIA evidence") from exc
+    if len(data)>2*1024*1024:
+        raise HTTPException(413,"Redacted evidence exceeds 2 MB")
+    return {"png_base64":base64.b64encode(data).decode("ascii"),
+            "redacted":True,"scope":"window"}
+
 def _snap(hwnd):
     i=_window_info(hwnd)
     try:
@@ -423,6 +486,8 @@ def execute(tool: str,args: dict):
             return {"window":i,"controls":items}
         except Exception:
             return {"window":i,"controls":[],"note":"UI Automation controls unavailable"}
+    if tool=="windows_evidence":
+        return _redacted_window_evidence(hwnd)
     if tool=="windows_screenshot":
         return _snap(hwnd)
     if tool=="windows_activate":

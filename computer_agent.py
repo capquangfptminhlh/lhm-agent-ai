@@ -12,6 +12,8 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -19,9 +21,10 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, Response
+from starlette.background import BackgroundTask
 from pydantic import BaseModel, Field
 
-from core import MODEL, ROLES, audit, db, new_id, now, store_usage, workspace
+from core import MODEL, ROLES, DATABASE, audit, db, new_id, now, store_usage, workspace
 from openrouter_provider import call_free_model, is_free_model, local_free_quota, model_configured
 
 router=APIRouter(tags=["Agent Computer"])
@@ -34,6 +37,8 @@ TOOLS = {
   "sandbox_run":"Run pre-approved argv within optional networkless ephemeral Docker container, never host Windows; {argv: list[str]}; requires human approval",
   "browser_open":"Open an operator-allowlisted HTTPS website; {url: string}",
   "browser_snapshot":"Read current page title, content, links and controls; {}",
+  "browser_find":"Find visible text in browser and scroll it into view without clicking; {text: string}",
+  "browser_press":"Press a bounded key in browser (Esc/PageDown/PageUp/arrows/Tab/Enter); always requires human approval; {key: string}",
   "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
@@ -55,7 +60,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","browser_press","windows_activate","windows_click","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -69,7 +74,7 @@ SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","win
 ALWAYS_APPROVAL_TOOLS={"run_command","sandbox_run","vision_observe","vision_locate",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
-                       "browser_click","browser_fill"}
+                       "browser_click","browser_fill","browser_press"}
 MAX_STEPS=15
 MAX_STEPS_TRUSTED=50
 CHECKPOINT_EVERY=25
@@ -224,6 +229,52 @@ def cancel_computer_run(rid: str):
         audit(c,r["workspace_id"],"computer.cancelled","Human cancelled computer session",rid)
         return _view(c,_get(c,rid))
 
+async def _native_pause(paused: bool) -> None:
+    token=os.environ.get("LHM_COMPUTER_RUNNER_TOKEN","").strip()
+    if not token:
+        raise HTTPException(503,"Không thể xác nhận dừng: thiếu token Runner")
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5,connect=2),trust_env=False) as client:
+            response=await client.post(_runner_base()+"/v1/pause",
+                headers={"Authorization":"Bearer "+token},
+                json={"paused":paused})
+        if response.status_code!=200 or response.json().get("paused") is not paused:
+            raise HTTPException(503,"Runner chưa xác nhận trạng thái dừng")
+    except HTTPException:
+        raise
+    except (httpx.RequestError,ValueError,TypeError,KeyError) as exc:
+        raise HTTPException(503,"Không thể xác nhận trạng thái Runner; thao tác có thể còn đang chạy") from exc
+
+@router.post("/computer/runs/{rid}/emergency-stop")
+async def emergency_stop_computer(rid: str):
+    """Stop ALL Agent runs sharing this runner; in-flight effects may have happened."""
+    prepare_db()
+    with db() as c:
+        _get(c,rid)
+    await _native_pause(True)
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        rows=c.execute("""SELECT id,workspace_id FROM computer_runs WHERE status IN
+          ('queued','processing','awaiting_approval','awaiting_checkpoint')""").fetchall()
+        for row in rows:
+            c.execute("""UPDATE computer_steps SET status='needs_review',
+                       error='Emergency stop; in-flight outcome unknown',updated_at=?
+                       WHERE run_id=? AND status IN ('executing','approved','awaiting_approval')""",
+                      (now(),row["id"]))
+            c.execute("""UPDATE computer_runs SET status='stopped',
+                       error='Đã dừng khẩn cấp. Bước đang chạy có thể đã hoàn tất; kiểm tra trước khi chạy lại.',
+                       updated_at=? WHERE id=?""",(now(),row["id"]))
+            audit(c,row["workspace_id"],"computer.stopped",
+                  "Emergency stop confirmed by Runner; in-flight actions require review",row["id"])
+        return {"paused":True,"stopped_runs":len(rows),
+                "warning":"Thao tác đã bắt đầu có thể đã hoàn tất; không tự chạy lại."}
+
+@router.post("/computer/emergency-resume")
+async def emergency_resume_runner():
+    """Unpause runner only; never revive previously stopped Agent runs."""
+    await _native_pause(False)
+    return {"paused":False,"notice":"Runner đã mở lại. Các phiên cũ vẫn ở trạng thái stopped."}
+
 @router.post("/computer/runs/{rid}/steps/{sid}/approve")
 def approve_computer_step(rid: str,sid: str):
     prepare_db()
@@ -290,6 +341,11 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],
                  "tool":tool,"args":args})
+    if response.status_code==404 and tool.startswith("windows_") and type(args.get("hwnd")) is int:
+        # Windows runner inspected the exact selected HWND and reports it is
+        # gone. Do not substitute another window or retry ambiguous input.
+        raise HTTPException(409,"target_lost: Cửa sổ ứng dụng đích đã biến mất. "
+            "Đã dừng thao tác; có thể mở lại ứng dụng hoặc giao lại công việc.")
     if response.status_code!=200:
         raise HTTPException(502,"Computer Runner từ chối hoặc không thực thi lệnh")
     value=response.json()
@@ -432,11 +488,37 @@ async def _approval_for_action(tool: str,args: dict,run: dict) -> bool:
         # No local controller/unknown window -> never automatic.
         return True
 
-VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
+VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill","browser_press",
               "windows_activate","windows_click","windows_type","windows_scroll",
               "windows_right_click","windows_double_click","windows_hotkey",
               "windows_drag","windows_desktop_click","windows_desktop_drag",
               "windows_desktop_scroll"}
+
+
+# Image audit is opt-in until ALL M2 privacy and replay gates are certified.
+# Turning it on requires explicit LHM_EVIDENCE_CAPTURE_ENABLED=1 in the local
+# installation; never enable it automatically in Trusted mode.
+UI_EVIDENCE_TOOLS={t for t in VERIFY_TOOLS
+                   if t.startswith("windows_") or t.startswith("browser_")}
+
+
+async def _capture_redacted_evidence(run: dict,tool: str,args: dict,
+                                     rid: str,sid: str,phase: str) -> dict:
+    """Capture only the Runner's explicitly redacted image and persist locally.
+
+    No raw PNG, password/payment page, or screenshot bytes enter SQLite/LLM.
+    Missing/uncertain UIA masking fails closed before the mutation (pre) or
+    sets needs_review after a potentially successful mutation (post).
+    """
+    from evidence_artifacts import store_redacted_png
+    if tool.startswith("browser_"):
+        screenshot=await runner_call(run,"browser_evidence",{})
+    else:
+        hwnd=args.get("hwnd")
+        if type(hwnd) is not int:
+            raise HTTPException(403,"Global desktop evidence redaction is not certified")
+        screenshot=await runner_call(run,"windows_evidence",{"hwnd":hwnd})
+    return store_redacted_png(rid,sid,phase,screenshot)
 
 
 async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
@@ -446,16 +528,18 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
     step's `_verification`, giving an auditable before/after pair.
     """
     try:
-        if tool in ("browser_click","browser_fill"):
+        if tool in ("browser_click","browser_fill","browser_press"):
             snap=await runner_call(run,"browser_snapshot",{})
             return {"url":snap.get("url"),"title":str(snap.get("title") or "")[:120]}
         if tool.startswith("windows_"):
             hwnd=args.get("hwnd")
             if type(hwnd) is int:
                 snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
-                children=snap.get("children")
-                return {"title":str(snap.get("title") or "")[:120],
-                        "controls":len(children) if isinstance(children,list) else None}
+                window=snap.get("window")
+                controls=snap.get("controls")
+                return {"title":str(window.get("title") or "")[:120]
+                                    if isinstance(window,dict) else "",
+                        "controls":len(controls) if isinstance(controls,list) else None}
     except Exception:
         return None
     return None
@@ -578,6 +662,13 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         pre_state=None
         if tool in VERIFY_TOOLS and (tool.startswith("windows_") or tool.startswith("browser_")):
             pre_state=await _capture_ui_state(run,tool,args)
+        evidence_pre=None
+        if os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")=="1" and tool in UI_EVIDENCE_TOOLS:
+            # On pre-capture failure: STOP, do not perform the mutation.
+            evidence_pre=await _capture_redacted_evidence(run,tool,args,rid,sid,"pre")
+            with db() as c:
+                c.execute("UPDATE computer_steps SET result_json=?,updated_at=? WHERE id=?",
+                          (json.dumps({"_evidence":{"pre":evidence_pre}}),now(),sid))
         if tool=="vision_observe":
             from robot_vision import observe
             result=await observe(run,args)
@@ -603,9 +694,24 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 verify_failed=verification.get("ok") is False
                 if verify_failed:
                     step_status="failed"
+        if evidence_pre is not None:
+            # If post-capture fails, never retry an ambiguous side effect.
+            evidence_post=await _capture_redacted_evidence(run,tool,args,rid,sid,"post")
+            v=result.get("_verification")
+            if not isinstance(v,dict):
+                v={"method":"redacted_png_pair","ok":None}
+            result["_verification"]={**v,"evidence":{"pre":evidence_pre,"post":evidence_post}}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
+            current_state=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+            if current_state and current_state["status"]=="stopped":
+                c.execute("""UPDATE computer_steps SET status='needs_review',
+                             result_json=?,error='Emergency stop; result requires human review',
+                             updated_at=? WHERE id=?""",(clean,now(),sid))
+                audit(c,run["workspace_id"],"computer.stopped_inflight",
+                      "Late in-flight tool result did not restart a stopped run",rid)
+                return {"status":"stopped","id":rid,"last_tool":tool}
             if verify_failed:
                 c.execute("UPDATE computer_steps SET status=?,result_json=?,error=?,updated_at=? WHERE id=?",
                           (step_status,clean,"Post-action verification failed; correct the work before finishing",now(),sid))
@@ -618,17 +724,26 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         return {"status":"queued","id":rid,"last_tool":tool,"step_status":step_status}
     except Exception as exc:
         msg=exc.detail if isinstance(exc,HTTPException) else ("Computer model/runner error: "+type(exc).__name__)
-        # Ambiguous remote outcome after a side-effecting call: do not retry automatically.
+        # Explicit, terminal target_lost state: do not auto-pick another
+        # HWND when the original app was closed or disappeared.
+        target_lost=isinstance(exc,HTTPException) and str(msg).startswith("target_lost:")
+        halted="target_lost" if target_lost else "needs_review"
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
+            stopped=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+            if stopped and stopped["status"]=="stopped":
+                if current:
+                    c.execute("""UPDATE computer_steps SET status='needs_review',error=?,
+                                 updated_at=? WHERE id=?""",(str(msg)[:350],now(),current))
+                return {"status":"stopped","id":rid,"error":"Phiên đã dừng khẩn cấp; cần kiểm tra thao tác đang chạy."}
             if current:
                 c.execute("UPDATE computer_steps SET status='needs_review',error=?,updated_at=? WHERE id=?",
                           (str(msg)[:350],now(),current))
-            c.execute("UPDATE computer_runs SET status='needs_review',error=?,updated_at=? WHERE id=?",
-                      (str(msg)[:350],now(),rid))
-            audit(c,run["workspace_id"],"computer.needs_review",
+            c.execute("UPDATE computer_runs SET status=?,error=?,updated_at=? WHERE id=?",
+                      (halted,str(msg)[:350],now(),rid))
+            audit(c,run["workspace_id"],"computer."+halted,
                   f"Computer stopped at {current or 'model'}; manual review required",rid)
-        return {"status":"needs_review","id":rid,"error":str(msg)[:180]}
+        return {"status":halted,"id":rid,"error":str(msg)[:180]}
 
 async def process_one_computer_run() -> bool:
     prepare_db()
@@ -657,6 +772,37 @@ def recover_computer_runs() -> None:
 async def run_one_computer_tick(rid: str):
     # Manual operation for pilot testing; same locking/gates as worker.
     return await computer_tick(rid)
+
+@router.post("/computer/runs/{rid}/evidence/download")
+async def download_computer_evidence(rid: str):
+    """Explicit, authenticated owner download; never publishes to remote URLs.
+
+    Do not silently issue an archive on GET. The Electron Console requires
+    a direct click and confirmation; backend checks opt-in again.
+    """
+    if os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")!="1":
+        raise HTTPException(403,"Bằng chứng ảnh đang TẮT trong cài đặt Robot")
+    prepare_db()
+    with db() as c:
+        _get(c,rid)
+    from audit_replay import export_session
+    folder=Path(tempfile.mkdtemp(prefix="lhm-audit-export-",dir=DATABASE.parent))
+    destination=folder/"session.zip"
+    try:
+        result=export_session(DATABASE,rid,destination)
+        if not result.get("evidence_complete"):
+            # Do not misrepresent incomplete sessions as a verified replay.
+            # The ZIP still records missing images and includes only
+            # independently SHA256-verified, flagged-redacted evidence.
+            pass
+    except Exception:
+        shutil.rmtree(folder,ignore_errors=True)
+        raise
+    return FileResponse(destination,media_type="application/zip",
+        filename="LHM-evidence-"+rid+".zip",
+        headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"},
+        background=BackgroundTask(shutil.rmtree,folder,ignore_errors=True))
+
 
 @router.get("/computer/runs/{rid}/windows")
 async def computer_windows_list(rid: str):

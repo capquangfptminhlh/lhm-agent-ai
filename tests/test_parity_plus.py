@@ -104,6 +104,39 @@ class ApprovalMatrixTests(unittest.TestCase):
                 self.assertTrue(agent._approval_required(tool, run), tool)
 
 
+class BrowserFindPressSafetyTests(unittest.TestCase):
+    def test_browser_find_and_press_tool_contract(self):
+        for tool in ("browser_find","browser_press"):
+            self.assertIn(tool,executor.ALLOWED_TOOLS)
+            self.assertIn(tool,executor.ToolRequest.model_fields["tool"].annotation.__args__)
+            self.assertIn(tool,agent.TOOLS)
+        self.assertIn("browser_press",executor.MUTATIONS)
+        self.assertNotIn("browser_find",executor.MUTATIONS)
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            self.assertTrue(agent._approval_required("browser_press",{"mode":"trusted"}))
+            self.assertFalse(agent._approval_required("browser_find",{"mode":"trusted"}))
+
+
+class TargetLostTransportTests(unittest.TestCase):
+    def test_real_http_404_from_selected_window_becomes_target_lost(self):
+        class NoWindowClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self,*exc): return False
+            async def post(self,*a,**k):
+                return type("Response", (), {"status_code": 404})()
+        run={"workspace_id":"demo","role":"research"}
+        with patch.dict(os.environ,{"LHM_COMPUTER_RUNNER_TOKEN":"only-test"}):
+            with patch.object(agent.httpx,"AsyncClient",return_value=NoWindowClient()):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(agent.runner_call(run,"windows_type",
+                                                  {"hwnd":77,"text":"abc"}))
+                self.assertEqual(raised.exception.status_code,409)
+                self.assertIn("target_lost",str(raised.exception.detail))
+                with self.assertRaises(HTTPException) as other:
+                    asyncio.run(agent.runner_call(run,"read_file",{"path":"x"}))
+                self.assertEqual(other.exception.status_code,502)
+
+
 class NativeTrustedSendSafetyTests(unittest.TestCase):
     def test_native_mutations_only_autonomous_for_known_local_app(self):
         run={"mode":"trusted","workspace_id":"demo","role":"research"}
@@ -189,6 +222,37 @@ class TrustedModeApiTests(unittest.TestCase):
             self.assertEqual(resumed.json()["checkpoint_passed"], 1)
             again = self.client.post(f"/computer/runs/{rid}/checkpoint/approve")
             self.assertEqual(again.status_code, 409)
+
+    def test_emergency_stop_processing_never_revives_old_run(self):
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            created=self.create(mode="trusted",key="m2-emergency-running")
+        self.assertEqual(created.status_code,201,created.text)
+        rid=created.json()["id"]
+        with core.db() as c:
+            c.execute("UPDATE computer_runs SET status='processing' WHERE id=?",(rid,))
+        with patch.object(agent,"_native_pause",AsyncMock(return_value=None)) as stopped:
+            response=self.client.post(f"/computer/runs/{rid}/emergency-stop")
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertTrue(response.json()["paused"])
+            stopped.assert_awaited_once_with(True)
+            resume=self.client.post("/computer/emergency-resume")
+            self.assertEqual(resume.status_code,200,resume.text)
+        with core.db() as c:
+            row=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+        self.assertEqual(row["status"],"stopped")
+        self.assertEqual(self.client.post(f"/computer/runs/{rid}/tick").status_code,409)
+
+    def test_stop_does_not_claim_success_when_runner_unreachable(self):
+        created=self.create(key="m2-stop-no-runner")
+        self.assertEqual(created.status_code,201)
+        rid=created.json()["id"]
+        with patch.object(agent,"_native_pause",
+                          AsyncMock(side_effect=HTTPException(503,"Runner unavailable"))):
+            response=self.client.post(f"/computer/runs/{rid}/emergency-stop")
+        self.assertEqual(response.status_code,503)
+        with core.db() as c:
+            row=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+        self.assertEqual(row["status"],"queued")
 
     def test_trusted_auto_executes_routine_but_never_code(self):
         with patch.dict(os.environ, {"LHM_COMPUTER_TRUSTED_ENABLED": "1"}):
@@ -288,8 +352,9 @@ class PostVerifyTests(unittest.TestCase):
             if tool == "windows_click":
                 return {"clicked": True, "hwnd": 7}
             if tool == "windows_snapshot":
-                return {"hwnd": 7, "title": "Untitled - Notepad",
-                        "children": [{"n": 1}, {"n": 2}, {"n": 3}]}
+                return {"window": {"hwnd": 7, "process": "notepad.exe",
+                                   "title": "Untitled - Notepad"},
+                        "controls": [{"type": "Button"}, {"type": "Text"}, {"type": "Pane"}]}
             raise AssertionError(tool)
 
         async def fake_runner(run, called_tool, called_args):
@@ -322,6 +387,37 @@ class PostVerifyTests(unittest.TestCase):
         self.assertEqual(result["_verification"]["post"]["controls"], 3)
         self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
+
+
+    def test_window_disappears_stops_run_without_redirecting_input(self):
+        run = self.client.post("/workspaces/demo/computer/runs", json={
+            "role": "research", "objective": "Gõ vào Notepad đang mở",
+            "max_steps": 8, "idempotency_key": "m2-target-lost"})
+        self.assertEqual(run.status_code, 201, run.text)
+        rid = run.json()["id"]
+        url = f"/computer/runs/{rid}/tick"
+        action = ("windows_type", {"hwnd": 7, "text": "Xin chào"})
+        async def disappeared(_run, tool, args):
+            self.assertEqual(args["hwnd"], 7, "Must never retarget unknown HWND")
+            raise HTTPException(409, "target_lost: Cửa sổ ứng dụng đích đã biến mất.")
+        with patch.object(agent, "_next_action", AsyncMock(return_value=action)):
+            first = self.client.post(url)
+            self.assertEqual(first.json()["status"], "awaiting_approval")
+            sid = first.json()["step_id"]
+            approve = self.client.post(f"/computer/runs/{rid}/steps/{sid}/approve")
+            self.assertEqual(approve.status_code, 200)
+            with patch.object(agent, "runner_call", AsyncMock(side_effect=disappeared)) as calls:
+                second = self.client.post(url)
+                self.assertEqual(second.status_code, 200, second.text)
+                self.assertEqual(second.json()["status"], "target_lost")
+                self.assertGreaterEqual(calls.await_count, 1)
+        with core.db() as c:
+            runrow = c.execute("SELECT status,error FROM computer_runs WHERE id=?", (rid,)).fetchone()
+            steprow = c.execute("SELECT status FROM computer_steps WHERE id=?", (sid,)).fetchone()
+        self.assertEqual(runrow["status"], "target_lost")
+        self.assertIn("target_lost", runrow["error"])
+        self.assertEqual(steprow["status"], "needs_review")
+        self.assertEqual(self.client.post(url).status_code, 409)
 
 
 class ExecutorRegistryTests(unittest.TestCase):

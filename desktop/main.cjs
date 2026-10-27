@@ -4,7 +4,7 @@
  * No web page receives Node, filesystem, OS command or Electron IPC powers.
  * The local Python runtime is a supervised, separate executable.
  */
-const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage} = require("electron");
+const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage, globalShortcut} = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -77,6 +77,7 @@ function saveSettings(input) {
     visionEnabled:input.visionEnabled===true,
     trustedEnabled:input.trustedEnabled===true,
     fullScreenEnabled:input.fullScreenEnabled===true,
+    evidenceEnabled:input.evidenceEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
@@ -109,6 +110,7 @@ function settingsForUI() {
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
     fullScreenEnabled:c.fullScreenEnabled===true,
+    evidenceEnabled:c.evidenceEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
@@ -134,6 +136,7 @@ function envForRuntime() {
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
     LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
+    LHM_EVIDENCE_CAPTURE_ENABLED:c.evidenceEnabled===true?"1":"0",
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
     LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
@@ -156,7 +159,7 @@ function nativeEnv(runtimeEnv) {
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
-    "LHM_DESKTOP_FULL_SCREEN_ENABLED",
+    "LHM_DESKTOP_FULL_SCREEN_ENABLED","LHM_EVIDENCE_CAPTURE_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
   return env;
@@ -292,6 +295,27 @@ function createSettings() {
   settingsWindow.loadFile(path.join(__dirname,"settings.html"));
   settingsWindow.on("closed",()=>settingsWindow=null);
 }
+let emergencyShortcutActive=false;
+async function emergencyStop() {
+  // Global hotkey and menu share exactly one emergency path.
+  terminate("worker");
+  try {
+    const result=await backendFetch(NATIVE_ORIGIN+"/v1/pause",runnerToken,
+                                   "POST",{paused:true});
+    nativePaused=result.status===200;
+    writeLog("electron","Emergency stop native HTTP "+result.status+"\\n");
+    if(!nativePaused)throw Error("Native controller refused pause: HTTP "+result.status);
+  } catch(e) {
+    nativePaused=false; // UNKNOWN: never report a confirmed stop.
+    writeLog("electron","Emergency stop could not confirm native pause: "+e.message+"\\n");
+  }
+  if(mainWindow&&!mainWindow.isDestroyed()) {
+    mainWindow.flashFrame(true);
+    mainWindow.setTitle(nativePaused
+      ?"LHM ROBOT — ĐÃ DỪNG KHẨN CẤP"
+      :"LHM ROBOT — CẢNH BÁO: KHÔNG XÁC MINH ĐƯỢC DỪNG");
+  }
+}
 function makeMenu() {
   const go=Object.entries(ROUTES).map(([label,route])=>({
     label,click:()=>openPage(route)
@@ -300,22 +324,10 @@ function makeMenu() {
     {label:"LHM Robot",submenu:[
       ...go,{type:"separator"},
       {label:"Thiết lập Robot…",click:createSettings},
-      {label:"Tạm dừng khẩn cấp",click:async()=>{
-        try {
-          const result=await backendFetch(NATIVE_ORIGIN+"/v1/pause",runnerToken,
-                                         "POST",{paused:true});
-          nativePaused=result.status===200;
-          terminate("worker");
-          dialog.showMessageBoxSync(mainWindow,{
-            type:"warning",title:"Dừng khẩn cấp",
-            message:"Worker đã dừng, native runner nhận yêu cầu tạm dừng.",
-            detail:"Thao tác đã bắt đầu có thể đã thực hiện xong. Trạng thái native: "+result.status
-          });
-        }catch(e){
-          terminate("worker");
-          dialog.showErrorBox("Dừng khẩn cấp","Đã dừng worker; không thể xác minh native controller: "+e.message);
-        }
-      }},
+      {label:emergencyShortcutActive
+        ?"Tạm dừng khẩn cấp (Ctrl+Alt+Pause)"
+        :"Tạm dừng khẩn cấp (phím tắt chưa khả dụng)",
+        click:emergencyStop},
       {label:"Khởi chạy lại ứng dụng",click:()=>{app.relaunch();app.quit();}},
       {type:"separator"},{role:"quit"}
     ]},
@@ -367,15 +379,32 @@ function settingsIPC(){
     return {saved:true};
   });
 }
+app.on("will-quit",()=>globalShortcut.unregisterAll());
 app.on("before-quit",stopAll);
 app.on("window-all-closed",()=>{if(process.platform!=="darwin")app.quit();});
 app.on("activate",()=>{if(!mainWindow)createMain();});
 app.whenReady().then(async()=>{
   app.setAppUserModelId("vn.lhm.robot.desktop");
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: app ready\n");
   if(!app.requestSingleInstanceLock()){app.quit();return;}
   app.on("second-instance",()=>{if(mainWindow){mainWindow.restore();mainWindow.focus();}});
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: instance lock acquired\n");
   adminToken=crypto.randomBytes(32).toString("base64url");
   runnerToken=crypto.randomBytes(32).toString("base64url");
+  // OS-global Ctrl+Alt+Pause hangs on the unattended GitHub Windows
+  // runner before Electron's frontend/backend is initialized. This branch
+  // tests the Console/Menu emergency stop on CI, NOT the physical hotkey.
+  // A real owner Windows session MUST test the hotkey before M2 can merge.
+  if(process.env.GITHUB_ACTIONS==="true") {
+    emergencyShortcutActive=false;
+    writeLog("electron","CI ONLY: physical Ctrl+Alt+Pause NOT TESTED; Menu Stop still active\n");
+  } else {
+    emergencyShortcutActive=globalShortcut.register("Control+Alt+Pause",
+      ()=>{emergencyStop().catch(()=>{});});
+    if(!emergencyShortcutActive)
+      writeLog("electron","WARNING: Global emergency shortcut registration failed; Menu Stop still available\n");
+  }
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: initializing windows and IPC\n");
   secureSession();settingsIPC();makeMenu();createMain();
   if(process.platform!=="win32"){
     dialog.showErrorBox("Chỉ hỗ trợ Windows","LHM Robot Desktop Native hiện yêu cầu Windows 10/11.");

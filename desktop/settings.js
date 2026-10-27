@@ -9,6 +9,7 @@ async function load(){
   $("visionEnabled").checked=x.visionEnabled===true;
   $("trustedEnabled").checked=x.trustedEnabled===true;
   $("fullScreenEnabled").checked=x.fullScreenEnabled===true;
+  $("evidenceEnabled").checked=x.evidenceEnabled===true;
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
   $("agentParallelism").value=String(x.agentParallelism||1);
@@ -26,6 +27,7 @@ $("save").onclick=async()=>{
     visionEnabled:$("visionEnabled").checked,
     trustedEnabled:$("trustedEnabled").checked,
     fullScreenEnabled:$("fullScreenEnabled").checked,
+    evidenceEnabled:$("evidenceEnabled").checked,
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
     agentParallelism:Number($("agentParallelism").value),
