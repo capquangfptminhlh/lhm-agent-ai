@@ -29,7 +29,8 @@ from fastapi import HTTPException
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _MAX_PNG_BYTES = 2 * 1024 * 1024
-_MAX_STEPS = 500
+_MAX_REPLAY_BYTES = 64 * 1024 * 1024
+_MAX_STEPS = 80
 
 
 def _check_ref(root: Path, run_id: str, step_id: str,
@@ -101,6 +102,7 @@ def export_session(db_path: str | Path, run_id: str,
             raise ValueError("Evidence replay exceeds maximum step count")
         steps=[]
         images=[]
+        total_images=0
         for row in rows:
             sid=row["id"]
             if not isinstance(sid,str) or not _ID.fullmatch(sid):
@@ -115,6 +117,9 @@ def export_session(db_path: str | Path, run_id: str,
                 item=_check_ref(root,run_id,sid,phase,refs.get(phase))
                 if item is not None:
                     name,content,meta=item
+                    total_images+=len(content)
+                    if total_images>_MAX_REPLAY_BYTES:
+                        raise ValueError("Evidence archive exceeds 64MB limit")
                     images.append((name,content))
                     checked[phase]=meta
             steps.append({
