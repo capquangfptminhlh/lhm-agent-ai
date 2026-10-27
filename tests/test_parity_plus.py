@@ -223,6 +223,37 @@ class TrustedModeApiTests(unittest.TestCase):
             again = self.client.post(f"/computer/runs/{rid}/checkpoint/approve")
             self.assertEqual(again.status_code, 409)
 
+    def test_emergency_stop_processing_never_revives_old_run(self):
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            created=self.create(mode="trusted",key="m2-emergency-running")
+        self.assertEqual(created.status_code,201,created.text)
+        rid=created.json()["id"]
+        with core.db() as c:
+            c.execute("UPDATE computer_runs SET status='processing' WHERE id=?",(rid,))
+        with patch.object(agent,"_native_pause",AsyncMock(return_value=None)) as stopped:
+            response=self.client.post(f"/computer/runs/{rid}/emergency-stop")
+            self.assertEqual(response.status_code,200,response.text)
+            self.assertTrue(response.json()["paused"])
+            stopped.assert_awaited_once_with(True)
+            resume=self.client.post("/computer/emergency-resume")
+            self.assertEqual(resume.status_code,200,resume.text)
+        with core.db() as c:
+            row=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+        self.assertEqual(row["status"],"stopped")
+        self.assertEqual(self.client.post(f"/computer/runs/{rid}/tick").status_code,409)
+
+    def test_stop_does_not_claim_success_when_runner_unreachable(self):
+        created=self.create(key="m2-stop-no-runner")
+        self.assertEqual(created.status_code,201)
+        rid=created.json()["id"]
+        with patch.object(agent,"_native_pause",
+                          AsyncMock(side_effect=HTTPException(503,"Runner unavailable"))):
+            response=self.client.post(f"/computer/runs/{rid}/emergency-stop")
+        self.assertEqual(response.status_code,503)
+        with core.db() as c:
+            row=c.execute("SELECT status FROM computer_runs WHERE id=?",(rid,)).fetchone()
+        self.assertEqual(row["status"],"queued")
+
     def test_trusted_auto_executes_routine_but_never_code(self):
         with patch.dict(os.environ, {"LHM_COMPUTER_TRUSTED_ENABLED": "1"}):
             run = self.create(mode="trusted", key="parity-case-auto").json()
