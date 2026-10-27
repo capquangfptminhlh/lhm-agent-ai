@@ -13,6 +13,7 @@ from openrouter_provider import model_configured
 from tool_hub import execute_tool_job, configured, TOOL_ACTIONS
 from workflow_builder import sync_ready_builder_runs
 from computer_agent import process_one_computer_run, recover_computer_runs
+from team_collaboration import sync_ready_team_sessions
 
 
 async def recover_stuck() -> None:
@@ -74,6 +75,8 @@ async def main() -> None:
         # Finalize completed builder workflows: create review-gated tool requests
         # only. Tool Hub still requires a separate human approval.
         sync_ready_builder_runs()
+        # Process completed Agent messages and create bounded coworker handoffs.
+        sync_ready_team_sessions()
         # Computer sessions run one LLM/tool step per poll and pause for approvals.
         await process_one_computer_run()
         # Approved external actions run even without an AI API key.
