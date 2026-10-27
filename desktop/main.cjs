@@ -75,6 +75,7 @@ function saveSettings(input) {
     visionEnabled:input.visionEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
+    agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
     deepseekKey:current.deepseekKey || ""
   };
@@ -104,6 +105,7 @@ function settingsForUI() {
     visionEnabled:c.visionEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
+    agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:!!c.deepseekKey,
     secureStorage:safeStorage.isEncryptionAvailable()
   };
@@ -126,6 +128,7 @@ function envForRuntime() {
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
+    LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
     LHM_LLM_PROVIDER:c.provider==="deepseek"?"deepseek":"openrouter",
     OPENROUTER_API_KEY:unwrapSecret(c.openrouterKey),
     DEEPSEEK_API_KEY:unwrapSecret(c.deepseekKey)
