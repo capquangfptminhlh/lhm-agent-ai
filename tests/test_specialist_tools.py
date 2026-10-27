@@ -204,6 +204,69 @@ class SpecialistToolTests(unittest.TestCase):
         self.assertEqual(resp.json()["status"],"finished")
         self.assertEqual(resp.json()["images"][0]["filename"],"LHM_001.png")
 
+    def _completed_agent(self, role="research", result="Tài liệu nghiên cứu có nguồn từ công ty"):
+        res=self.client.post("/workspaces/demo/tasks",json={
+            "role":role,"instruction":"Chuẩn bị dữ liệu có nguồn để dùng công cụ"})
+        self.assertEqual(res.status_code,201,res.text)
+        task_id=res.json()["id"]
+        with core.db() as c:
+            c.execute("UPDATE tasks SET status='completed',result=?,updated_at=? WHERE id=?",
+                      (result,core.now(),task_id))
+        return task_id
+
+    def test_agent_handoff_bind_and_revoke_changed_source(self):
+        task=self._completed_agent()
+        handoff=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task,"action":"crawl4ai.crawl","payload":RESEARCH,
+            "idempotency_key":"linked-agent-crawl-idem"})
+        self.assertEqual(handoff.status_code,201,handoff.text)
+        self.assertEqual(handoff.json()["agent_source"]["role"],"research")
+        ident=handoff.json()["id"]
+        with core.db() as c:
+            item=c.execute("SELECT * FROM specialist_handoffs WHERE tool_job_id=?",(ident,)).fetchone()
+            self.assertEqual(item["source_task_id"],task)
+        with core.db() as c:
+            c.execute("UPDATE tasks SET result=? WHERE id=?",("Nội dung đã bị chỉnh sửa",task))
+        reject=self.client.post("/tool-jobs/"+ident+"/approve")
+        self.assertEqual(reject.status_code,409)
+        with core.db() as c:
+            c.execute("UPDATE tasks SET result=? WHERE id=?",("Tài liệu nghiên cứu có nguồn từ công ty",task))
+        self.assertEqual(self.client.post("/tool-jobs/"+ident+"/approve").status_code,200)
+        with core.db() as c:
+            c.execute("UPDATE tasks SET result=? WHERE id=?",("Sửa tiếp sau khi duyệt",task))
+        blocked=self.client.post("/tool-jobs/"+ident+"/execute")
+        self.assertEqual(blocked.status_code,409)
+
+    def test_agent_role_isolation_and_handoff_idempotency(self):
+        task=self._completed_agent("content","Prompt poster sản phẩm đã hoàn thành")
+        wrong=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task,"action":"twenty.create_person",
+            "payload":EMAIL,"idempotency_key":"wrong-department-001"})
+        self.assertEqual(wrong.status_code,403)
+        first=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task,"action":"comfyui.generate_image",
+            "payload":IMAGE,"idempotency_key":"agent-poster-2026"})
+        self.assertEqual(first.status_code,201,first.text)
+        repeat=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task,"action":"comfyui.generate_image",
+            "payload":IMAGE,"idempotency_key":"agent-poster-2026"})
+        self.assertEqual(repeat.status_code,201,repeat.text)
+        self.assertTrue(repeat.json()["deduplicated"])
+        task_other=self._completed_agent("content","Another poster prompt")
+        conflict=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task_other,"action":"comfyui.generate_image",
+            "payload":IMAGE,"idempotency_key":"agent-poster-2026"})
+        self.assertEqual(conflict.status_code,409)
+
+    def test_agent_handoff_requires_completed_real_task(self):
+        task=self.client.post("/workspaces/demo/tasks",json={
+            "role":"research","instruction":"Tìm nguồn phù hợp cho nghiên cứu"}).json()["id"]
+        r=self.client.post("/workspaces/demo/tool-jobs/from-specialist-agent",json={
+            "source_task_id":task,"action":"crawl4ai.crawl",
+            "payload":RESEARCH,"idempotency_key":"incomplete-agent-001"})
+        self.assertEqual(r.status_code,409)
+        self.assertEqual(self.client.get("/workspaces/demo/tool-jobs").json()["jobs"],[])
+
     def test_missing_connection_fails_closed(self):
         with patch.dict(os.environ,{"LHM_TWENTY_API_KEY":""}):
             self.assertFalse(p.configured("twenty"))
