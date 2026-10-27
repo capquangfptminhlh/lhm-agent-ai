@@ -69,7 +69,10 @@ async def main() -> None:
         if time.time()-last_recover>60:
             await recover_stuck()
             last_recover=time.time()
-        # Finalize completed builder workflows: this creates review-gated tool\n        # requests only. Tool Hub still requires a separate human approval.\n        sync_ready_builder_runs()\n        # Approved external actions run even if no DeepSeek key is configured.
+        # Finalize completed builder workflows: create review-gated tool requests
+        # only. Tool Hub still requires a separate human approval.
+        sync_ready_builder_runs()
+        # Approved external actions run even without an AI API key.
         await process_one_approved_tool()
         with db() as c:
             rows=c.execute("""SELECT t.id FROM tasks t LEFT JOIN tasks dep ON t.depends_on=dep.id
