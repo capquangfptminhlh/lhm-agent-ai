@@ -1,3 +1,33 @@
+## LHM Agent Computer — điều khiển máy tính kiểu Codex (local pilot)
+
+**Mới:** mỗi Agent có vùng file và phiên Chrome lưu bền vững trong
+dịch vụ **Computer Runner** tách khỏi backend. AI dùng OpenRouter/DeepSeek
+lập một bước thao tác, worker gửi tới runner, lưu kết quả rồi xem xét
+bước tiếp theo. Có file list/read/write/edit, terminal `argv`,
+Chrome Playwright (navigate, snapshot, click, fill, scroll, screenshot),
+phê duyệt từng lệnh nguy hiểm, chặn chạy lại sau gián đoạn, báo cáo
+trạng thái thực và giới hạn lượt AI để không phát sinh vòng lặp vô hạn.
+
+**Windows:** cài Docker Desktop, tạo `.env`, thiết lập
+`LHM_COMPUTER_RUNNER_TOKEN` ngẫu nhiên và danh sách
+`LHM_COMPUTER_ALLOWED_HOSTS`, rồi chạy **`START_COMPUTER_WINDOWS.bat`**.
+Mở `http://127.0.0.1:7770/computer`. Linux/Mac:
+`docker compose --profile computer up --build -d`.
+
+**Cần hiểu đúng:** đây là nền tảng Computer Runtime ban đầu,
+**chưa tương đương đầy đủ OpenAI Codex**. Chưa có VM riêng cho mỗi Agent,
+screen-vision model loop, git PR tự động trong Computer Runtime,
+desktop Windows native, bộ plugin IDE/CLI, hay SaaS đa khách an toàn.
+Mỗi Agent có browser profile và thư mục riêng nhưng **chia sẻ một
+sidecar**, không phải ranh giới bảo mật giữa các doanh nghiệp. Chức năng
+AI thật cần API key, web browser cần allowlist; tool có tác động
+vẫn chờ phê duyệt thủ công.
+
+Xem **[COMPUTER_RUNTIME.md](COMPUTER_RUNTIME.md)** để thiết lập, tài liệu
+luồng, quyền và danh sách hạng mục cần nghiệm thu trên máy thật.
+
+---
+
 ### Gắn Tool với nhiệm vụ Agent thực tế
 
 Màn hình `/agent-tools` cho phép chọn **nhiệm vụ Agent đã hoàn thành** ở
