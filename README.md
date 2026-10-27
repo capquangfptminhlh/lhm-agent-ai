@@ -1,3 +1,52 @@
+## 4 công cụ chuyên môn đã có adapter thật
+
+Truy cập **`/agent-tools`** để giao việc cho bốn dịch vụ chuyên dụng:
+
+| Công cụ | Action | Nhận đầu vào | Biên nhận |
+|---|---|---|---|
+| Crawl4AI | `crawl4ai.crawl` | URL HTTPS đúng danh sách cho phép | Markdown có URL nguồn (tối đa 12.000 ký tự) |
+| Twenty CRM | `twenty.create_person` | Họ, tên, email đã có quyền sử dụng | ID Person được API trả về |
+| Chatwoot | `chatwoot.create_contact` | Tên, email được phép sử dụng | ID Contact |
+| ComfyUI | `comfyui.generate_image` | Prompt, kích thước/steps giới hạn | `prompt_id` **đã xếp hàng, chưa phải file ảnh** |
+
+Agent OS lưu `tool_job` trong SQLite, chờ người quản trị duyệt, worker
+gọi API, rồi lưu biên nhận. Không kết nối tài khoản thật thì không gọi API,
+không báo thành công giả. Các phần mềm trên **là dịch vụ ngoài**, LHM chỉ
+cài adapter, không tự tải/cài tất cả repo.
+
+Cấu hình ở `.env` (xem `.env.example`):
+
+- `LHM_CRAWL4AI_MODE=selfhost|cloud`, `LHM_CRAWL4AI_URL` (selfhost),
+  `LHM_CRAWL4AI_TOKEN`, **`LHM_CRAWL_ALLOWED_HOSTS`** (bắt buộc, danh sách
+  tên miền HTTPS đúng bằng tên được phép đọc).
+- `LHM_TWENTY_URL`, `LHM_TWENTY_API_KEY`.
+- `LHM_CHATWOOT_URL`, `LHM_CHATWOOT_API_TOKEN`,
+  `LHM_CHATWOOT_ACCOUNT_ID`.
+- `LHM_COMFYUI_URL`, `LHM_COMFYUI_CHECKPOINT`
+  (tên file checkpoint đã cài trên ComfyUI).
+
+`GET /tools/specialists/readiness` chỉ cho biết biến môi trường
+có/không; **không xác nhận kết nối và quyền API live**.
+`GET /tools/comfyui/jobs/{prompt_id}` kiểm tra trạng thái/ảnh từ
+ComfyUI cho prompt đã được backend ghi nhận thuộc workspace pilot.
+
+**Bảo mật và giới hạn:** Không nhận tùy ý Python/JavaScript, custom graph,
+crawler hooks hoặc token qua JSON. URL trình thu thập phải có trong
+allowlist do admin đặt; chặn IP literal, localhost, scheme ngoài HTTPS.
+Cần đặt giới hạn egress và DNS/redirect **bên phía Crawl4AI** để chặn
+SSRF qua redirect. Mỗi tool job phải được người dùng phê duyệt, kể cả
+research; API key chỉ ở server. Đây là **pilot một workspace**, chưa có
+OAuth/Vault đa doanh nghiệp. Các bài test CI là offline/mocked; việc
+khai báo adapter **không chứng minh** bốn dịch vụ đã kết nối thật.
+
+Tài liệu API:
+- [Crawl4AI self-hosting](https://docs.crawl4ai.com/core/self-hosting/)
+- [Twenty REST](https://docs.twenty.com/developers/extend/api)
+- [Chatwoot Application API](https://www.chatwoot.com/developers/api/)
+- [ComfyUI Server](https://docs.comfy.org/development/comfyui-server/comms_messages)
+
+---
+
 ## Văn phòng 3D Live — đã có giao diện native Three.js
 
 **Mở `/office3d`**: 16 nhân vật chibi trong 8 phòng ban, camera 3D
