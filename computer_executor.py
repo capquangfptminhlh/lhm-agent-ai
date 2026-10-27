@@ -30,10 +30,10 @@ ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
                     "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
 WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_activate","windows_click","windows_type","windows_scroll"}
-ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","browser_open",
+ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
 PAUSED = False
-MUTATIONS = {"write_file","edit_file","run_command","browser_click","browser_fill",
+MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
              "windows_activate","windows_click","windows_type","windows_scroll"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
@@ -44,7 +44,7 @@ _PLAYWRIGHT = None
 class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    tool: Literal["list_files","read_file","write_file","edit_file","run_command","browser_open",
+    tool: Literal["list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_type","windows_scroll"]
@@ -226,6 +226,11 @@ async def perform(req: ToolRequest) -> dict:
             raise HTTPException(503,"Windows native control is not available")
         return __native_tool(tool,args)
     _home(ws,role)
+    if tool=="sandbox_run":
+        if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
+            raise HTTPException(503,"Local Docker sandbox command is Windows Desktop-only")
+        from robot_sandbox import run as sandbox_run
+        return await sandbox_run(ws,role,args)
     if tool=="list_files":
         path=_safe_path(ws,role,args.get("path","."))
         if not path.is_dir():
