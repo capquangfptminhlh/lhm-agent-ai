@@ -76,9 +76,7 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
         raise HTTPException(503, "Chưa cấu hình OPENROUTER_API_KEY")
     if len(context) > MAX_HANDOFF_CHARS:
         raise HTTPException(422, "Nội dung bàn giao vượt giới hạn")
-    joined = instruction + "
-" + context + "
-" + str(ws.get("business_context", ""))
+    joined = instruction + "\n" + context + "\n" + str(ws.get("business_context", ""))
     # Free providers can have different retention/training rules. Refuse common
     # personal-contact markers unless an operator has explicitly opted in.
     if os.environ.get("LHM_OPENROUTER_ALLOW_CONTACT_DATA", "0") != "1":
@@ -86,19 +84,15 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
             raise HTTPException(422, "Model free từ chối dữ liệu liên hệ cá nhân; dùng model riêng được duyệt")
     system = role_prompt(role, ws["industry"], ws["business_context"])
     user = instruction[:8000] + (
-        "
-
-DỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):
-" + context if context else ""
+        "\n\nDỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):\n" + context if context else ""
     )
-    # Optional strict live-catalog selection. If catalog pricing cannot be verified,
-    # fail closed rather than falling back to any unverified or billable model.
+    # Check the live OpenRouter catalog before selecting any explicit free model.
     if model == "openrouter/free" and os.environ.get("LHM_OPENROUTER_FREE_AUTO_SELECT") == "1":
         from openrouter_free_catalog import select_free_model
         try:
             model = await select_free_model(role)
         except (httpx.HTTPError, ValueError) as exc:
-            raise HTTPException(503, "Không xác minh được model miễn phí trên OpenRouter; dừng nhiệm vụ") from exc
+            raise HTTPException(503, "Không xác minh được model miễn phí; dừng nhiệm vụ") from exc
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                "X-Title": "LHM Agent OS"}
     try:
