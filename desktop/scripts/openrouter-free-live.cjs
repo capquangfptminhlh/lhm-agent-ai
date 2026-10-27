@@ -15,6 +15,9 @@ const {requestFreeCompletion}=require("../openrouter-free-test.cjs");
   }
   try {
     const response=await requestFreeCompletion(apiKey);
+    if(response.cost_verified!==true || response.reported_cost_usd!==0) {
+      throw new Error("OpenRouter API cost not confirmed as exactly USD 0; Live acceptance FAIL.");
+    }
     const obj={
       success:response.ok,
       requested_model:response.requested_model,
