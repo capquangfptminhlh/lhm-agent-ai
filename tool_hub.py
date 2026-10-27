@@ -191,6 +191,12 @@ async def upload_postiz_media(file: UploadFile = File(...), workspace_id: str = 
         await file.close()
 
 
+@router.get("/agent-tools")
+def specialist_tools_page():
+    return FileResponse(Path(__file__).parent / "static" / "agent_tools.html",
+                        media_type="text/html")
+
+
 @router.get("/tool-hub")
 def tool_hub_page():
     return FileResponse(Path(__file__).parent / "static" / "tool_hub.html", media_type="text/html")
