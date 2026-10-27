@@ -25,6 +25,10 @@ NAME_LIMIT = 180
 MOUSE_LEFT_DOWN=0x0002
 MOUSE_LEFT_UP=0x0004
 MOUSE_WHEEL=0x0800
+BLOCKED_APPS={"cmd.exe","powershell.exe","pwsh.exe","wt.exe",
+              "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe",
+              "wscript.exe","cscript.exe","mshta.exe","rundll32.exe",
+              "python.exe","pythonw.exe","node.exe","sdelete.exe"}
 
 def _require_windows():
     if os.name != "nt" or os.environ.get("LHM_DESKTOP_NATIVE") != "1":
@@ -32,7 +36,7 @@ def _require_windows():
 
 def _allowlist():
     return {s.strip().lower() for s in os.environ.get("LHM_DESKTOP_ALLOWED_APPS","").split(",")
-            if re.fullmatch(r"[a-zA-Z0-9._-]{3,70}\.exe",s.strip())}
+            if re.fullmatch(r"[a-zA-Z0-9._-]{3,70}\.exe",s.strip()) and s.strip().lower() not in BLOCKED_APPS}
 
 def _user32():
     _require_windows()
@@ -157,7 +161,7 @@ def _type_unicode(text):
             seq.append(entry)
     if seq:
         array=(INPUT*len(seq))(*seq)
-        count=u.SendInput(len(seq),array,ctypes.sizeof(INPUT))
+        count=u.SendInput(len(seq),ctypes.cast(array,ctypes.c_void_p),ctypes.sizeof(INPUT))
         if count!=len(seq):
             raise HTTPException(502,"Windows rejected injected key events")
 
