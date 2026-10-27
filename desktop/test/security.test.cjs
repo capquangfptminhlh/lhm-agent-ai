@@ -48,7 +48,9 @@ test("Windows controller accepts only explicitly allowlisted HWND and is separat
  const runner=fs.readFileSync(path.join(root,"..","computer_executor.py"),"utf8");
  const native=fs.readFileSync(path.join(root,"..","windows_native.py"),"utf8");
  assert.match(runner,/WINDOWS_TOOLS/);
- assert.match(runner,/PAUSED and tool in MUTATIONS/);
+ assert.match(runner,/_is_paused\(\) and tool in MUTATIONS/);
+ assert.match(runner,/def _persist_pause/);
+ assert.match(runner,/os\.replace\(name,_pause_file\(\)\)/);
  assert.match(runner,/native.*execute|from windows_native import execute/);
  assert.match(native,/name not in _allowlist/);
  assert.match(native,/Windows denied foreground focus/);
