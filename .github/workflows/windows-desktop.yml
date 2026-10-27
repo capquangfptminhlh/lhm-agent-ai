@@ -65,6 +65,9 @@ jobs:
           node --check desktop/main.cjs
           node --check desktop/settings-preload.cjs
           node --check desktop/settings.js
+          node --check desktop/openrouter-free-test.cjs
+          node --check desktop/scripts/openrouter-free-live.cjs
+          node --check desktop/test/openrouter-free.test.cjs
           node --check desktop/test/security.test.cjs
           node --test desktop/test/security.test.cjs
 
