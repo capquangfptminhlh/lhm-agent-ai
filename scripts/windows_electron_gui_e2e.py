@@ -97,13 +97,24 @@ def main():
                     browser.close()
             except BaseException:
                 logfile.flush()
-                for base in [profile / "AppData" / "Roaming", 
+                # Electron's app.getName() can resolve to the package's slug,
+                # not builder's display name. Inspect all local app logs.
+                for base in [profile / "AppData" / "Roaming",
                              Path(os.environ.get("APPDATA", ""))]:
-                    logs = base / "LHM Robot Desktop" / "logs"
-                    for path in sorted(logs.glob("*.log")) if logs.is_dir() else []:
-                        print(f"--- {path.name} tail ---\n"
-                              + path.read_text(encoding="utf-8", errors="replace")[-2500:],
+                    if base.is_dir():
+                        for path in sorted(base.glob("*/logs/*.log")):
+                            print(f"--- {path} tail ---\n"
+                                  + path.read_text(encoding="utf-8", errors="replace")[-3200:],
+                                  flush=True)
+                for port in (7770, 7782):
+                    import socket
+                    with socket.socket() as sock:
+                        sock.settimeout(1)
+                        print(f"Port {port} connect_ex={sock.connect_ex(('127.0.0.1', port))}",
                               flush=True)
+                print(subprocess.run(["tasklist", "/FI", "IMAGENAME eq lhm-runtime.exe"],
+                                     text=True, capture_output=True, timeout=10).stdout[-3000:],
+                      flush=True)
                 print("--- Electron stdout/stderr tail ---\n"
                       + (profile / "electron.log").read_text(encoding="utf-8",
                                                              errors="replace")[-3500:],
