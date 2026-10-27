@@ -492,6 +492,32 @@ VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill","browser_p
               "windows_desktop_scroll"}
 
 
+# Image audit is opt-in until ALL M2 privacy and replay gates are certified.
+# Turning it on requires explicit LHM_EVIDENCE_CAPTURE_ENABLED=1 in the local
+# installation; never enable it automatically in Trusted mode.
+UI_EVIDENCE_TOOLS={t for t in VERIFY_TOOLS
+                   if t.startswith("windows_") or t.startswith("browser_")}
+
+
+async def _capture_redacted_evidence(run: dict,tool: str,args: dict,
+                                     rid: str,sid: str,phase: str) -> dict:
+    """Capture only the Runner's explicitly redacted image and persist locally.
+
+    No raw PNG, password/payment page, or screenshot bytes enter SQLite/LLM.
+    Missing/uncertain UIA masking fails closed before the mutation (pre) or
+    sets needs_review after a potentially successful mutation (post).
+    """
+    from evidence_artifacts import store_redacted_png
+    if tool.startswith("browser_"):
+        screenshot=await runner_call(run,"browser_evidence",{})
+    else:
+        hwnd=args.get("hwnd")
+        if type(hwnd) is not int:
+            raise HTTPException(403,"Global desktop evidence redaction is not certified")
+        screenshot=await runner_call(run,"windows_evidence",{"hwnd":hwnd})
+    return store_redacted_png(rid,sid,phase,screenshot)
+
+
 async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
     """Local state evidence for a UI action (no model, no file writes).
 
@@ -633,6 +659,13 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         pre_state=None
         if tool in VERIFY_TOOLS and (tool.startswith("windows_") or tool.startswith("browser_")):
             pre_state=await _capture_ui_state(run,tool,args)
+        evidence_pre=None
+        if os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")=="1" and tool in UI_EVIDENCE_TOOLS:
+            # On pre-capture failure: STOP, do not perform the mutation.
+            evidence_pre=await _capture_redacted_evidence(run,tool,args,rid,sid,"pre")
+            with db() as c:
+                c.execute("UPDATE computer_steps SET result_json=?,updated_at=? WHERE id=?",
+                          (json.dumps({"_evidence":{"pre":evidence_pre}}),now(),sid))
         if tool=="vision_observe":
             from robot_vision import observe
             result=await observe(run,args)
@@ -658,6 +691,13 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 verify_failed=verification.get("ok") is False
                 if verify_failed:
                     step_status="failed"
+        if evidence_pre is not None:
+            # If post-capture fails, never retry an ambiguous side effect.
+            evidence_post=await _capture_redacted_evidence(run,tool,args,rid,sid,"post")
+            v=result.get("_verification")
+            if not isinstance(v,dict):
+                v={"method":"redacted_png_pair","ok":None}
+            result["_verification"]={**v,"evidence":{"pre":evidence_pre,"post":evidence_post}}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
