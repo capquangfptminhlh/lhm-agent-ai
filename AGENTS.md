@@ -2,7 +2,7 @@
 
 > **Đọc trước khi sửa code, mở PR, viết test hoặc báo cáo hoàn thành.**
 > Áp dụng cho toàn repository. Đây là checklist sản phẩm của chủ sở hữu, không phải lời gợi ý.
-> Nguồn quyết định: [Issue #20](https://github.com/capquangfptminhlh/lhm-agent-ai/issues/20) · [Kế hoạch chủ duyệt](GROKBOT_PARITY_PLUS_PLAN.md) · [Bảng nghiệm thu](docs/PARITY_PLUS_SCORECARD.md).
+> Nguồn triển khai: [6 mốc M0–M5 và cổng kiểm thử](docs/EXECUTION_M0_M5.md). Nguồn quyết định: [Issue #20](https://github.com/capquangfptminhlh/lhm-agent-ai/issues/20) · [Kế hoạch chủ duyệt](GROKBOT_PARITY_PLUS_PLAN.md) · [Bảng nghiệm thu](docs/PARITY_PLUS_SCORECARD.md).
 > Nếu tài liệu mâu thuẫn, **quyết định của chủ trong Issue #20 + 10 việc gốc** là chuẩn; không tự hạ tiêu chí. Báo mâu thuẫn trong PR.
 
 ## 1. Định nghĩa hoàn thành
