@@ -75,6 +75,23 @@ class EvidenceArtifactTests(unittest.TestCase):
                     {"redacted":True,"png_base64":base64.b64encode(b"not-png").decode()},
                     db_path=str(Path(home)/"db.sqlite"))
 
+    def test_evidence_directory_symlink_cannot_redirect_image(self):
+        image={"redacted":True,"png_base64":base64.b64encode(png()).decode()}
+        with tempfile.TemporaryDirectory() as home:
+            base=Path(home)
+            redirected=base/"redirected"
+            redirected.mkdir()
+            link=base/"evidence"
+            try:
+                link.symlink_to(redirected,target_is_directory=True)
+            except (OSError,NotImplementedError):
+                self.skipTest("Symlink creation not supported without privileges")
+            with self.assertRaises(HTTPException) as exc:
+                store_redacted_png("run","step","pre",image,
+                                   db_path=str(base/"db.sqlite3"))
+            self.assertEqual(exc.exception.status_code,403)
+            self.assertFalse(list(redirected.rglob("*.png")))
+
     def test_agent_calls_only_redacted_runner_tool(self):
         import computer_agent as agent
         image={"redacted":True,"png_base64":base64.b64encode(png()).decode()}
