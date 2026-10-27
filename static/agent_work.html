@@ -85,6 +85,7 @@ async function loadResult(){
     "\nTrạng thái công việc: "+data.work_status+
     "\nQA: "+data.qa_status+" / "+(data.qa_verdict||"chưa duyệt")+
     "\nBáo đã thực hiện bên ngoài: KHÔNG (phải đối chiếu biên nhận Tool Hub)"+
+    (data.readiness.blockers.length?"\nCẢNH BÁO: "+data.readiness.blockers.join(" | "):"")+
     "\nBước tiếp: "+data.next_step+(data.error?"\nLỗi: "+data.error:"");
   $("draft").hidden=!data.draft;$("draft").textContent=data.draft||"";
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
