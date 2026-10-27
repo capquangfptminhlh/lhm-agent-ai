@@ -110,6 +110,7 @@ async def run():
 
     began=time.monotonic()
     dispatches=[]
+    failed_turn=None
     for number in range(CAP):
         state=client.get(f"/workspaces/{ws}/team/sessions/{sid}").json()
         if state["status"]!="running":
@@ -127,12 +128,19 @@ async def run():
             outcome=c.execute(
                 "SELECT status,error,attempts FROM tasks WHERE id=?",
                 (task_id,)).fetchone()
-        assert outcome is not None and outcome["status"]=="completed",(
-            number+1,outcome["status"] if outcome else None,
-            (outcome["error"] or "")[:120] if outcome else "missing")
+        assert outcome is not None, "Task vanished"
         processed=team.sync_ready_team_sessions()
         assert processed>=1
         next_state=client.get(f"/workspaces/{ws}/team/sessions/{sid}").json()
+        if outcome["status"]!="completed":
+            failed_turn={"turn":number+1,"agent":pending["role"],
+                         "task_state":outcome["status"],
+                         "session_state":next_state["status"],
+                         "reason_code":"provider_response_invalid_or_unavailable"}
+            assert next_state["status"]=="needs_review", (
+                "Failed LLM call was not fail-closed",failed_turn)
+            print("LIVE_TEAM_FAIL_CLOSED "+json.dumps(failed_turn),flush=True)
+            break
         dispatches.append({"turn":number+1,"agent":pending["role"],
                            "task_completed":True,"session_state":next_state["status"]})
         print("LIVE_TEAM_TURN "+json.dumps(dispatches[-1]),flush=True)
@@ -154,7 +162,7 @@ async def run():
         "Session may not pretend human acceptance",data["status"])
     if data["status"]=="completed_unverified":
         assert "quality" in roles, "Completed before Quality participation"
-    assert len(observed)<=CAP and len(observed)==len(dispatches)
+    assert len(observed)<=CAP and len(observed)==len(dispatches)+(1 if failed_turn else 0)
     stats={
         "mode":"LIVE_PROVIDER_AND_REAL_WORKER",
         "registered_roles":16,
@@ -162,13 +170,18 @@ async def run():
         "calls_to_real_openrouter":len(observed),
         "max_authorized_calls":CAP,
         "successful_worker_turns":len(dispatches),
+        "failed_turn":failed_turn,
+        "safe_stop_on_provider_error":failed_turn is None or data["status"]=="needs_review",
         "unique_agents_who_replied":sorted(roles),
         "persisted_agent_messages":len(agent_msgs),
         "final_session_status":data["status"],
         "elapsed_seconds":round(time.monotonic()-began,2),
-        "all_actual_models_explicitly_free":all(
-            str(x.get("actual_model","")).endswith(":free") for x in observed),
-        "all_costs_reported_zero":all(
+        "completed_calls_actual_models_explicitly_free":all(
+            str(x.get("actual_model","")).endswith(":free") for x in observed if x.get("actual_model")),
+        "unverified_provider_attempts":sum(1 for x in observed if not x.get("actual_model")),
+        "completed_calls_costs_reported_zero":all(
+            x["cost_reported"] and x["reported_cost_usd"]==0 for x in observed if x.get("actual_model")),
+        "all_attempts_cost_zero_confirmed":all(
             x["cost_reported"] and x["reported_cost_usd"]==0 for x in observed),
         "total_input_tokens":sum(int(x.get("input_tokens") or 0) for x in observed),
         "total_output_tokens":sum(int(x.get("output_tokens") or 0) for x in observed),
@@ -179,9 +192,11 @@ async def run():
         json.dumps(stats,ensure_ascii=False,indent=2),encoding="utf-8")
     print("LIVE_TEAM_SUMMARY "+json.dumps(
         {k:v for k,v in stats.items() if k!="calls"},ensure_ascii=False),flush=True)
-    assert stats["all_actual_models_explicitly_free"], "Free model verification failed"
+    assert stats["completed_calls_actual_models_explicitly_free"], "Free model verification failed"
+    assert stats["completed_calls_costs_reported_zero"], "Completed calls did not explicitly report cost 0"
     # A missing provider cost field does NOT authorize asserting zero dollars.
-    assert stats["all_costs_reported_zero"], "Provider cost was not explicitly verified as USD 0"
+    assert stats["all_attempts_cost_zero_confirmed"], "At least one provider request lacks a verified zero-cost response"
+    assert failed_turn is None, "One provider request failed; Team correctly stopped for manual review"
     print("LIVE_TEAM_PASS: true worker + 2+ agents + verified free provider + cost 0",flush=True)
 
 if __name__=="__main__":
