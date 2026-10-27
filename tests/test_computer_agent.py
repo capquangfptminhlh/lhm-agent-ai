@@ -78,7 +78,7 @@ class ComputerAgentTests(unittest.TestCase):
             with patch.object(agent,"runner_call",AsyncMock(return_value={"entries":[]})) as tool:
                 response=self.client.post(url)
                 self.assertEqual(response.status_code,200,response.text)
-                self.assertEqual(response.json()["last_tool"],"list_files")
+                self.assertEqual(response.json().get("last_tool"),"list_files",response.text)
                 tool.assert_awaited_once()
         with patch.object(agent,"_next_action",AsyncMock(return_value=(
             "run_command",{"argv":["python","-c","print('hello')"]}))):
@@ -139,7 +139,7 @@ class ComputerAgentTests(unittest.TestCase):
             with patch.object(agent,"runner_call",AsyncMock(return_value={"entries":[]})):
                 self.assertEqual(self.client.post("/computer/runs/"+r["id"]+"/tick").status_code,200)
         second=self.client.post("/computer/runs/"+r["id"]+"/tick")
-        self.assertEqual(second.json()["status"],"needs_review")
+        self.assertEqual(second.json().get("status"),"needs_review",second.text)
 
     def test_sandbox_auth_and_file_jail(self):
         payload={"workspace_id":"demo","role":"research","tool":"list_files","args":{"path":"."}}
