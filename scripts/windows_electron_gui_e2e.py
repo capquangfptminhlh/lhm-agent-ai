@@ -90,6 +90,21 @@ def main():
                         timings.append((path, round((time.monotonic()-began)*1000)))
                         if path == "/office3d":
                             page.screenshot(path=str(DEST), full_page=False, timeout=20000)
+                    # New-install acceptance: real Electron opens a local settings
+                    # window without requiring user to know .exe or website lists.
+                    settings=[p for p in context.pages if "settings.html" in p.url]
+                    assert settings, "First-run API key setup did not open"
+                    setup=settings[0]
+                    setup.locator("#quickStart").wait_for(state="visible",timeout=12000)
+                    setup.locator("#refreshReadiness").click()
+                    setup.locator("#readiness").filter(has_text="Bộ não / Backend").wait_for(
+                        state="visible",timeout=12000)
+                    assert "Chưa nhập API key" in setup.locator("#readiness").inner_text(), (
+                        "First-run readiness must flag missing OpenRouter credential")
+                    assert setup.locator("#advanced").get_attribute("open") is None, (
+                        "Advanced settings should be collapsed")
+                    print("REAL ELECTRON FIRST-RUN ONBOARDING PASS: "
+                          "API key prompt, diagnostic panel, advanced collapsed",flush=True)
                     assert not console_errors, f"Electron runtime JS exceptions: {console_errors[:3]}"
                     print("REAL PACKAGED ELECTRON GUI PASS: "
                           + ", ".join(f"{p}={ms}ms" for p,ms in timings), flush=True)
