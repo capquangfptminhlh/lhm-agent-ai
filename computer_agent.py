@@ -34,6 +34,8 @@ TOOLS = {
   "sandbox_run":"Run pre-approved argv within optional networkless ephemeral Docker container, never host Windows; {argv: list[str]}; requires human approval",
   "browser_open":"Open an operator-allowlisted HTTPS website; {url: string}",
   "browser_snapshot":"Read current page title, content, links and controls; {}",
+  "browser_find":"Find visible text in browser and scroll it into view without clicking; {text: string}",
+  "browser_press":"Press a bounded key in browser (Esc/PageDown/PageUp/arrows/Tab/Enter); always requires human approval; {key: string}",
   "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
@@ -55,7 +57,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","browser_press","windows_activate","windows_click","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -69,7 +71,7 @@ SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","win
 ALWAYS_APPROVAL_TOOLS={"run_command","sandbox_run","vision_observe","vision_locate",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
-                       "browser_click","browser_fill"}
+                       "browser_click","browser_fill","browser_press"}
 MAX_STEPS=15
 MAX_STEPS_TRUSTED=50
 CHECKPOINT_EVERY=25
@@ -437,7 +439,7 @@ async def _approval_for_action(tool: str,args: dict,run: dict) -> bool:
         # No local controller/unknown window -> never automatic.
         return True
 
-VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
+VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill","browser_press",
               "windows_activate","windows_click","windows_type","windows_scroll",
               "windows_right_click","windows_double_click","windows_hotkey",
               "windows_drag","windows_desktop_click","windows_desktop_drag",
@@ -451,7 +453,7 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
     step's `_verification`, giving an auditable before/after pair.
     """
     try:
-        if tool in ("browser_click","browser_fill"):
+        if tool in ("browser_click","browser_fill","browser_press"):
             snap=await runner_call(run,"browser_snapshot",{})
             return {"url":snap.get("url"),"title":str(snap.get("title") or "")[:120]}
         if tool.startswith("windows_"):
