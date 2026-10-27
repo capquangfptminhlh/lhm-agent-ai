@@ -21,6 +21,9 @@ from pydantic import BaseModel, Field
 
 from core import ROLES, audit, db, new_id, now, workspace
 from publication_gate import approval_digest, assert_source_approved, prepare_reviews
+from agent_tool_providers import (ACTIONS as SPECIALIST_ACTIONS,
+    configured as specialist_configured, validate_payload as specialist_validate,
+    dispatch as specialist_dispatch, comfyui_status as specialist_comfyui_status)
 
 router = APIRouter(tags=["Tool Hub"])
 CATALOG = json.loads((Path(__file__).parent / "templates" / "tool_catalog.json").read_text(encoding="utf-8"))
@@ -28,6 +31,7 @@ TOOL_ACTIONS = {
     "postiz.create_post": {"tool": "postiz", "writes_external": True, "approval_required": True},
     "wordpress.create_post": {"tool": "wordpress", "writes_external": True, "approval_required": True},
     "activepieces.trigger": {"tool": "activepieces", "writes_external": True, "approval_required": True},
+    **SPECIALIST_ACTIONS,
 }
 
 
@@ -73,7 +77,7 @@ def configured(tool: str) -> bool:
         return all(os.getenv(k) for k in ("LHM_WP_URL", "LHM_WP_USER", "LHM_WP_APP_PASSWORD"))
     if tool == "activepieces":
         return bool(os.getenv("LHM_ACTIVEPIECES_WEBHOOK_URL"))
-    return False
+    return specialist_configured(tool)
 
 
 def _sanitize_response(value: Any) -> Any:
@@ -214,6 +218,39 @@ def ready_agent_drafts(ws: str):
     return {"drafts":[{"id":r["id"],"role":r["role"],"instruction":r["instruction"],"text":r["result"][:15000],"updated_at":r["updated_at"]} for r in rows]}
 
 
+@router.get("/tools/specialists/readiness")
+def specialist_readiness():
+    """Configuration presence only; does not claim provider authentication passed."""
+    return {"providers":[{"name":k,"configured":specialist_configured(k),
+            "connection_verified":False,"actions":[a for a,v in SPECIALIST_ACTIONS.items() if v["tool"]==k]}
+            for k in ("crawl4ai","twenty","chatwoot","comfyui")],
+            "scope":"single_pilot_workspace_only"}
+
+
+@router.get("/tools/comfyui/jobs/{prompt_id}")
+async def check_comfyui_image(prompt_id: str, workspace_id: str="demo"):
+    _pilot_ws(workspace_id)
+    # Only inspect jobs that were actually accepted for this pilot workspace.
+    with db() as c:
+        jobs=c.execute("SELECT result_json FROM tool_jobs WHERE workspace_id=? AND action='comfyui.generate_image' AND result_json IS NOT NULL",
+                      (workspace_id,)).fetchall()
+    known=False
+    for job in jobs:
+        try:
+            receipt=json.loads(job["result_json"])
+            if receipt.get("prompt_id")==prompt_id:
+                known=True
+                break
+        except (json.JSONDecodeError,AttributeError):
+            pass
+    if not known:
+        raise HTTPException(404,"ComfyUI prompt_id không thuộc dữ liệu đã ghi nhận")
+    try:
+        return await specialist_comfyui_status(prompt_id)
+    except httpx.HTTPError as err:
+        raise HTTPException(502,_remote_error(err)) from err
+
+
 @router.get("/tools/postiz/channels")
 async def postiz_channels(workspace_id: str = "demo"):
     _pilot_ws(workspace_id)
@@ -230,7 +267,9 @@ async def postiz_channels(workspace_id: str = "demo"):
 
 
 class ToolJobIn(BaseModel):
-    action: Literal["postiz.create_post", "wordpress.create_post", "activepieces.trigger"]
+    action: Literal["postiz.create_post", "wordpress.create_post", "activepieces.trigger",
+                    "crawl4ai.crawl", "twenty.create_person",
+                    "chatwoot.create_contact", "comfyui.generate_image"]
     payload: dict[str, Any]
     idempotency_key: str = Field(min_length=6, max_length=120)
 
@@ -308,6 +347,8 @@ def _assert_payload(action: str, p: dict[str, Any]) -> None:
             raise HTTPException(422, "Thiếu data dict")
         if len(json.dumps(p["data"], ensure_ascii=False)) > 15000:
             raise HTTPException(422, "Payload workflow quá lớn")
+    elif action in SPECIALIST_ACTIONS:
+        specialist_validate(action,p)
     else:
         raise HTTPException(422, "Tool chưa được cấp phép")
 
@@ -378,6 +419,8 @@ async def dispatch_tool(action: str, p: dict[str, Any]) -> dict[str, Any]:
         return await _dispatch_wordpress(p)
     if action == "activepieces.trigger":
         return await _dispatch_activepieces(p)
+    if action in SPECIALIST_ACTIONS:
+        return await specialist_dispatch(action,p)
     raise ValueError("Unsupported action")
 
 
