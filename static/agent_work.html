@@ -26,6 +26,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 <label>Mục tiêu cụ thể<textarea id="objective" placeholder="Ví dụ: Soạn bài SEO về phụ kiện điện thoại, chỉ dùng thông tin được cung cấp"></textarea></label>
 <label>Dữ liệu / tài liệu đầu vào (tùy chọn)<textarea id="context" placeholder="Dán dữ liệu thực tế, không dán mật khẩu hay token"></textarea></label>
 <button id="submit">Giao việc cho Agent</button> <button id="refresh" style="background:#637b93">Kiểm tra kết quả</button>
+<button id="wpDraft" style="background:#306b55" hidden>Chuyển bản nháp sang WordPress (cần duyệt)</button>
 <p id="feedback" role="status" aria-live="polite"></p>
 <div id="report" class="notice">Chưa có nhiệm vụ.</div>
 <pre id="draft" hidden></pre>
@@ -35,7 +36,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 </main>
 <script>
 "use strict";
-const $=id=>document.getElementById(id);let agents=[],selectedOrder=null;
+const $=id=>document.getElementById(id);let agents=[],selectedOrder=null,selectedRecord=null;
 const req=async(url,options)=>{
   const response=await fetch(url,{...options,cache:"no-store"});
   let data=await response.json().catch(()=>({detail:"Lỗi không đọc được dữ liệu từ backend"}));
@@ -75,6 +76,8 @@ async function loadResult(){
  try{
   const data=await req("/workspaces/"+encodeURIComponent($("ws").value.trim())+
        "/agent-work-orders/"+encodeURIComponent(selectedOrder));
+  selectedRecord=data;
+  $("wpDraft").hidden=!(data.role==="content" && data.task_status==="completed");
   $("report").textContent="Nghề: "+data.fixed_job.title+
     "\nTrạng thái Worker: "+data.task_status+
     "\nTrạng thái công việc: "+data.work_status+
@@ -83,6 +86,25 @@ async function loadResult(){
   $("draft").hidden=!data.draft;$("draft").textContent=data.draft||"";
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
 }
+$("wpDraft").onclick=async()=>{
+ const d=selectedRecord;if(!d || d.role!=="content" || d.task_status!=="completed")return;
+ if(!confirm("Chuyển NỘI DUNG BẢN NHÁP này thành yêu cầu WordPress để chủ DUYỆT? Chưa đăng bài."))return;
+ const btn=$("wpDraft");btn.disabled=true;
+ try{
+   const ws=$("ws").value.trim();
+   const job=await req("/workspaces/"+encodeURIComponent(ws)+"/tool-jobs/from-agent",{
+     method:"POST",headers:{"Content-Type":"application/json"},
+     body:JSON.stringify({source_task_id:d.task_id,action:"wordpress.create_post",
+        idempotency_key:"fixed-wordpress-"+d.id,
+        title:$("objective").value.trim().slice(0,180) || d.fixed_job.title,
+        status:"draft"})
+   });
+   $("feedback").textContent="Đã tạo yêu cầu Tool Hub #"+job.id+
+    ". Bước tiếp: mở Công cụ chuyên môn, DUYỆT yêu cầu rồi kiểm tra biên nhận WordPress. Không coi là đã đăng.";
+ }catch(e){$("feedback").textContent="Chưa tạo được yêu cầu WordPress: "+e.message;
+   $("feedback").className="danger"}
+ finally{btn.disabled=false;}
+};
 $("refresh").onclick=loadResult;
 $("submit").onclick=async()=>{
  const button=$("submit");button.disabled=true;$("feedback").textContent="";
