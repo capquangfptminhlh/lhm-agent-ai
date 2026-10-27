@@ -1,0 +1,60 @@
+{
+  "name": "lhm-robot-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LHM Robot Desktop for Windows — supervised local Agent computer control",
+  "main": "main.cjs",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "dist:win": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "vn.lhm.robot.desktop",
+    "productName": "LHM Robot Desktop",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "settings-preload.cjs",
+      "settings.html",
+      "splash.html",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist/lhm-runtime",
+        "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}"
+  }
+}
