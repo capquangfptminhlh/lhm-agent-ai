@@ -102,6 +102,25 @@ def _view(c, row) -> dict[str,Any]:
     out["runner_configured"]=bool(os.getenv("LHM_COMPUTER_RUNNER_TOKEN",""))
     return out
 
+@router.get("/computer/capabilities")
+def computer_capabilities():
+    """Report only operator settings, never authentication tokens."""
+    from robot_vision import enabled as vision_enabled
+    from robot_sandbox import configured as sandbox_configured
+    try:
+        parallel=max(1,min(int(os.environ.get("LHM_AGENT_PARALLELISM","1")),4))
+    except ValueError:
+        parallel=1
+    return {"native_windows":os.environ.get("LHM_DESKTOP_NATIVE")=="1",
+            "visual_observation":vision_enabled(),
+            "vision_always_requires_approval":True,
+            "sandbox_code":sandbox_configured() and os.environ.get("LHM_DESKTOP_NATIVE")=="1",
+            "sandbox_always_requires_approval":True,
+            "max_simultaneous_agent_tasks":parallel,
+            "shared_windows_cursor":True,
+            "production_vm_isolation":False}
+
+
 @router.get("/computer")
 def computer_dashboard():
     return FileResponse(Path(__file__).parent/"static"/"computer.html",media_type="text/html")
