@@ -6,7 +6,10 @@ production accounts, third-party sites, paid AI or external publishing.
 from __future__ import annotations
 import asyncio
 import base64
+import io
 import os
+from PIL import Image
+from fastapi import HTTPException
 import tempfile
 from pathlib import Path
 
@@ -51,6 +54,30 @@ async def smoke():
         capture=await action("browser_screenshot",{})
         png=base64.b64decode(capture["png_base64"])
         assert png.startswith(b"\x89PNG\r\n\x1a\n") and len(png)>1000, len(png)
+        # M2 LIVE REDACTION: exercise the exact production evidence tool
+        # against real Chrome pixels, not mocked _browser or fake PNGs.
+        os.environ["LHM_EVIDENCE_CAPTURE_ENABLED"]="1"
+        page=context.pages[0]
+        bounds=await page.locator("#search").bounding_box()
+        assert bounds and bounds["width"]>30 and bounds["height"]>10, bounds
+        redacted=await action("browser_evidence",{})
+        assert redacted.get("redacted") is True, redacted
+        screenshot=Image.open(io.BytesIO(base64.b64decode(redacted["png_base64"]))).convert("RGB")
+        center=(int(bounds["x"]+bounds["width"]/2),
+                int(bounds["y"]+bounds["height"]/2))
+        assert screenshot.getpixel(center)==(0,0,0), (
+            "Browser evidence exposed a form input instead of masking it",center)
+        await page.locator("#result").evaluate(
+            "(e)=>{e.textContent='Customer support: hidden@example.com';}")
+        try:
+            await action("browser_evidence",{})
+        except HTTPException as error:
+            assert error.status_code==403, error
+        else:
+            raise AssertionError("Unmasked visible personal email was not denied")
+        await page.locator("#result").evaluate("(e)=>{e.textContent='Not yet';}")
+        print("M2 real Chrome evidence redaction PASS: input black-masked, "
+              "unmasked visible email rejected, no external web request")
         print("Computer Runner real browser smoke PASS:",
               {"title":screen["title"],"typed_value":True,"png_bytes":len(png)})
         await context.close()
