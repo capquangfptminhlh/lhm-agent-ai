@@ -81,6 +81,23 @@ class WorkflowBuilderTests(unittest.TestCase):
         self.assertIn("Workflow Builder",self.client.get("/dashboard").text)
         self.assertIn("Workflow Builder",self.client.get("/tool-hub").text)
 
+    def test_browser_script_has_valid_javascript(self):
+        """Check the actual single-file builder JavaScript with Node, when available."""
+        import re
+        import shutil
+        import subprocess
+        node=shutil.which("node")
+        if not node:
+            self.skipTest("Node.js not installed")
+        html=self.client.get("/workflow-builder").text
+        match=re.search(r"<script>(.*?)</script>",html,re.S)
+        self.assertIsNotNone(match)
+        with tempfile.NamedTemporaryFile(mode="w",suffix=".js",encoding="utf-8") as handle:
+            handle.write(match.group(1))
+            handle.flush()
+            checked=subprocess.run([node,"--check",handle.name],capture_output=True,text=True)
+        self.assertEqual(checked.returncode,0,checked.stderr)
+
     def test_validation_rejects_unreviewed_or_wrong_order_publish(self):
         x=self.client.post("/workspaces/demo/builder/templates",
             json={"name":"Không có QA","steps":[
