@@ -104,12 +104,28 @@ class ComputerAgentTests(unittest.TestCase):
                       "evidence":"Step #2 exit_code 0"}))):
             final=self.client.post(url)
         self.assertEqual(final.status_code,200,final.text)
-        self.assertEqual(final.json()["status"],"completed")
+        self.assertEqual(final.json()["status"],"completed_unverified")
         saved=self.client.get("/computer/runs/"+r["id"]).json()
         self.assertEqual(len(saved["steps"]),2)
         self.assertEqual(saved["steps"][1]["result"]["exit_code"],0)
-        self.assertEqual(saved["status"],"completed")
+        self.assertEqual(saved["status"],"completed_unverified")
         self.assertEqual(self.client.post(url).status_code,409)
+
+    def test_nonzero_command_exit_is_a_failed_observation(self):
+        r=self.create(key="computer-nonzero-001")
+        with patch.object(agent,"_next_action",AsyncMock(return_value=(
+            "run_command",{"argv":["python","-c","raise SystemExit(2)"]}))):
+            wait=self.client.post("/computer/runs/"+r["id"]+"/tick").json()
+        self.assertEqual(wait["status"],"awaiting_approval")
+        self.client.post("/computer/runs/"+r["id"]+"/steps/"+wait["step_id"]+"/approve")
+        with patch.object(agent,"runner_call",AsyncMock(return_value={
+            "exit_code":2,"timed_out":False,"stdout":"","stderr":"failed test"})):
+            result=self.client.post("/computer/runs/"+r["id"]+"/tick")
+        self.assertEqual(result.status_code,200,result.text)
+        self.assertEqual(result.json()["step_status"],"failed")
+        saved=self.client.get("/computer/runs/"+r["id"]).json()
+        self.assertEqual(saved["steps"][0]["status"],"failed")
+        self.assertEqual(saved["status"],"queued")
 
     def test_rejection_skips_command_and_prompts_for_alternative(self):
         r=self.create(key="computer-rejection-001")
