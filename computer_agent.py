@@ -29,9 +29,11 @@ TOOLS = {
   "list_files":"List files under this Agent's sandbox directory; {path?: relative dir}",
   "read_file":"Read UTF-8 file inside sandbox; {path: relative file}",
   "write_file":"Write one UTF-8 file inside sandbox; {path: relative, content: text}; may require approval",
+  "edit_file":"Replace one exact UTF-8 text match; {path: relative, old: exact text, new: replacement}; may require approval",
   "run_command":"Run a bounded argv array in isolated runner; {argv: list[str], cwd?: relative}; requires human approval",
   "browser_open":"Open an operator-allowlisted HTTPS website; {url: string}",
   "browser_snapshot":"Read current page title, content, links and controls; {}",
+  "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval"
 }
@@ -247,7 +249,7 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
 
 def _approval_required(tool: str) -> bool:
     if tool in SENSITIVE_TOOLS:return True
-    if tool=="write_file":
+    if tool in ("write_file","edit_file"):
         return os.environ.get("LHM_COMPUTER_AUTO_WRITE","0")!="1"
     return False
 
