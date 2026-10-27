@@ -262,7 +262,9 @@ function openPage(route) {
 function createMain() {
   mainWindow=new BrowserWindow({
     width:1440,height:920,minWidth:900,minHeight:620,show:false,
-    backgroundColor:"#112339",autoHideMenuBar:true,
+    // Menu stays visible: it holds Settings and Emergency Stop, and a hidden
+    // bar meant first-time owners could not find where to paste the key.
+    backgroundColor:"#112339",autoHideMenuBar:false,
     webPreferences:{
       nodeIntegration:false,contextIsolation:true,sandbox:true,
       webSecurity:true,allowRunningInsecureContent:false,
