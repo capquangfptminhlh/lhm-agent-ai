@@ -121,7 +121,7 @@ class Live3DOfficeTests(unittest.TestCase):
         self.assertIn("EventSource",script.text)
         self.assertIn("applySnapshot",script.text)
         self.assertIn("WebGLRenderer",script.text)
-        self.assertIn("Office3D",html.headers.get("content-type","") or "Office3D")
+        self.assertIn("text/html",html.headers.get("content-type",""))
         self.assertIn('href="/office3d"',self.client.get("/dashboard").text)
         self.assertIn('href="/office3d"',self.client.get("/office").text)
 
