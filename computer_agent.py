@@ -405,6 +405,33 @@ def _approval_required(tool: str, run: dict | None = None) -> bool:
         return os.environ.get("LHM_COMPUTER_AUTO_WRITE","0")!="1"
     return False
 
+# Prevent Trusted mode from bypassing manual Send/Publish approval through
+# a native Win32 click/typing/hotkey inside a browser, messenger or unknown app.
+# Only explicitly recognized local non-networked editor/calculator processes
+# can receive autonomous native mutations. Identity comes from the native
+# runner (OS PID + executable lookup), never from model-supplied text.
+TRUSTED_LOCAL_APPS={"notepad.exe","calc.exe","calculatorapp.exe"}
+TRUSTED_NATIVE_ACTIONS={"windows_click","windows_type","windows_hotkey",
+                        "windows_scroll","windows_drag","windows_right_click",
+                        "windows_double_click"}
+
+async def _approval_for_action(tool: str,args: dict,run: dict) -> bool:
+    if _approval_required(tool,run):
+        return True
+    if run.get("mode")!="trusted" or tool not in TRUSTED_NATIVE_ACTIONS:
+        return False
+    hwnd=args.get("hwnd")
+    if type(hwnd) is not int:
+        return True
+    try:
+        snapshot=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
+        window=snapshot.get("window") if isinstance(snapshot,dict) else None
+        process=window.get("process","").casefold() if isinstance(window,dict) else ""
+        return process not in TRUSTED_LOCAL_APPS
+    except Exception:
+        # No local controller/unknown window -> never automatic.
+        return True
+
 VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
               "windows_activate","windows_click","windows_type","windows_scroll",
               "windows_right_click","windows_double_click","windows_hotkey",
@@ -526,6 +553,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     audit(c,run["workspace_id"],"computer.ai_finished",
                           "AI self-reported completion; human should verify the tool evidence",rid)
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
+            approval_needed=await _approval_for_action(tool,args,run)
             sid=new_id()
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
@@ -533,11 +561,11 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                   (id,run_id,number,tool,args_json,status,created_at,updated_at)
                   VALUES (?,?,?,?,?,?,?,?)""",
                   (sid,rid,len(steps)+1,tool,json.dumps(args,ensure_ascii=False),
-                   "awaiting_approval" if _approval_required(tool,run) else "executing",
+                   "awaiting_approval" if approval_needed else "executing",
                    now(),now()))
                 c.execute("UPDATE computer_runs SET step_count=step_count+1,status=?,updated_at=? WHERE id=?",
-                          ("awaiting_approval" if _approval_required(tool,run) else "processing",now(),rid))
-                if _approval_required(tool,run):
+                          ("awaiting_approval" if approval_needed else "processing",now(),rid))
+                if approval_needed:
                     audit(c,run["workspace_id"],"computer.approval_requested",
                           f"Agent requested {tool}; execution paused",rid)
                     return {"status":"awaiting_approval","id":rid,"step_id":sid}
