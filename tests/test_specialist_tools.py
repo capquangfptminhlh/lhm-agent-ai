@@ -57,6 +57,23 @@ class SpecialistToolTests(unittest.TestCase):
             "action":action,"payload":payload,"idempotency_key":key
         })
 
+    def test_workbench_inline_javascript_parses(self):
+        """Browser controls are production code: validate their JS with Node."""
+        import re
+        import shutil
+        import subprocess
+        node=shutil.which("node")
+        if not node:
+            self.skipTest("node unavailable")
+        html=self.client.get("/agent-tools").text
+        match=re.search(r"<script>(.*?)</script>",html,re.S)
+        self.assertIsNotNone(match)
+        with tempfile.NamedTemporaryFile(mode="w",suffix=".js",encoding="utf-8") as tmp:
+            tmp.write(match.group(1))
+            tmp.flush()
+            result=subprocess.run([node,"--check",tmp.name],capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_tool_catalog_and_readiness(self):
         c=self.client.get("/tools/catalog")
         self.assertEqual(c.status_code,200)
