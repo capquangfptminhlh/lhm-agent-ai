@@ -52,7 +52,7 @@ async function call(path,opts){const r=await fetch(path,{...opts,headers:{"Conte
 function notify(t,bad=false){const n=$("notice");n.textContent=t;n.className="notice "+(bad?"err":"ok")}
 function renderForm(){
  const f=fields[$("action").value];$("actionInfo").textContent=f.help;
- let html=f.parts.map(([key,label,type,placeholder])=>'<label>'+esc(label)+(type==="textarea"?'<textarea name="'+esc(key)+'" placeholder="'+esc(placeholder)+'" maxlength="1300" required></textarea>':'<input name="'+esc(key)+'" type="'+esc(type)+'" placeholder="'+esc(placeholder)+'" required>')+'</label>').join("");
+ let html=f.parts.map(([key,label,type,placeholder])=>'<label>'+esc(label)+(type==="textarea"?'<textarea name="'+esc(key)+'" placeholder="'+esc(placeholder)+'" maxlength="1300" '+(key==="negative_prompt"?"":"required")+'></textarea>':'<input name="'+esc(key)+'" type="'+esc(type)+'" placeholder="'+esc(placeholder)+'" required>')+'</label>').join("");
  if(f.image)html+='<div class="cols"><label>Độ rộng<select name="width"><option>512</option><option>768</option><option>1024</option></select></label><label>Độ cao<select name="height"><option>512</option><option>768</option><option>1024</option></select></label><label>Steps<input name="steps" type="number" min="1" max="30" value="20"></label><label>Seed<input name="seed" type="number" min="0" max="2147483647" value="42"></label></div>';
  if(f.consent)html+='<label style="display:flex;flex-direction:row;align-items:center;gap:8px"><input style="width:auto" name="consent" type="checkbox" required> Tôi xác nhận có quyền sử dụng dữ liệu liên hệ.</label>';
  $("fields").innerHTML=html;
