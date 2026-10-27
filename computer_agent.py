@@ -290,6 +290,11 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],
                  "tool":tool,"args":args})
+    if response.status_code==404 and tool.startswith("windows_") and type(args.get("hwnd")) is int:
+        # Windows runner inspected the exact selected HWND and reports it is
+        # gone. Do not substitute another window or retry ambiguous input.
+        raise HTTPException(409,"target_lost: Cửa sổ ứng dụng đích đã biến mất. "
+            "Đã dừng thao tác; có thể mở lại ứng dụng hoặc giao lại công việc.")
     if response.status_code!=200:
         raise HTTPException(502,"Computer Runner từ chối hoặc không thực thi lệnh")
     value=response.json()
@@ -453,9 +458,11 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
             hwnd=args.get("hwnd")
             if type(hwnd) is int:
                 snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
-                children=snap.get("children")
-                return {"title":str(snap.get("title") or "")[:120],
-                        "controls":len(children) if isinstance(children,list) else None}
+                window=snap.get("window")
+                controls=snap.get("controls")
+                return {"title":str(window.get("title") or "")[:120]
+                                    if isinstance(window,dict) else "",
+                        "controls":len(controls) if isinstance(controls,list) else None}
     except Exception:
         return None
     return None
@@ -618,17 +625,20 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         return {"status":"queued","id":rid,"last_tool":tool,"step_status":step_status}
     except Exception as exc:
         msg=exc.detail if isinstance(exc,HTTPException) else ("Computer model/runner error: "+type(exc).__name__)
-        # Ambiguous remote outcome after a side-effecting call: do not retry automatically.
+        # Explicit, terminal target_lost state: do not auto-pick another
+        # HWND when the original app was closed or disappeared.
+        target_lost=isinstance(exc,HTTPException) and str(msg).startswith("target_lost:")
+        halted="target_lost" if target_lost else "needs_review"
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
             if current:
                 c.execute("UPDATE computer_steps SET status='needs_review',error=?,updated_at=? WHERE id=?",
                           (str(msg)[:350],now(),current))
-            c.execute("UPDATE computer_runs SET status='needs_review',error=?,updated_at=? WHERE id=?",
-                      (str(msg)[:350],now(),rid))
-            audit(c,run["workspace_id"],"computer.needs_review",
+            c.execute("UPDATE computer_runs SET status=?,error=?,updated_at=? WHERE id=?",
+                      (halted,str(msg)[:350],now(),rid))
+            audit(c,run["workspace_id"],"computer."+halted,
                   f"Computer stopped at {current or 'model'}; manual review required",rid)
-        return {"status":"needs_review","id":rid,"error":str(msg)[:180]}
+        return {"status":halted,"id":rid,"error":str(msg)[:180]}
 
 async def process_one_computer_run() -> bool:
     prepare_db()
