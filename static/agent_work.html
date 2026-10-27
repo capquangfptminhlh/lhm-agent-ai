@@ -1,0 +1,102 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM · Agent có nghề và việc làm</title>
+<style>
+:root{font:14px/1.55 system-ui,Segoe UI,sans-serif;background:#f4f7fb;color:#19304b}*{box-sizing:border-box}
+body{margin:0}header{background:#162641;color:white;padding:16px 22px}main{max-width:1170px;margin:22px auto;padding:0 17px}
+a{color:#2472b9}header a{color:#c8e6ff}h1{font-size:25px;margin:0 0 6px}h2{font-size:17px}
+.panel{background:white;border:1px solid #d8e2f1;border-radius:12px;padding:18px;margin-bottom:17px}
+.layout{display:grid;grid-template-columns:1fr 1.1fr;gap:18px}input,select,textarea,button{font:inherit}
+input,select,textarea{width:100%;padding:11px;border:1px solid #c6d4e7;border-radius:9px;margin:7px 0 13px}
+textarea{min-height:100px}button{background:#1469c4;color:white;border:0;border-radius:9px;padding:12px 17px;cursor:pointer}button:disabled{opacity:.4}
+small,.muted{color:#65788b}.notice{padding:12px;background:#f2f6fc;border-radius:9px;margin-bottom:12px;white-space:pre-wrap}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;border-radius:9px;max-height:450px;overflow:auto}
+.role-row{padding:10px;border-bottom:1px solid #e5edf4}.role-row:last-child{border-bottom:0}
+.status{font-size:12px;color:#54708b}.danger{color:#aa343c}.good{color:#24764d}
+@media(max-width:750px){.layout{grid-template-columns:1fr}}
+</style></head><body>
+<header><strong>LHM Agent AI · Giao việc theo nghề</strong> &nbsp; <a href="/computer">Máy tính Agent</a> · <a href="/agent-tools">Tool Hub</a> · <a href="/team-chat">Phối hợp nhóm</a></header>
+<main>
+<h1>16 Agent — mỗi người một việc cố định</h1>
+<p class="muted">Giao một mục tiêu. Agent tạo tác vụ thật cho Worker, lưu bản nháp và báo thiếu tích hợp. Repo bên dưới là mã nguồn công cụ tham khảo, không phải dịch vụ đã cài đặt. Đăng bài, gửi tin, chi tiền vẫn cần duyệt và biên nhận thật.</p>
+<div class="layout">
+<section class="panel"><h2>Giao việc ngay</h2>
+<label>Workspace<input id="ws" value="demo" maxlength="49"></label>
+<label>Chọn nhân viên<select id="role"></select></label>
+<div id="profession" class="notice">Đang tải nhiệm vụ...</div>
+<label>Mục tiêu cụ thể<textarea id="objective" placeholder="Ví dụ: Soạn bài SEO về phụ kiện điện thoại, chỉ dùng thông tin được cung cấp"></textarea></label>
+<label>Dữ liệu / tài liệu đầu vào (tùy chọn)<textarea id="context" placeholder="Dán dữ liệu thực tế, không dán mật khẩu hay token"></textarea></label>
+<button id="submit">Giao việc cho Agent</button> <button id="refresh" style="background:#637b93">Kiểm tra kết quả</button>
+<p id="feedback" role="status" aria-live="polite"></p>
+<div id="report" class="notice">Chưa có nhiệm vụ.</div>
+<pre id="draft" hidden></pre>
+</section>
+<section class="panel"><h2>Danh sách nghề và công cụ</h2><div id="roles"></div></section>
+</div>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);let agents=[],selectedOrder=null;
+const req=async(url,options)=>{
+  const response=await fetch(url,{...options,cache:"no-store"});
+  let data=await response.json().catch(()=>({detail:"Lỗi không đọc được dữ liệu từ backend"}));
+  if(!response.ok)throw Error(data.detail||"HTTP "+response.status);
+  return data;
+};
+function showProfession(){
+ const a=agents.find(x=>x.role===$("role").value);if(!a)return;
+ const i=a.integration;
+ $("profession").textContent="Nghề: "+a.fixed_job.title+
+ "\nSản phẩm cần bàn giao: "+a.fixed_job.acceptance+
+ "\nCông cụ: "+i.name+
+ "\nTrạng thái: "+(i.adapter_available?(i.configured?"Đã nhập cấu hình, CHƯA nghiệm thu API":"Có adapter, CHƯA kết nối"):"CHƯA có adapter thực thi")+
+ "\nKhông tự đăng/gửi hoặc coi bản nháp là việc đã thực hiện.";
+}
+async function init(){
+ try{
+  const d=await req("/agents/fixed-jobs");
+  agents=d.agents;
+  const sel=$("role"),container=$("roles");sel.replaceChildren();container.replaceChildren();
+  for(const a of agents){
+   const opt=document.createElement("option");opt.value=a.role;opt.textContent=a.name+" — "+a.fixed_job.title;sel.appendChild(opt);
+   const item=document.createElement("div");item.className="role-row";
+   const name=document.createElement("strong");name.textContent=a.name+" — "+a.fixed_job.title;
+   const detail=document.createElement("div");detail.className="status";
+   detail.textContent=a.integration.name+" · "+(a.integration.adapter_available?
+      (a.integration.configured?"Đã nhập cấu hình — chưa test":"Cần kết nối"):"Chưa có adapter");
+   const link=document.createElement("a");link.href=a.integration.source_repo;
+   link.target="_blank";link.rel="noopener noreferrer";link.textContent="Mã nguồn công cụ";
+   item.append(name,detail,link);container.append(item);
+  }
+  sel.onchange=showProfession;showProfession();
+ }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
+}
+async function loadResult(){
+ if(!selectedOrder)return;
+ try{
+  const data=await req("/workspaces/"+encodeURIComponent($("ws").value.trim())+
+       "/agent-work-orders/"+encodeURIComponent(selectedOrder));
+  $("report").textContent="Nghề: "+data.fixed_job.title+
+    "\nTrạng thái Worker: "+data.task_status+
+    "\nTrạng thái công việc: "+data.work_status+
+    "\nBáo đã thực hiện bên ngoài: KHÔNG (phải đối chiếu biên nhận Tool Hub)"+
+    "\nBước tiếp: "+data.next_step+(data.error?"\nLỗi: "+data.error:"");
+  $("draft").hidden=!data.draft;$("draft").textContent=data.draft||"";
+ }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
+}
+$("refresh").onclick=loadResult;
+$("submit").onclick=async()=>{
+ const button=$("submit");button.disabled=true;$("feedback").textContent="";
+ try{
+  const ws=$("ws").value.trim(),role=$("role").value;
+  const payload={objective:$("objective").value.trim(),context:$("context").value.trim(),
+    idempotency_key: "ui-"+(globalThis.crypto?.randomUUID?.() || String(Date.now())+"-"+Math.random().toString(36).slice(2))};
+  const x=await req("/workspaces/"+encodeURIComponent(ws)+"/agents/"+encodeURIComponent(role)+"/work-orders",
+    {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+  selectedOrder=x.id;
+  $("feedback").textContent="Đã đưa việc vào hàng đợi thật. Worker và OpenRouter cần hoạt động để có bản nháp.";
+  await loadResult();
+ }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
+ finally{button.disabled=false;}
+};
+init();
+</script></body></html>
