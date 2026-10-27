@@ -117,18 +117,28 @@ def main() -> int:
                 return False
         wait_for(health, 45, "native runner health")
 
+        def activate(hwnd: int) -> None:
+            for attempt in range(3):
+                try:
+                    call("windows_activate", {"hwnd": hwnd})
+                    return
+                except RuntimeError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(1.5)
+
         # --- Task 1: type into Notepad and save through the real dialog.
         apps.append(subprocess.Popen(["notepad.exe"]))
         notepad = wait_for(lambda: find_window("notepad.exe"), 30, "Notepad window")
         hwnd = notepad["hwnd"]
-        call("windows_activate", {"hwnd": hwnd})
+        activate(hwnd)
         call("windows_click", {"hwnd": hwnd, "x": 200, "y": 130})
         call("windows_type", {"hwnd": hwnd, "text": MARKER})
         call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
         dialog = wait_for(
             lambda: find_window("notepad.exe", "Save") or find_window("notepad.exe", "Lưu"),
             20, "Save dialog")
-        call("windows_activate", {"hwnd": dialog["hwnd"]})
+        activate(dialog["hwnd"])
         call("windows_type", {"hwnd": dialog["hwnd"], "text": str(target)})
         call("windows_hotkey", {"hwnd": dialog["hwnd"], "keys": "ENTER"})
         wait_for(lambda: target.is_file(), 20, "saved file on disk")
@@ -141,7 +151,7 @@ def main() -> int:
         # --- Task 2: Alt+Tab to Explorer and back (foreground verified).
         apps.append(subprocess.Popen(["explorer.exe", str(workdir)]))
         explorer = wait_for(lambda: find_window("explorer.exe"), 30, "Explorer window")
-        call("windows_activate", {"hwnd": hwnd})
+        activate(hwnd)
         before = wait_for(lambda: foreground_hwnd() == hwnd, 10, "Notepad foreground")
         call("windows_hotkey", {"hwnd": hwnd, "keys": "ALT+TAB"})
         changed = wait_for(lambda: foreground_hwnd() != hwnd, 10,
@@ -150,7 +160,7 @@ def main() -> int:
                f"explorer_hwnd={explorer['hwnd']}")
 
         # --- Task 3: drag-select the line, copy, paste a duplicate, save.
-        call("windows_activate", {"hwnd": hwnd})
+        activate(hwnd)
         time.sleep(0.4)
         call("windows_drag", {"hwnd": hwnd, "x": 40, "y": 100, "to_x": 260, "to_y": 100})
         call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})

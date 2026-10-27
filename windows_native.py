@@ -116,6 +116,34 @@ def _focus(hwnd):
     u.ShowWindow(wintypes.HWND(hwnd),9)
     u.SetForegroundWindow(wintypes.HWND(hwnd))
     if u.GetForegroundWindow()!=hwnd:
+        # Foreground-lock recovery (standard Win32 technique): Windows
+        # grants foreground rights to a process that has just sent input,
+        # and AttachThreadInput lets this thread act on the current
+        # foreground window's input queue during the switch. Without
+        # this, activation is denied whenever another process holds the
+        # foreground lock (services, CI sessions, freshly spawned apps).
+        try:
+            u.keybd_event(0x12,0,0,0)  # ALT down: this process sent input
+            u.keybd_event(0x12,0,2,0)  # ALT up
+        except Exception:
+            pass
+        try:
+            fg=u.GetForegroundWindow()
+            kernel32=ctypes.windll.kernel32
+            current_tid=kernel32.GetCurrentThreadId()
+            fg_tid=u.GetWindowThreadProcessId(fg,None) if fg else 0
+            attached=False
+            if fg_tid and fg_tid!=current_tid:
+                attached=bool(u.AttachThreadInput(current_tid,fg_tid,True))
+            try:
+                u.BringWindowToTop(wintypes.HWND(hwnd))
+                u.SetForegroundWindow(wintypes.HWND(hwnd))
+            finally:
+                if attached:
+                    u.AttachThreadInput(current_tid,fg_tid,False)
+        except Exception:
+            pass
+    if u.GetForegroundWindow()!=hwnd:
         raise HTTPException(409,"Windows denied foreground focus. Click the app manually and retry.")
     return i
 
