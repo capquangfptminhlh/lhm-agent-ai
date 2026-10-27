@@ -16,7 +16,7 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <h1>◈ Thiết lập LHM Robot Desktop</h1>
 <p>Cấu hình này được lưu trên máy Windows của anh. Model API key được mã hóa bằng hệ thống bảo vệ dữ liệu của hệ điều hành nếu khả dụng. Không nhập token vào website bên ngoài.</p>
 <div class="card"><h2>1. Bộ não AI</h2>
-<label>Nhà cung cấp<select id="provider"><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option></select></label>
+<p class="notice">OpenRouter Free Only — hệ thống chỉ dùng model trong danh sách miễn phí đã duyệt; không hỗ trợ nhà cung cấp/model trả phí.</p><input type="hidden" id="provider" value="openrouter">
 <label>OpenRouter API key <span id="openStatus"></span><input id="openKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
 <label class="check"><input type="checkbox" id="clearOpenrouter">Xóa khóa OpenRouter đã lưu</label>
 <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0">
@@ -24,8 +24,7 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <span style="font-size:12px;color:#607f99">Chỉ gửi 1 câu hỏi kiểm tra tới <code>openrouter/free</code>.</span>
 </div>
 <div id="openTestResult" class="notice" style="background:#f0f6ff;border-color:#d6e8fb;color:#365e82;display:none;white-space:pre-wrap;overflow-wrap:anywhere" role="status" aria-live="polite"></div>
-<label>DeepSeek API key <span id="deepStatus"></span><input id="deepKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
-<label class="check"><input type="checkbox" id="clearDeepseek">Xóa khóa DeepSeek đã lưu</label>
+
 </div>
 <div class="card"><h2>2. Điều phối Agent</h2>
 <label>Số Agent được suy luận AI đồng thời
