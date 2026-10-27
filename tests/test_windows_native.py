@@ -78,9 +78,12 @@ class WindowsNativeTests(unittest.TestCase):
         self.assertFalse(self.client.get("/health",headers=self.auth).json()["paused"])
 
     def test_safe_shortcuts_never_allow_os_launcher(self):
-        for key in ("CTRL+S", "CTRL+SHIFT+S", "ENTER", "ESC", "LEFT", "BACKSPACE"):
+        # ALT+TAB / ALT+SHIFT+TAB were deliberately added for multi-app work
+        # (Parity+ P1, acceptance task 5). Every other OS launcher stays out.
+        for key in ("CTRL+S", "CTRL+SHIFT+S", "ENTER", "ESC", "LEFT", "BACKSPACE",
+                    "ALT+TAB", "ALT+SHIFT+TAB"):
             self.assertEqual(wn._validate_hotkey(key.lower()), key)
-        for key in ("ALT+TAB", "WIN+R", "CTRL+ALT+DELETE", "CTRL+SHIFT+ESC",
+        for key in ("WIN+R", "CTRL+ALT+DELETE", "CTRL+SHIFT+ESC",
                     "ALT+F4", "CTRL+P", "", "S", "WIN+E"):
             with self.subTest(key=key):
                 with self.assertRaises(HTTPException) as err:

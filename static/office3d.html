@@ -7,9 +7,12 @@
 <title>LHM Agent AI · Văn phòng 3D Live</title>
 <link rel="stylesheet" href="/office3d/scene.css">
 <script type="importmap">
-{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
-"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"}}
+{"imports":{"three":"/office3d/vendor/three.module.js",
+"three/addons/":"/office3d/vendor/addons/"}}
 </script>
+<!-- Three.js r186 is vendored locally (static/vendor/three, MIT license in
+     that folder) so the live office never depends on a CDN being reachable.
+     Realtime agent state arrives over the /api/office3d/events SSE stream. -->
 </head>
 <body>
 <div class="shell">
@@ -93,7 +96,7 @@
           <div><span>Chế độ dữ liệu</span><strong>Live SQLite · Không mô phỏng</strong></div>
         </div>
         <div class="action-links"><a href="/workflow-builder">◇ Thiết kế quy trình</a><a href="/tool-hub">⚙ Duyệt công cụ</a></div>
-        <p class="fineprint">Nhân vật chỉ “làm việc” khi backend xác nhận task running. Giao diện không tự tạo hoạt động hay kết quả giả. Render cần WebGL và tải thư viện Three.js từ CDN.</p>
+        <p class="fineprint">Nhân vật chỉ “làm việc” khi backend xác nhận task running. Giao diện không tự tạo hoạt động hay kết quả giả. Render cần WebGL; thư viện Three.js được phục vụ ngay từ máy này (không cần CDN).</p>
       </section>
     </div>
   </main>
@@ -116,7 +119,7 @@ import("/office3d/scene.js").catch(error => {
   const fallback = document.getElementById("sceneFallback");
   fallback.hidden = false;
   fallback.querySelector("span").textContent =
-    "Không thể tải Three.js từ CDN hoặc trình duyệt chặn ES modules. Văn phòng 2D vẫn hoạt động.";
+    "Không thể tải thư viện Three.js cục bộ hoặc trình duyệt chặn ES modules. Văn phòng 2D vẫn hoạt động.";
 });
 </script>
 </body></html>

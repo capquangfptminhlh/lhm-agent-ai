@@ -7,6 +7,7 @@ async function load(){
   $("allowedApps").value=x.allowedApps||"";
   $("allowedHosts").value=x.allowedHosts||"";
   $("visionEnabled").checked=x.visionEnabled===true;
+  $("trustedEnabled").checked=x.trustedEnabled===true;
   $("fullScreenEnabled").checked=x.fullScreenEnabled===true;
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
@@ -23,6 +24,7 @@ $("save").onclick=async()=>{
     provider:$("provider").value,allowedApps:$("allowedApps").value,
     allowedHosts:$("allowedHosts").value,
     visionEnabled:$("visionEnabled").checked,
+    trustedEnabled:$("trustedEnabled").checked,
     fullScreenEnabled:$("fullScreenEnabled").checked,
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,

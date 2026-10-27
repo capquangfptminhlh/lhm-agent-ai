@@ -649,7 +649,7 @@ async function init(){
       if(world){scene3d.update(world,true);scene3d.highlight(selected);}
       $('sceneLoading').hidden=true;
     }catch(error){
-      sceneMissing(error.message+' · Three.js cần WebGL và CDN hoạt động.');
+      sceneMissing(error.message+' · Three.js cần WebGL hoạt động.');
       toast('Không khởi động được WebGL; văn phòng 2D vẫn dùng được.',true);
     }
   }catch(err){

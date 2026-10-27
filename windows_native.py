@@ -134,6 +134,73 @@ def _coordinates(i,args):
         raise HTTPException(422,"Click must lie inside the allowed window")
     return i["x"]+x,i["y"]+y
 
+def _drag_points(i,args):
+    """Pure validation for a window-local drag: both ends inside the window.
+
+    Kept free of Win32 calls so the bounds logic is unit-testable anywhere.
+    Returns absolute screen coordinates (sx, sy, ex, ey)."""
+    sx,sy=_coordinates(i,args)
+    ex,ey=_coordinates(i,{"x":args.get("to_x"),"y":args.get("to_y")})
+    if (sx,sy)==(ex,ey):
+        raise HTTPException(422,"Drag start and end must differ")
+    return sx,sy,ex,ey
+
+
+def _require_desktop_consent():
+    # Same explicit Electron opt-in that enables full-desktop capture also
+    # enables absolute desktop coordinates. Without it these tools do not
+    # exist in practice: every call fails closed with 403.
+    if os.environ.get("LHM_DESKTOP_FULL_SCREEN_ENABLED") != "1":
+        raise HTTPException(403,"Desktop coordinates require explicit screen consent")
+
+
+def _desktop_point(args,metrics):
+    """Pure validation for an absolute desktop point.
+
+    metrics = (origin_x, origin_y, width, height) of the virtual screen.
+    Kept Win32-free for unit tests."""
+    x=args.get("x");y=args.get("y")
+    if type(x) is not int or type(y) is not int:
+        raise HTTPException(422,"Desktop x/y must be integers")
+    ox,oy,w,h=metrics
+    if not (ox <= x < ox+w and oy <= y < oy+h):
+        raise HTTPException(422,"Point lies outside the virtual desktop")
+    return x,y
+
+
+def _virtual_screen_metrics():
+    u=_user32()
+    get=u.GetSystemMetrics
+    return (get(76),get(77),get(78),get(79))  # SM_X/Y/CX/CYVIRTUALSCREEN
+
+
+def _mouse_button(u,button,double=False):
+    downs={ "left":(MOUSE_LEFT_DOWN,MOUSE_LEFT_UP),
+            "right":(MOUSE_RIGHT_DOWN,MOUSE_RIGHT_UP)}
+    if button not in downs:
+        raise HTTPException(422,"Button must be left or right")
+    down,up=downs[button]
+    import time as _time
+    for n in range(2 if double else 1):
+        if n:_time.sleep(0.075)
+        u.mouse_event(down,0,0,0,0)
+        u.mouse_event(up,0,0,0,0)
+
+
+def _drag_absolute(u,sx,sy,ex,ey):
+    import time as _time
+    if not u.SetCursorPos(sx,sy):
+        raise HTTPException(502,"Unable to move mouse")
+    u.mouse_event(MOUSE_LEFT_DOWN,0,0,0,0)
+    try:
+        steps=14
+        for n in range(1,steps+1):
+            u.SetCursorPos(round(sx+(ex-sx)*n/steps),round(sy+(ey-sy)*n/steps))
+            _time.sleep(0.016)
+    finally:
+        u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
+
+
 def _type_unicode(text):
     u=_user32()
     # Windows SendInput with KEYEVENTF_UNICODE types real UTF-16 characters,
@@ -179,7 +246,11 @@ KEYS = {
     "PAGEUP": 0x21, "PAGEDOWN": 0x22
 }
 APPROVED_SHORTCUTS = {"CTRL+A","CTRL+C","CTRL+V","CTRL+S","CTRL+F",
-                      "CTRL+Z","CTRL+Y","CTRL+SHIFT+S"}
+                      "CTRL+Z","CTRL+Y","CTRL+SHIFT+S",
+                      # Window switching is required for real multi-app work
+                      # (Parity acceptance task 5). Only the two Alt+Tab
+                      # forms are allowed; no other OS-level shortcut is.
+                      "ALT+TAB","ALT+SHIFT+TAB"}
 
 
 def _validate_hotkey(value):
@@ -194,7 +265,7 @@ def _validate_hotkey(value):
 def _press_hotkey(value):
     name=_validate_hotkey(value)
     seq=name.split("+")
-    vk={"CTRL":0x11,"SHIFT":0x10,
+    vk={"CTRL":0x11,"SHIFT":0x10,"ALT":0x12,
         **{chr(k):k for k in range(ord("A"),ord("Z")+1)},
         **KEYS}
     codes=[vk[v] for v in seq]
@@ -258,6 +329,35 @@ def execute(tool: str,args: dict):
         if args:
             raise HTTPException(422,"Desktop screenshot accepts no parameters")
         return _desktop_capture()
+    if tool in ("windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"):
+        # Absolute desktop control is a separate, stronger capability than
+        # in-window control: it needs the owner's full-screen consent flag
+        # AND (enforced in computer_agent) a human-approved step.
+        _require_desktop_consent()
+        metrics=_virtual_screen_metrics()
+        u=_user32()
+        if tool=="windows_desktop_scroll":
+            x,y=_desktop_point(args,metrics)
+            amount=args.get("steps",3)
+            if type(amount) is not int or not -8<=amount<=8 or amount==0:
+                raise HTTPException(422,"Scroll steps must be -8..8 excluding zero")
+            if not u.SetCursorPos(x,y):
+                raise HTTPException(502,"Unable to move mouse")
+            u.mouse_event(MOUSE_WHEEL,0,0,amount*120,0)
+            return {"scrolled":True,"steps":amount,"x":x,"y":y,"scope":"desktop"}
+        x,y=_desktop_point(args,metrics)
+        if tool=="windows_desktop_drag":
+            ex,ey=_desktop_point({"x":args.get("to_x"),"y":args.get("to_y")},metrics)
+            if (x,y)==(ex,ey):
+                raise HTTPException(422,"Drag start and end must differ")
+            _drag_absolute(u,x,y,ex,ey)
+            return {"dragged":True,"from":{"x":x,"y":y},"to":{"x":ex,"y":ey},"scope":"desktop"}
+        button=args.get("button","left")
+        if not u.SetCursorPos(x,y):
+            raise HTTPException(502,"Unable to move mouse")
+        _mouse_button(u,button,double=args.get("double") is True)
+        return {"clicked":True,"button":button,"double":args.get("double") is True,
+                "x":x,"y":y,"scope":"desktop"}
     hwnd=args.get("hwnd")
     if type(hwnd) is not int:
         raise HTTPException(422,"A selected HWND is required")
@@ -308,6 +408,13 @@ def execute(tool: str,args: dict):
                 u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
         return {"action":"right" if tool=="windows_right_click" else "double",
                 "hwnd":hwnd,"x":args["x"],"y":args["y"]}
+    if tool=="windows_drag":
+        i=_foreground(hwnd)
+        sx,sy,ex,ey=_drag_points(i,args)
+        _drag_absolute(_user32(),sx,sy,ex,ey)
+        return {"dragged":True,"hwnd":hwnd,
+                "from":{"x":args["x"],"y":args["y"]},
+                "to":{"x":args["to_x"],"y":args["to_y"]}}
     if tool=="windows_hotkey":
         _foreground(hwnd)
         combo=_validate_hotkey(args.get("keys"))

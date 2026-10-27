@@ -80,6 +80,20 @@ def office3d_js():
     return FileResponse(ROOT / "static" / "office3d.js", media_type="text/javascript")
 
 
+# Vendored Three.js (MIT, see static/vendor/three/LICENSE). Explicit routes
+# only — no path parameter — so nothing outside these two files can be read.
+@router.get("/office3d/vendor/three.module.js")
+def office3d_vendor_three():
+    return FileResponse(ROOT / "static" / "vendor" / "three" / "three.module.js",
+                        media_type="text/javascript")
+
+
+@router.get("/office3d/vendor/addons/controls/OrbitControls.js")
+def office3d_vendor_orbit_controls():
+    return FileResponse(ROOT / "static" / "vendor" / "three" / "addons" / "controls" / "OrbitControls.js",
+                        media_type="text/javascript")
+
+
 @router.get("/api/office3d/snapshot")
 def world_snapshot(workspace_id: str = "demo"):
     return build_world_snapshot(workspace_id)
