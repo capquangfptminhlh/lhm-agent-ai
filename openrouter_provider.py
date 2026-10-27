@@ -101,9 +101,12 @@ def validate_free_chat_reply(payload: Any, requested: str) -> dict[str, Any]:
         content="".join(pieces)
         message["content"]=content
     if not isinstance(content,str) or not content.strip():
-        # Common failure mode: model spends output tokens on hidden reasoning
-        # and gives no final answer. Retrying blindly could burn Free quota.
-        raise HTTPException(502, "OpenRouter: không có câu trả lời văn bản (có thể hết token)")
+        # A Free model may consume its output budget in reasoning only.
+        # Fail closed, never invent a final answer or silently retry a paid route.
+        finish=choices[0].get("finish_reason")
+        if finish=="length":
+            raise HTTPException(502, "OpenRouter: model Free hết giới hạn token trước câu trả lời; cần đổi model văn bản")
+        raise HTTPException(502, "OpenRouter: model Free thiếu câu trả lời văn bản; không lưu kết quả giả")
     usage=payload.get("usage")
     if not isinstance(usage,dict):
         raise HTTPException(502, "OpenRouter: thiếu thống kê token")
@@ -146,7 +149,7 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
         "\n\nDỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):\n" + context if context else ""
     )
     # Check the live OpenRouter catalog before selecting any explicit free model.
-    if model == "openrouter/free" and os.environ.get("LHM_OPENROUTER_FREE_AUTO_SELECT") == "1":
+    if model == "openrouter/free" and (os.environ.get("LHM_OPENROUTER_FREE_AUTO_SELECT") == "1" or os.environ.get("LHM_OPENROUTER_FREE_ONLY") == "1"):
         from openrouter_free_catalog import select_free_model
         try:
             model = await select_free_model(role)
