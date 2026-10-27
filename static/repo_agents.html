@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM · Agent phụ trách repository</title>
+<style>
+:root{font:14px/1.55 system-ui,Segoe UI,sans-serif;background:#f4f7fb;color:#19304b}
+*{box-sizing:border-box}body{margin:0}header{background:#162641;color:white;padding:17px 20px}
+header a{color:#bedfff}main{max-width:1060px;margin:24px auto;padding:0 18px}h1{font-size:24px;margin:0 0 8px}
+p{margin:8px 0}.muted{color:#52687d}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin:18px 0}
+.card{background:white;border:1px solid #d5dfeb;border-radius:12px;padding:16px;overflow-wrap:anywhere}
+.card h2{font-size:17px;margin:0 0 6px}.card a{color:#1767b4}
+button{font:inherit;color:#fff;background:#166ac4;border:0;border-radius:8px;padding:9px 12px;cursor:pointer;margin:12px 7px 2px 0}
+button:disabled{opacity:.45;cursor:wait}.secondary{background:#435e7a}
+input{font:inherit;width:200px;padding:8px;border:1px solid #c2cede;border-radius:7px}
+.notice{background:#fff;border:1px solid #d5dfeb;padding:16px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+#result a{color:#1767b4}.error{color:#a02e31}.ok{color:#186e45}
+</style></head><body>
+<header><strong>LHM Agent AI · Agent dự án</strong> &nbsp; <a href="/agent-work">Agent theo nghề</a> · <a href="/computer">Máy tính Agent</a></header>
+<main>
+<h1>Mỗi Agent phụ trách một repository</h1>
+<p class="muted">Kiểm tra CI từ GitHub thật. Khi bấm <strong>Chẩn đoán bằng AI</strong>, hệ thống lấy kết quả CI mới nhất rồi giao một đơn việc cố định cho Worker/OpenRouter. Kết quả AI là báo cáo chẩn đoán, chưa phải bản sửa code hay Pull Request.</p>
+<p><label for="workspace">Workspace: </label><input id="workspace" value="demo" maxlength="49"></p>
+<section class="grid" id="agents" aria-label="Các repository được phân công"></section>
+<div class="notice" id="result" role="status" aria-live="polite">Chọn một repository để kiểm tra trạng thái GitHub Actions.</div>
+</main>
+<script>
+"use strict";
+const agents=document.getElementById("agents"),result=document.getElementById("result");
+async function request(url,opt){
+ const r=await fetch(url,{cache:"no-store",...opt});
+ let d;try{d=await r.json()}catch{throw Error("Backend không trả JSON hợp lệ")}
+ if(!r.ok)throw Error(d.detail||("HTTP "+r.status));
+ return d;
+}
+function show(text,kind){
+ result.textContent=text;result.className="notice "+(kind||"");
+}
+async function probe(item,button){
+ button.disabled=true;show("Đang đọc CI từ GitHub: "+item.repository);
+ try{
+  const data=await request(item.live_check_url);
+  if(!data.runs.length){show("Đã đọc GitHub nhưng repository chưa có Actions run. Không giả định đã kiểm thử.", "error");return;}
+  const lines=data.runs.map(x=>x.name+" · "+x.status+" / "+x.conclusion+" · "+x.html_url);
+  show("Agent: "+item.id+"\nRepository: "+item.repository+"\nĐã kiểm tra qua GitHub API (CHỈ ĐỌC)\n"+lines.join("\n"));
+ }catch(e){show("KHÔNG XÁC MINH ĐƯỢC: "+e.message+"\nRepo private cần LHM_GITHUB_READ_TOKEN chỉ đọc ở backend. Không dán token vào giao diện.","error")}
+ finally{button.disabled=false}
+}
+async function diagnose(item,button){
+ if(!confirm("Đọc GitHub Actions mới nhất và giao Agent tạo BẢN NHÁP chẩn đoán? Thao tác này có thể sử dụng hạn mức OpenRouter Free."))return;
+ button.disabled=true;show("Đang kiểm tra nguồn rồi giao việc cho Worker...");
+ try{
+  const ws=document.getElementById("workspace").value.trim();
+  const d=await request("/repo-agents/"+encodeURIComponent(item.id)+"/diagnose",{
+   method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({workspace:ws})
+  });
+  show("Đã xếp hàng công việc thật\nRepo: "+d.repository+
+   "\nNghề: "+d.fixed_job.title+"\nTask: "+d.task_id+
+   "\nTrạng thái: "+d.task_status+
+   "\nBáo cáo sửa code: CHƯA\nPR được tạo: CHƯA"+
+   "\nXem lại tác vụ tại /workspaces/"+encodeURIComponent(ws)+
+   "/agent-work-orders/"+encodeURIComponent(d.id)+
+   "\nNếu không có Worker hoặc API key, tác vụ sẽ chưa chạy.");
+ }catch(e){show("CHƯA THỂ GIAO VIỆC: "+e.message,"error")}
+ finally{button.disabled=false}
+}
+async function init(){
+ try{
+  const d=await request("/repo-agents");
+  agents.replaceChildren();
+  for(const item of d.agents){
+   const card=document.createElement("article");card.className="card";
+   const h=document.createElement("h2");h.textContent=item.id;
+   const description=document.createElement("p");description.textContent=item.job;
+   const url=document.createElement("a");url.href=item.repository_url;url.target="_blank";
+   url.rel="noopener noreferrer";url.textContent=item.repository;
+   const p=document.createElement("p");p.append(url);
+   const check=document.createElement("button");check.textContent="Kiểm tra CI thật";
+   check.onclick=()=>probe(item,check);
+   const ai=document.createElement("button");ai.textContent="Chẩn đoán bằng AI";ai.className="secondary";
+   ai.onclick=()=>diagnose(item,ai);
+   card.append(h,description,p,check,ai);agents.append(card);
+  }
+ }catch(e){show("Không tải được Agent dự án: "+e.message,"error")}
+}
+init();
+</script></body></html>

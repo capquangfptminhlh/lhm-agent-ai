@@ -19,6 +19,9 @@ const NATIVE_ORIGIN = "http://127.0.0.1:7782";
 const ROUTES = Object.freeze({
   "Văn phòng 3D":"/office3d",
   "Đội Agent trao đổi":"/team-chat",
+  "Việc cố định Agent":"/agent-work",
+  "Công cụ 16 phòng ban":"/agents/departments/ui",
+  "Agent theo repository":"/repo-agents/ui",
   "Máy tính Agent":"/computer",
   "Công cụ chuyên môn":"/agent-tools",
   "Workflow Builder":"/workflow-builder",

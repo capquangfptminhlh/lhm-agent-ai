@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM · Bộ công cụ 16 Agent</title>
+<style>
+:root{font:14px/1.5 system-ui,Segoe UI,sans-serif;background:#f4f7fb;color:#172c45}
+*{box-sizing:border-box}body{margin:0}header{background:#152642;color:white;padding:14px 22px}
+header a{color:#c2e1ff}main{max-width:1150px;padding:0 18px;margin:22px auto}h1{font-size:24px}
+h2{font-size:17px;margin:0 0 12px}.muted{color:#566a81}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.panel{background:#fff;border:1px solid #d8e1ed;border-radius:12px;padding:17px;margin-bottom:16px}
+.roles{max-height:75vh;overflow-y:auto}.role{padding:11px;border-bottom:1px solid #e8edf3;cursor:pointer}
+.role:hover,.role.active{background:#eef5ff}.role b{display:block}.role small{display:block;color:#506883}
+label{display:block;font-weight:600;margin:10px 0 3px}
+input,textarea,select{font:inherit;border:1px solid #bfd0df;border-radius:8px;padding:10px;width:100%}
+textarea{min-height:86px}button{font:inherit;background:#1769b7;color:white;border:0;border-radius:8px;padding:10px 15px;margin:9px 7px 0 0;cursor:pointer}
+button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:#55718d}
+#status,pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:13px;background:#f1f5fa;border-radius:8px}
+pre{max-height:220px;overflow:auto;font:12px/1.6 ui-monospace,monospace}a{color:#1769b7}
+.legend{border-left:3px solid #b6c9dc;padding-left:12px;margin-bottom:16px}
+@media(max-width:790px){.grid{grid-template-columns:1fr}.roles{max-height:260px}}
+</style></head><body>
+<header><strong>LHM Agent AI · Công cụ 16 phòng ban</strong> &nbsp;
+<a href="/agent-work">Giao việc</a> · <a href="/repo-agents/ui">Agent theo repo</a> ·
+<a href="/agent-tools">Tool Hub</a></header>
+<main>
+<h1>16 nhân viên AI — 16 bộ công cụ cố định</h1>
+<div class="legend muted">Công cụ chuyên ngành có mã adapter nhưng chưa chắc đã kết nối tài khoản thật. Mỗi nhân viên có thêm một webhook Activepieces riêng. Trình tự: <b>Giao việc → Worker tạo nháp → Quality duyệt → chủ duyệt Tool Hub → gửi webhook → đối soát kết quả.</b> Webhook báo nhận không đồng nghĩa đã đăng bài/gửi tin/thanh toán.</div>
+<div class="grid">
+<section class="panel"><h2>Danh sách Agent</h2><div id="roles" class="roles">Đang tải...</div></section>
+<section>
+<div class="panel"><h2 id="title">Giao việc cho Agent</h2>
+<div id="description" class="muted">Chọn vai trò để xem công cụ.</div>
+<label for="ws">Workspace</label><input id="ws" value="demo" maxlength="49">
+<label for="goal">Mục tiêu</label><textarea id="goal" placeholder="Viết nội dung/báo cáo cụ thể, không yêu cầu Agent tự đăng khi chưa được duyệt."></textarea>
+<label for="context">Dữ liệu đầu vào (không nhập token/mật khẩu)</label><textarea id="context"></textarea>
+<button id="create">1. Giao việc</button>
+<button class="secondary" id="refresh" disabled>2. Kiểm tra Worker</button>
+<button class="secondary" id="qa" disabled>3. Giao Quality kiểm tra</button>
+<button class="secondary" id="prepare" disabled>4. Tạo yêu cầu Tool</button>
+<button class="secondary" id="approve" disabled>5. Duyệt gửi dữ liệu</button>
+<button id="execute" disabled>6. Gửi workflow</button>
+<div id="status" role="status" aria-live="polite">Chưa có công việc.</div><pre id="draft" hidden></pre>
+</div></section>
+</div></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let people=[],selected=null,order=null,job=null,orderView=null;
+async function call(url,opt){
+ const r=await fetch(url,{cache:"no-store",...opt});
+ const d=await r.json().catch(()=>({detail:"Lỗi phản hồi backend"}));
+ if(!r.ok)throw Error(typeof d.detail==="string"?d.detail:"HTTP "+r.status);
+ return d;
+}
+function status(t){$("status").textContent=t}
+function state(){
+ $("refresh").disabled=!order;
+ $("qa").disabled=!orderView||orderView.task_status!=="completed"||Boolean(orderView.qa_task_id);
+ $("prepare").disabled=!orderView||!orderView.qa_passed||Boolean(job);
+ $("approve").disabled=!job||job.status!=="awaiting_approval";
+ $("execute").disabled=!job||job.status!=="approved";
+}
+function renderAgent(a){
+ selected=a;order=null;orderView=null;job=null;
+ document.querySelectorAll(".role").forEach(el=>el.classList.toggle("active",el.dataset.role===a.role));
+ $("title").textContent=a.name+" · "+a.fixed_job;
+ const m=a.department_workflow;
+ const info=["Công cụ chính: "+a.primary_tool.name+" ("+a.primary_tool.catalog_status+")",
+  ...a.existing_actions.map(x=>x.tool+": "+(x.configured?"Có cấu hình, chưa thử API":"Chưa có cấu hình")),
+  "Workflow riêng: "+(m.configured?"Có URL, CHƯA xác minh":"CHƯA cấu hình "+a.role.toUpperCase()+" webhook"),
+  "Khi chạy, chỉ có biên nhận webhook; cần xác minh tác vụ trên nền tảng đích."];
+ $("description").textContent=info.join("\n");$("description").style.whiteSpace="pre-wrap";
+ status("Chưa có công việc. Agent không có quyền tự động xuất bản.");
+ $("draft").hidden=true;state();
+}
+async function load(){
+ const out=await call("/agents/departments");
+ $("roles").replaceChildren();people=out.agents;
+ for(const a of people){
+  const e=document.createElement("div");e.className="role";e.dataset.role=a.role;
+  const strong=document.createElement("b");strong.textContent=a.name+" — "+a.fixed_job;
+  const small=document.createElement("small");small.textContent=a.role+
+   " · "+(a.department_workflow.configured?"Workflow đã khai báo":"Workflow chưa cấu hình");
+  e.append(strong,small);e.onclick=()=>renderAgent(a);$("roles").append(e);
+ }
+ if(people.length)renderAgent(people[0]);
+}
+async function protect(task){
+ try{await task()}catch(e){status("KHÔNG THÀNH CÔNG: "+e.message)}finally{state()}
+}
+$("create").onclick=()=>protect(async()=>{
+ if(!selected)throw Error("Chưa chọn nhân viên");
+ const ws=$("ws").value.trim(),role=selected.role;
+ const body={objective:$("goal").value.trim(),context:$("context").value.trim(),
+              idempotency_key:"dept-"+crypto.randomUUID()};
+ const d=await call("/workspaces/"+encodeURIComponent(ws)+"/agents/"+encodeURIComponent(role)+"/work-orders",{
+  method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+ order=d.id;job=null;orderView=d;status("Đã tạo task "+d.task_id+" · "+d.task_status+
+ ". Cần Worker và API key để tạo nháp.");state();
+});
+$("refresh").onclick=()=>protect(async()=>{
+ const ws=$("ws").value.trim();
+ orderView=await call("/workspaces/"+encodeURIComponent(ws)+"/agent-work-orders/"+encodeURIComponent(order));
+ $("draft").hidden=!orderView.draft;$("draft").textContent=orderView.draft||"";
+ status("Agent: "+orderView.task_status+" · QA: "+orderView.qa_status+"/"+(orderView.qa_verdict||"chưa có")+
+  "\n"+orderView.next_step+(orderView.error?"\nLỗi: "+orderView.error:""));
+});
+$("qa").onclick=()=>protect(async()=>{
+ const ws=$("ws").value.trim();if(!confirm("Tạo nhiệm vụ Quality kiểm tra đúng nội dung hiện tại?"))return;
+ const d=await call("/workspaces/"+encodeURIComponent(ws)+"/agent-work-orders/"+encodeURIComponent(order)+"/quality-review",{method:"POST"});
+ orderView.qa_task_id=d.qa_task_id;status("Đã xếp hàng QA "+d.qa_task_id+". Sau khi Worker xử lý, bấm Kiểm tra Worker.");state();
+});
+$("prepare").onclick=()=>protect(async()=>{
+ if(!selected.department_workflow.configured)throw Error("Chưa cấu hình webhook riêng cho "+selected.role);
+ const ws=$("ws").value.trim();
+ job=await call("/workspaces/"+encodeURIComponent(ws)+"/agents/"+encodeURIComponent(selected.role)+"/department-tool-jobs",{
+  method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+   work_order_id:order,idempotency_key:"dept-send-"+order})});
+ status("Đã tạo Tool Job "+job.id+" · "+job.status+"\nChưa gửi ra ngoài. Chủ phải duyệt.");
+});
+$("approve").onclick=()=>protect(async()=>{
+ if(!confirm("Xác nhận CHỦ DUYỆT nội dung đã được QA pass, gửi tới workflow của "+selected.role+"?"))return;
+ const d=await call("/tool-jobs/"+encodeURIComponent(job.id)+"/approve",{method:"POST"});
+ job.status=d.status;status("Đã duyệt Tool Job "+job.id+". CHƯA gửi; bấm Gửi workflow.");
+});
+$("execute").onclick=()=>protect(async()=>{
+ if(!confirm("GỬI THẬT nội dung sang workflow Activepieces của "+selected.role+"? Việc này có tác động bên ngoài."))return;
+ // A timeout is ambiguous; never retry the same request without reconciliation.
+ const d=await call("/tool-jobs/"+encodeURIComponent(job.id)+"/execute",{method:"POST"});
+ job.status=d.status;status("Trạng thái: "+d.status+"\n"+JSON.stringify(d.receipt,null,2)+
+ "\nKiểm tra lịch sử trên Activepieces và đích trước khi kết luận thành công.");
+});
+load().catch(e=>status("Không đọc được danh sách Agent: "+e.message));
+</script></body></html>
