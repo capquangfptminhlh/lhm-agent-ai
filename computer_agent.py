@@ -40,6 +40,7 @@ TOOLS = {
 SENSITIVE_TOOLS={"run_command","browser_click","browser_fill"}
 MAX_STEPS=15
 MAX_ARG_BYTES=16_000
+MAX_OUTPUT_CHARS=12_000
 
 class ComputerRunIn(BaseModel):
     role: str
