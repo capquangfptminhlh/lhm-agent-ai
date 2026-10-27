@@ -210,8 +210,10 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
     return value
 
 def _system_prompt(role: str) -> str:
-    enabled=(TOOLS.items() if os.environ.get("LHM_DESKTOP_NATIVE")=="1"
-             else ((k,v) for k,v in TOOLS.items() if not k.startswith("windows_")))
+    native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
+    enabled=((k,v) for k,v in TOOLS.items()
+             if (native or not k.startswith("windows_"))
+             and not (native and k=="run_command"))
     choices="\n".join(f"- {k}: {v}" for k,v in enabled)
     return (f"You are the {role} operator inside LHM's restricted computer sandbox. "
       "Decide one action per turn from the available tool list. "
@@ -242,6 +244,8 @@ def _parse_action(content: str) -> tuple[str,dict]:
         raise HTTPException(422,"Model yêu cầu công cụ không được cấp phép")
     if isinstance(tool,str) and tool.startswith("windows_") and os.environ.get("LHM_DESKTOP_NATIVE")!="1":
         raise HTTPException(403,"Windows desktop tools not enabled in this runner")
+    if tool=="run_command" and os.environ.get("LHM_DESKTOP_NATIVE")=="1":
+        raise HTTPException(403,"Native Windows terminal disabled; use an isolated Docker/VM workspace")
     if len(json.dumps(args,ensure_ascii=False).encode("utf-8"))>MAX_ARG_BYTES:
         raise HTTPException(422,"AI action quá dài")
     return tool,args
