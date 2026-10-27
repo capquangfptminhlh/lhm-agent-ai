@@ -104,6 +104,19 @@ class ApprovalMatrixTests(unittest.TestCase):
                 self.assertTrue(agent._approval_required(tool, run), tool)
 
 
+class BrowserFindPressSafetyTests(unittest.TestCase):
+    def test_browser_find_and_press_tool_contract(self):
+        for tool in ("browser_find","browser_press"):
+            self.assertIn(tool,executor.ALLOWED_TOOLS)
+            self.assertIn(tool,executor.ToolRequest.model_fields["tool"].annotation.__args__)
+            self.assertIn(tool,agent.TOOLS)
+        self.assertIn("browser_press",executor.MUTATIONS)
+        self.assertNotIn("browser_find",executor.MUTATIONS)
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            self.assertTrue(agent._approval_required("browser_press",{"mode":"trusted"}))
+            self.assertFalse(agent._approval_required("browser_find",{"mode":"trusted"}))
+
+
 class TargetLostTransportTests(unittest.TestCase):
     def test_real_http_404_from_selected_window_becomes_target_lost(self):
         class NoWindowClient:
