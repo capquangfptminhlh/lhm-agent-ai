@@ -1,3 +1,20 @@
+### Gắn Tool với nhiệm vụ Agent thực tế
+
+Màn hình `/agent-tools` cho phép chọn **nhiệm vụ Agent đã hoàn thành** ở
+ô “Nhiệm vụ Agent nguồn” trước khi tạo lệnh. Backend có route
+`POST /workspaces/{ws}/tool-jobs/from-specialist-agent` nhận
+`source_task_id`, `action`, `payload`, `idempotency_key`.
+Nhiệm vụ phải `completed` và có kết quả; LHM lưu digest SHA-256 của
+kết quả gốc. Khi **duyệt hoặc thực thi**, nếu kết quả nhiệm vụ bị sửa,
+hệ thống trả HTTP 409 và chặn gọi API.
+
+Quyền công cụ mặc định: Research/Strategy/Quality/Compliance dùng
+Crawl4AI; Lead được Crawl4AI và Twenty; Sales dùng Twenty; CRM dùng
+Twenty và Chatwoot; Support dùng Chatwoot; Content/Ads dùng ComfyUI.
+Các vai trò còn lại chưa có công cụ chuyên ngành được cài. Tác vụ phát
+sinh từ Agent **không tự đăng/ghi hoặc tự chạy GPU**: vẫn phải duyệt
+trước khi worker gửi API.
+
 ## 4 công cụ chuyên môn đã có adapter thật
 
 Truy cập **`/agent-tools`** để giao việc cho bốn dịch vụ chuyên dụng:
