@@ -43,7 +43,7 @@ class DesktopFreeOnlyTests(unittest.TestCase):
         }):
             response = client.post("/workspaces", json={
                 "id": wid, "name": "Free desktop testing",
-                "industry": "general", "budget_usd": 0.0,
+                "industry": "general", "budget_usd": 0.01,
             })
             self.assertEqual(response.status_code, 201, response.text)
             task = client.post(f"/workspaces/{wid}/tasks", json={
