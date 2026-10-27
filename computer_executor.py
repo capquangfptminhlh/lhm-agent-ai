@@ -36,7 +36,7 @@ ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command"
 PAUSED = False
 MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
              "windows_activate","windows_click","windows_type","windows_scroll",
-             "windows_right_click","windows_double_click","windows_hotkey"}
+             "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
