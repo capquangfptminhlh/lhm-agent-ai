@@ -24,7 +24,12 @@ label{display:grid;font-size:12px;font-weight:700;color:#4e6781;gap:5px;margin:1
 <option value="comfyui.generate_image">Creative · ComfyUI — Tạo hình ảnh</option>
 </select></label>
 <p id="actionInfo" class="sub"></p>
-<form id="toolForm"><div id="fields"></div>
+<form id="toolForm">
+<label>Nhiệm vụ Agent nguồn (tùy chọn)
+<select id="agentSource"><option value="">Nhập yêu cầu trực tiếp, không từ Agent</option></select>
+</label>
+<p class="sub">Khi chọn Agent đã hoàn thành, hệ thống kiểm tra quyền vai trò và khóa lệnh với SHA-256 của kết quả gốc. Không thể dùng công cụ của phòng ban khác.</p>
+<div id="fields"></div>
 <div class="tip warning">Bước này chỉ <b>tạo yêu cầu</b> và lưu trong SQLite. Sau khi anh duyệt, worker mới được phép gửi đến phần mềm chuyên môn. Không có API key thì yêu cầu vẫn được ghi nhận nhưng không thực thi được.</div>
 <div style="margin-top:15px" class="btns"><button type="submit" class="primary" id="create">＋ Tạo yêu cầu chờ duyệt</button><button type="button" class="secondary" id="refresh">↻ Xem lại hàng đợi</button></div></form>
 </section>
@@ -36,7 +41,7 @@ label{display:grid;font-size:12px;font-weight:700;color:#4e6781;gap:5px;margin:1
 </main><script>
 "use strict";
 const $=x=>document.getElementById(x),esc=s=>String(s??"").replace(/[&<>"']/g,k=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[k]));
-let ws="demo",configured={};
+let ws="demo",configured={},roleActions={},agentDrafts=[];
 const fields={
 "crawl4ai.crawl":{help:"Chỉ quét đúng tên miền HTTPS trong LHM_CRAWL_ALLOWED_HOSTS. Không quét localhost, IP riêng hoặc các trang cần đăng nhập.",parts:[
 ["url","URL website được phép quét","url","https://example.com"]]},
@@ -58,6 +63,17 @@ function renderForm(){
  $("fields").innerHTML=html;
 }
 $("action").onchange=renderForm;
+$("agentSource").onchange=()=>{
+ const id=$("agentSource").value,source=agentDrafts.find(x=>x.id===id);
+ if(!source)return;
+ const allowed=roleActions[source.role]||[];
+ if(!allowed.includes($("action").value)){
+   notify("Agent vai trò "+source.role+" không có quyền dùng "+$("action").value+
+          ". Các tool được cấp quyền: "+(allowed.join(", ")||"chưa có"),true);
+ }else{
+   notify("Đã chọn Agent nguồn: "+source.role+". Kết quả sẽ được ràng buộc lúc tạo yêu cầu.");
+ }
+};
 $("toolForm").onsubmit=async e=>{
  e.preventDefault();const b=$("create");b.disabled=true;
  try{const action=$("action").value,form=new FormData(e.target);const payload={};
@@ -65,7 +81,14 @@ $("toolForm").onsubmit=async e=>{
   if(fields[action].consent)payload.data_origin_confirmed=form.get("consent")==="on";
   if(fields[action].image)for(const k of ["width","height","steps","seed"])payload[k]=Number(payload[k]);
   const key=(crypto?.randomUUID?.()||String(Date.now())+"-"+Math.random().toString(36).slice(2));
-  await call("/workspaces/"+encodeURIComponent(ws)+"/tool-jobs",{method:"POST",body:JSON.stringify({action,payload,idempotency_key:key})});
+  const source=$("agentSource").value;
+  if(source){
+   await call("/workspaces/"+encodeURIComponent(ws)+"/tool-jobs/from-specialist-agent",{
+    method:"POST",body:JSON.stringify({source_task_id:source,action,payload,idempotency_key:key})});
+  }else{
+   await call("/workspaces/"+encodeURIComponent(ws)+"/tool-jobs",{
+    method:"POST",body:JSON.stringify({action,payload,idempotency_key:key})});
+  }
   notify("Đã ghi yêu cầu; cần phê duyệt trước khi gửi API.");await refresh();
  }catch(err){notify(err.message,true)}finally{b.disabled=false}
 };
@@ -88,7 +111,12 @@ $("jobs").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.datas
 $("refresh").onclick=refresh;
 async function init(){try{
  const [cat,status]=await Promise.all([call("/tools/catalog"),call("/tools/specialists/readiness")]);
- ws=cat.pilot_workspace;$("providers").innerHTML=status.providers.map(p=>'<span class="p '+(p.configured?"on":"")+'">'+esc(p.name)+' · '+(p.configured?"Có cấu hình":"Thiếu cấu hình")+'</span>').join("");
+ ws=cat.pilot_workspace;roleActions=status.role_actions||{};
+ const draftResponse=await call("/workspaces/"+encodeURIComponent(ws)+"/tools/ready-tasks");
+ agentDrafts=draftResponse.drafts||[];
+ $("agentSource").innerHTML='<option value="">Nhập yêu cầu trực tiếp, không từ Agent</option>'+
+  agentDrafts.map(t=>'<option value="'+esc(t.id)+'">'+esc(t.role)+' · '+esc(t.instruction.slice(0,75))+'</option>').join("");
+ $("providers").innerHTML=status.providers.map(p=>'<span class="p '+(p.configured?"on":"")+'">'+esc(p.name)+' · '+(p.configured?"Có cấu hình":"Thiếu cấu hình")+'</span>').join("");
  renderForm();await refresh();
 }catch(e){notify("Không kết nối được backend: "+e.message,true)}}
 init();
