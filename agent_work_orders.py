@@ -120,6 +120,15 @@ def _view(c, row) -> dict[str,Any]:
         if review and review["source_digest"]==digest(task["result"]):
             qa_verdict=review["verdict"]
     qa_passed=qa_verdict=="pass" and bool(qa_row) and qa_row["status"]=="completed"
+    from openrouter_provider import model_configured
+    key_ready=model_configured(task["model"])
+    hb=c.execute("SELECT updated_at FROM worker_heartbeats WHERE id='default'").fetchone()
+    worker_online=bool(hb and (now()-int(hb["updated_at"]))<45)
+    blockers=[]
+    if not key_ready:
+        blockers.append("Chưa có API key phù hợp để Agent suy luận")
+    if not worker_online:
+        blockers.append("Worker chưa chạy hoặc không có heartbeat trong 45 giây")
     return {
       "id":row["id"],"workspace_id":row["workspace_id"],
       "role":row["role"],"fixed_job":role_profile(row["role"])["fixed_job"],
@@ -131,6 +140,8 @@ def _view(c, row) -> dict[str,Any]:
       "attempts":task["attempts"],"created_at":row["created_at"],
       "qa_task_id":qa_id,"qa_status":qa_row["status"] if qa_row else "not_requested",
       "qa_verdict":qa_verdict,"qa_passed":qa_passed,
+      "readiness":{"api_key_configured":key_ready,"worker_recent_heartbeat":worker_online,
+                   "blockers":blockers},
       "can_submit_wordpress":row["role"]=="content" and qa_passed,
       "external_action_completed":False,
       "external_receipt":None,
