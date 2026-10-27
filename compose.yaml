@@ -21,9 +21,12 @@ services:
       context: .
       dockerfile: Dockerfile.computer
     restart: unless-stopped
-    env_file: .env
+    # Crucial: DO NOT inject the main .env here. Runner executes code,
+    # so it must never receive LLM, WordPress, CRM, Postiz or payment keys.
     environment:
       LHM_COMPUTER_HOME: /agent-data
+      LHM_COMPUTER_RUNNER_TOKEN: ${LHM_COMPUTER_RUNNER_TOKEN:?Set_a_random_runner_token}
+      LHM_COMPUTER_ALLOWED_HOSTS: ${LHM_COMPUTER_ALLOWED_HOSTS:-}
     volumes:
       - lhm_computer_data:/agent-data
     read_only: true
