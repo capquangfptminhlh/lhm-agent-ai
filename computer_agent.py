@@ -31,6 +31,7 @@ TOOLS = {
   "write_file":"Write one UTF-8 file inside sandbox; {path: relative, content: text}; may require approval",
   "edit_file":"Replace one exact UTF-8 text match; {path: relative, old: exact text, new: replacement}; may require approval",
   "run_command":"Run a bounded argv array in isolated runner; {argv: list[str], cwd?: relative}; requires human approval",
+  "sandbox_run":"Run pre-approved argv within optional networkless ephemeral Docker container, never host Windows; {argv: list[str]}; requires human approval",
   "browser_open":"Open an operator-allowlisted HTTPS website; {url: string}",
   "browser_snapshot":"Read current page title, content, links and controls; {}",
   "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
@@ -45,7 +46,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll","vision_observe"}
+SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll","vision_observe"}
 MAX_STEPS=15
 MAX_ARG_BYTES=16_000
 MAX_OUTPUT_CHARS=12_000
@@ -213,10 +214,12 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
 def _system_prompt(role: str) -> str:
     native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
     from robot_vision import enabled as vision_enabled
+    from robot_sandbox import configured as sandbox_configured
     enabled=((k,v) for k,v in TOOLS.items()
              if (native or not k.startswith("windows_"))
              and not (native and k=="run_command")
-             and (k!="vision_observe" or vision_enabled()))
+             and (k!="vision_observe" or vision_enabled())
+             and (k!="sandbox_run" or (native and sandbox_configured())))
     choices="\n".join(f"- {k}: {v}" for k,v in enabled)
     return (f"You are the {role} operator inside LHM's restricted computer sandbox. "
       "Decide one action per turn from the available tool list. "
@@ -249,6 +252,11 @@ def _parse_action(content: str) -> tuple[str,dict]:
         raise HTTPException(403,"Windows desktop tools not enabled in this runner")
     if tool=="run_command" and os.environ.get("LHM_DESKTOP_NATIVE")=="1":
         raise HTTPException(403,"Native Windows terminal disabled; use an isolated Docker/VM workspace")
+    if tool=="sandbox_run":
+        from robot_sandbox import configured as sandbox_configured, validate as validate_sandbox
+        if os.environ.get("LHM_DESKTOP_NATIVE")!="1" or not sandbox_configured():
+            raise HTTPException(403,"Sandbox requires operator opt-in and installed Docker Desktop")
+        validate_sandbox(args)
     if tool=="vision_observe":
         from robot_vision import enabled as vision_enabled, validate as validate_vision
         if not vision_enabled():
@@ -354,7 +362,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         if "png_base64" in result:
             result={"screenshot_available":True,"url":result.get("url","")}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
-        command_failed=tool=="run_command" and (
+        command_failed=tool in ("run_command","sandbox_run") and (
             result.get("timed_out") is True or result.get("exit_code") != 0)
         step_status="failed" if command_failed else "completed"
         with db() as c:
