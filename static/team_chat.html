@@ -121,9 +121,20 @@ $("sendNote").onclick=async()=>{if(!chosen)return;const txt=$("humanNote").value
 $("refresh").onclick=loadSessions;
 $("workspace").onchange=async()=>{workspace=$("workspace").value;selected=null;await loadSessions()};
 async function init(){try{const [work,catalog]=await Promise.all([api("/workspaces"),api("/catalog")]);const companies=work.workspaces||[];
-workspace=companies.some(x=>x.id==="demo")?"demo":companies[0]?.id;
+const deepLink=new URLSearchParams(location.search),requestedWs=deepLink.get("workspace");
+workspace=companies.some(x=>x.id===requestedWs)?requestedWs:
+ (companies.some(x=>x.id==="demo")?"demo":companies[0]?.id);
 $("workspace").innerHTML=companies.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join("");$("workspace").value=workspace;
-names=Object.fromEntries(Object.entries(catalog.roles||{}).map(([id,role])=>[id,role.name]));renderRoles();await loadSessions();
+names=Object.fromEntries(Object.entries(catalog.roles||{}).map(([id,role])=>[id,role.name]));
+renderRoles();
+const starter=deepLink.get("starter");
+if(starter&&names[starter]){
+ const selectedRole=$("roles").querySelector('input[value="'+starter+'"]');
+ if(selectedRole)selectedRole.checked=true;
+ refreshFirst();
+ $("firstRole").value=starter;
+}
+await loadSessions();
  }catch(error){toast("Không kết nối được backend: "+error.message,true)}}
 init();setInterval(()=>{if(document.visibilityState==="visible")loadSessions()},5000);
 </script></body></html>
