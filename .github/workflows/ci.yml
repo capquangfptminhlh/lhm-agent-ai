@@ -27,9 +27,11 @@ jobs:
         env:
           LHM_DB_PATH: ${{ runner.temp }}/lhm-agent-os-test.sqlite3
         run: python -m unittest discover -s tests -v
+      - name: Validate Three.js office ES module syntax
+        run: node --input-type=module --check < static/office3d.js
       - name: Build production-like local Docker image
         run: docker build --tag lhm-agent-ai:ci .
       - name: Smoke-test Docker application and Workflow Builder
         run: |
-          docker run --rm -e LHM_DB_PATH=/data/ci.sqlite3 -e LHM_ADMIN_TOKEN= lhm-agent-ai:ci python -c "from app import app; from fastapi.testclient import TestClient; c=TestClient(app); assert c.get('/health').status_code==200; assert c.get('/workflow-builder').status_code==200; assert c.get('/tools/catalog').status_code==200; print('Docker smoke OK')"
+          docker run --rm -e LHM_DB_PATH=/data/ci.sqlite3 -e LHM_ADMIN_TOKEN= lhm-agent-ai:ci python -c "from app import app; from fastapi.testclient import TestClient; c=TestClient(app); assert c.get('/health').status_code==200; assert c.get('/workflow-builder').status_code==200; assert c.get('/office3d').status_code==200; assert c.get('/api/office3d/snapshot').status_code==200; assert c.get('/tools/catalog').status_code==200; print('Docker smoke OK')"
 
