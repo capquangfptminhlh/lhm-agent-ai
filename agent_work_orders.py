@@ -61,8 +61,12 @@ def prepare_db() -> None:
           objective TEXT NOT NULL,
           task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id),
           idempotency_key TEXT NOT NULL,
+          qa_task_id TEXT,
           created_at INTEGER NOT NULL,
           UNIQUE(workspace_id, role, idempotency_key))""")
+        cols={x["name"] for x in c.execute("PRAGMA table_info(agent_work_orders)").fetchall()}
+        if "qa_task_id" not in cols:
+            c.execute("ALTER TABLE agent_work_orders ADD COLUMN qa_task_id TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_agent_work_orders_workspace ON agent_work_orders(workspace_id,created_at)")
 
 
@@ -105,6 +109,17 @@ def _view(c, row) -> dict[str,Any]:
                    (row["task_id"],row["workspace_id"])).fetchone()
     if not task:
         raise HTTPException(409,"Work order bị mất tác vụ; cần kiểm tra dữ liệu")
+    qa_id=row["qa_task_id"]
+    qa_row=c.execute("SELECT status FROM tasks WHERE id=? AND workspace_id=?",(qa_id,row["workspace_id"])).fetchone() if qa_id else None
+    qa_verdict=None
+    if qa_id and task["result"]:
+        from publication_gate import digest
+        review=c.execute("""SELECT verdict,source_digest FROM qa_reviews
+              WHERE qa_task_id=? AND workspace_id=? AND source_task_id=?""",
+              (qa_id,row["workspace_id"],row["task_id"])).fetchone()
+        if review and review["source_digest"]==digest(task["result"]):
+            qa_verdict=review["verdict"]
+    qa_passed=qa_verdict=="pass" and bool(qa_row) and qa_row["status"]=="completed"
     return {
       "id":row["id"],"workspace_id":row["workspace_id"],
       "role":row["role"],"fixed_job":role_profile(row["role"])["fixed_job"],
@@ -114,6 +129,9 @@ def _view(c, row) -> dict[str,Any]:
       "draft":task["result"] if task["status"]=="completed" else None,
       "error":task["error"] if task["status"] in ("failed","blocked_budget","blocked_dependency") else None,
       "attempts":task["attempts"],"created_at":row["created_at"],
+      "qa_task_id":qa_id,"qa_status":qa_row["status"] if qa_row else "not_requested",
+      "qa_verdict":qa_verdict,"qa_passed":qa_passed,
+      "can_submit_wordpress":row["role"]=="content" and qa_passed,
       "external_action_completed":False,
       "external_receipt":None,
       "next_step":"Duyệt bản nháp, rồi dùng Tool Hub và xác minh biên nhận trước khi công bố" if task["status"]=="completed"
@@ -153,6 +171,38 @@ def get_order(ws: str, order_id: str):
         if not row:
             raise HTTPException(404,"Không tìm thấy đơn việc")
         return _view(c,row)
+
+
+@router.post("/workspaces/{ws}/agent-work-orders/{order_id}/quality-review",status_code=201)
+def request_quality_review(ws: str,order_id: str):
+    """Queue an actual Quality Agent review; never forge the passing verdict."""
+    prepare_db()
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        row=c.execute("SELECT * FROM agent_work_orders WHERE workspace_id=? AND id=?",
+                      (ws,order_id)).fetchone()
+        if not row:
+            raise HTTPException(404,"Không tìm thấy đơn việc")
+        task=c.execute("SELECT id,status,result FROM tasks WHERE id=? AND workspace_id=?",
+                       (row["task_id"],ws)).fetchone()
+        if not task or task["status"]!="completed" or not task["result"]:
+            raise HTTPException(409,"Agent chưa có bản nháp hoàn tất để Quality kiểm tra")
+        if row["qa_task_id"]:
+            return {"qa_task_id":row["qa_task_id"],"deduplicated":True}
+        from app import task_record
+        qa=task_record(
+            c,ws,"quality",
+            "ĐỌC TOÀN BỘ đầu ra Agent được giao bên dưới. Kiểm tra sự thật, rủi ro và "
+            "khả năng công bố. Chỉ trả về đúng một đối tượng JSON có khóa "
+            '\"verdict\" (pass/fail/needs_revision), \"reason\" và \"missing_evidence\". '
+            "Nếu chưa đủ bằng chứng, verdict phải là needs_revision; không tự bịa nguồn. "
+            "Không đăng nội dung hoặc gửi tin.",
+            "",depends_on=row["task_id"],idem="fixed-review:"+order_id)
+        c.execute("UPDATE agent_work_orders SET qa_task_id=? WHERE id=?",
+                  (qa["id"],order_id))
+        audit(c,ws,"agent.quality_review_queued",
+              f"Quality review of fixed job {row['job_id']}",qa["id"])
+        return {"qa_task_id":qa["id"],"status":qa["status"],"deduplicated":False}
 
 
 @router.post("/workspaces/{ws}/agents/{role}/work-orders",status_code=201)
