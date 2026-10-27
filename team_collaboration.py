@@ -334,6 +334,20 @@ def sync_team_session(sid: str) -> dict[str,Any]:
         if task["role"] not in roles:
             raise HTTPException(409,"Nhiệm vụ có vai trò ngoài nhóm trao đổi")
         next_role=_choose_next(roles,task["role"],recipient)
+        # A "done" sent by the first Agent would skip collaboration.
+        # A selected Quality Agent must also have spoken before closure.
+        speakers={x["sender_role"] for x in c.execute(
+            "SELECT DISTINCT sender_role FROM team_messages WHERE session_id=? AND kind='agent'",
+            (sid,)).fetchall()}
+        speakers.add(task["role"])
+        if done and r["turn_count"]<2:
+            done=False
+            request="Một đồng nghiệp khác cần phản biện trước khi kết luận."
+        if done and "quality" in roles and "quality" not in speakers:
+            done=False
+            next_role="quality"
+            request=("Quality Agent hãy kiểm tra tính chính xác, thiếu nguồn, rủi ro "
+                     "và nêu các điều cần con người xác nhận trước khi kết luận.")
         c.execute("""INSERT INTO team_messages
             (id,session_id,workspace_id,sender_role,recipient_role,kind,content,task_id,created_at)
             VALUES(?,?,?,?,?,?,?,?,?)""",
