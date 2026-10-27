@@ -182,7 +182,7 @@ def main() -> int:
         # --- Task 3: drag-select the line, copy, paste a duplicate, save.
         activate(hwnd)
         time.sleep(0.4)
-        focused_call("windows_drag", {"hwnd": hwnd, "x": 40, "y": 100, "to_x": 260, "to_y": 100})
+        focused_call("windows_drag", {"hwnd": hwnd, "x": 12, "y": 130, "to_x": 340, "to_y": 130})
         focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})
         focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "END"})
         focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "ENTER"})
@@ -198,7 +198,9 @@ def main() -> int:
             ok = bool(wait_for(duplicated, 15, "duplicated marker in file"))
         except TimeoutError:
             ok = False
-        report("T3 drag-select + copy/paste duplicates the line", ok)
+        report("T3 drag-select + copy/paste duplicates the line", ok,
+               "marker_occurrences=" + str(target.read_text(encoding="utf-8", errors="replace").count(MARKER))
+               + " file_bytes=" + str(target.stat().st_size))
 
         # --- Task 4: desktop capture + absolute-coordinate click.
         shot = call("windows_desktop_screenshot", {})
