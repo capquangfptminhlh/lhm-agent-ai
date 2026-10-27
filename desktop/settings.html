@@ -28,6 +28,10 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <input id="visionModel" placeholder="provider/vision-model:free" autocomplete="off"></label>
 <p>Chức năng mặc định TẮT. Mỗi lần Agent muốn đọc ảnh phải được anh duyệt trong Computer Console. Screenshot chỉ gửi đi, không lưu trong SQLite; nhà cung cấp AI có chính sách lưu dữ liệu riêng. Không dùng với cửa sổ chứa mật khẩu, tài khoản ngân hàng hoặc dữ liệu khách nhạy cảm.</p>
 </div>
+<div class="card"><h2>3. Sandbox code cục bộ</h2>
+<label class="check"><input type="checkbox" id="sandboxEnabled"> Cho phép Robot dùng Docker sandbox để chạy Python/kiểm thử (luôn phải duyệt từng lần)</label>
+<p>Không bắt buộc nếu chỉ muốn điều khiển ứng dụng Windows. Chức năng này yêu cầu Docker Desktop đã cài và image <code>python:3.12-slim</code> được tải sẵn. Sandbox không có mạng, không nhận API key, chỉ mount thư mục file riêng của Agent. Không bao giờ chạy Python do AI sinh trực tiếp trên Windows.</p>
+</div>
 <div class="card"><h2>2. Windows Controller</h2>
 <label>Tên ứng dụng được robot phép điều khiển (EXE chính xác, cách nhau dấu phẩy)<input id="allowedApps" placeholder="notepad.exe, code.exe"></label>
 <p>Để trống = không cho thao tác bất kỳ ứng dụng Windows nào. Robot chỉ hiển thị các cửa sổ thuộc ứng dụng trong danh sách.</p>
