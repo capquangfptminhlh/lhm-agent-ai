@@ -1,0 +1,112 @@
+"""Tests proving Windows controller never silently enables host-wide control.
+
+Real HWND/cursor automation must be accepted on a logged-in Windows 10/11
+machine. GitHub CI runs fail-closed tests, not fake successful GUI actions.
+"""
+from __future__ import annotations
+import os
+import unittest
+from unittest.mock import patch
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+
+import computer_executor as exe
+import computer_agent as ca
+import windows_native as wn
+
+
+class WindowsNativeTests(unittest.TestCase):
+    def setUp(self):
+        self.client=TestClient(exe.runner)
+        self.auth={"Authorization":"Bearer test-windows-runner-secret"}
+        self.env=patch.dict(os.environ,{
+            "LHM_COMPUTER_RUNNER_TOKEN":"test-windows-runner-secret",
+            "LHM_DESKTOP_NATIVE":"0",
+            "LHM_DESKTOP_ALLOWED_APPS":"",
+            "LHM_COMPUTER_HOME":"/tmp/lhm-test"
+        })
+        self.env.start()
+        exe.PAUSED=False
+
+    def tearDown(self):
+        exe.PAUSED=False
+        self.env.stop()
+
+    def _post(self,tool,args,auth=True):
+        return self.client.post("/v1/tool",headers=self.auth if auth else {},
+             json={"workspace_id":"demo","role":"research",
+                   "tool":tool,"args":args})
+
+    def test_windows_mutation_unavailable_in_docker(self):
+        response=self._post("windows_list",{})
+        self.assertEqual(response.status_code,503,response.text)
+        self.assertEqual(self._post("windows_click",{"hwnd":123,"x":10,"y":20}).status_code,503)
+        self.assertEqual(self._post("windows_type",{"hwnd":123,"text":"Xin chào"}).status_code,503)
+
+    def test_windows_executable_allowlist_empty_and_exact(self):
+        self.assertEqual(wn._allowlist(),set())
+        with patch.dict(os.environ,{
+            "LHM_DESKTOP_ALLOWED_APPS":"notepad.exe, fake.exe, powershell,calc.exe,*.exe,cmd.exe,notepad.exe"
+        }):
+            self.assertEqual(wn._allowlist(),{"notepad.exe","fake.exe","calc.exe"})
+        with patch.dict(os.environ,{"LHM_DESKTOP_ALLOWED_APPS":" " }):
+            self.assertEqual(wn._allowlist(),set())
+
+    def test_emergency_pause_blocks_mutations_in_runner(self):
+        self.assertEqual(self.client.post("/v1/pause",json={"paused":True}).status_code,401)
+        paused=self.client.post("/v1/pause",headers=self.auth,json={"paused":True})
+        self.assertEqual(paused.status_code,200)
+        self.assertTrue(paused.json()["paused"])
+        self.assertTrue(self.client.get("/health",headers=self.auth).json()["paused"])
+        for tool,args in [
+            ("write_file",{"path":"test.txt","content":"should-not-write"}),
+            ("edit_file",{"path":"test.txt","old":"a","new":"b"}),
+            ("run_command",{"argv":["python","-V"]}),
+            ("browser_click",{"selector":"#buy"}),
+            ("windows_activate",{"hwnd":123}),
+            ("windows_click",{"hwnd":123,"x":10,"y":20}),
+            ("windows_type",{"hwnd":123,"text":"hello"}),
+            ("windows_scroll",{"hwnd":123,"steps":1})
+        ]:
+            self.assertEqual(self._post(tool,args).status_code,423,tool)
+        self.assertEqual(self.client.post("/v1/pause",headers=self.auth,
+                      json={"paused":False}).status_code,200)
+        self.assertFalse(self.client.get("/health",headers=self.auth).json()["paused"])
+
+    def test_native_process_key_env_is_not_exposed_by_runtime_code(self):
+        # Desktop runner injects only selected Windows/system env vars,
+        # not OPENROUTER_API_KEY or DEEPSEEK_API_KEY.
+        from pathlib import Path
+        p=Path(__file__).resolve().parents[1]/"desktop"/"main.cjs"
+        code=p.read_text(encoding="utf-8")
+        self.assertIn("function nativeEnv(runtimeEnv)",code)
+        begin=code.index("function nativeEnv(runtimeEnv)")
+        end=code.index("function runtimeCommand(",begin)
+        segment=code[begin:end]
+        self.assertNotIn('OPENROUTER_API_KEY',segment)
+        self.assertNotIn('DEEPSEEK_API_KEY',segment)
+        self.assertIn("LHM_COMPUTER_RUNNER_TOKEN",segment)
+
+    def test_controller_exposes_no_shell_through_windows_action(self):
+        self.assertFalse(hasattr(wn,"run_shell"))
+        with self.assertRaises(HTTPException) as ctx:
+            wn.execute("windows_click",{"hwnd":12,"x":24,"y":24})
+        self.assertEqual(ctx.exception.status_code,503)
+
+    def test_api_requires_bearer_even_for_readonly_native(self):
+        self.assertEqual(self._post("windows_list",{},auth=False).status_code,401)
+        self.assertEqual(self.client.get("/health").status_code,401)
+
+    def test_llm_desktop_actions_are_always_approval_gated(self):
+        for tool in ("windows_activate","windows_click","windows_type","windows_scroll"):
+            self.assertTrue(ca._approval_required(tool))
+        self.assertFalse(ca._approval_required("windows_list"))
+        with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"0"}):
+            with self.assertRaises(HTTPException):
+                ca._parse_action('{"tool":"windows_click","args":{"hwnd":1,"x":5,"y":5}}')
+        with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1"}):
+            tool,args=ca._parse_action('{"tool":"windows_activate","args":{"hwnd":1}}')
+            self.assertEqual(tool,"windows_activate")
+
+if __name__=="__main__":
+    unittest.main()

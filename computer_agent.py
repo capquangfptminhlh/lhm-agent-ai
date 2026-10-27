@@ -35,9 +35,16 @@ TOOLS = {
   "browser_snapshot":"Read current page title, content, links and controls; {}",
   "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
-  "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval"
+  "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
+  "windows_list":"List Windows app HWNDs whose executables are allowed by the local operator; {}",
+  "windows_snapshot":"Read bounded UI Automation labels from an allowed HWND; {hwnd: integer}",
+  "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
+  "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
+  "windows_click":"Click inside focused allowed app window; {hwnd: int, x: local int, y: local int}; approval required",
+  "windows_type":"Type Unicode text to an allowed foreground app; {hwnd: int, text: string}; approval required",
+  "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required"
 }
-SENSITIVE_TOOLS={"run_command","browser_click","browser_fill"}
+SENSITIVE_TOOLS={"run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll"}
 MAX_STEPS=15
 MAX_ARG_BYTES=16_000
 MAX_OUTPUT_CHARS=12_000
@@ -203,7 +210,11 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
     return value
 
 def _system_prompt(role: str) -> str:
-    choices="\n".join(f"- {k}: {v}" for k,v in TOOLS.items())
+    native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
+    enabled=((k,v) for k,v in TOOLS.items()
+             if (native or not k.startswith("windows_"))
+             and not (native and k=="run_command"))
+    choices="\n".join(f"- {k}: {v}" for k,v in enabled)
     return (f"You are the {role} operator inside LHM's restricted computer sandbox. "
       "Decide one action per turn from the available tool list. "
       "Return EXACTLY ONE JSON OBJECT, no markdown or prose: "
@@ -231,6 +242,10 @@ def _parse_action(content: str) -> tuple[str,dict]:
     tool=obj["tool"];args=obj["args"]
     if tool not in TOOLS and tool!="finish":
         raise HTTPException(422,"Model yêu cầu công cụ không được cấp phép")
+    if isinstance(tool,str) and tool.startswith("windows_") and os.environ.get("LHM_DESKTOP_NATIVE")!="1":
+        raise HTTPException(403,"Windows desktop tools not enabled in this runner")
+    if tool=="run_command" and os.environ.get("LHM_DESKTOP_NATIVE")=="1":
+        raise HTTPException(403,"Native Windows terminal disabled; use an isolated Docker/VM workspace")
     if len(json.dumps(args,ensure_ascii=False).encode("utf-8"))>MAX_ARG_BYTES:
         raise HTTPException(422,"AI action quá dài")
     return tool,args
@@ -379,6 +394,33 @@ def recover_computer_runs() -> None:
 async def run_one_computer_tick(rid: str):
     # Manual operation for pilot testing; same locking/gates as worker.
     return await computer_tick(rid)
+
+@router.get("/computer/runs/{rid}/windows")
+async def computer_windows_list(rid: str):
+    """Only apps explicitly whitelisted in Electron settings appear."""
+    prepare_db()
+    with db() as c:
+        run=dict(_get(c,rid))
+    return await runner_call(run,"windows_list",{})
+
+
+@router.get("/computer/runs/{rid}/windows/{hwnd}/screenshot")
+async def computer_windows_screenshot(rid: str, hwnd: int):
+    prepare_db()
+    with db() as c:
+        run=dict(_get(c,rid))
+    png=await runner_call(run,"windows_screenshot",{"hwnd":hwnd})
+    raw=png.get("png_base64")
+    if not isinstance(raw,str) or len(raw)>3_000_000:
+        raise HTTPException(502,"Windows Runner did not produce a PNG")
+    try:
+        data=base64.b64decode(raw,validate=True)
+    except (ValueError,TypeError) as exc:
+        raise HTTPException(502,"Invalid Windows PNG") from exc
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise HTTPException(502,"Invalid Windows screenshot")
+    return Response(data,media_type="image/png",headers={"Cache-Control":"no-store"})
+
 
 @router.get("/computer/runs/{rid}/screenshot")
 async def computer_browser_screenshot(rid: str):

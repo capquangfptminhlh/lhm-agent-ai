@@ -1,0 +1,110 @@
+name: Windows Electron Robot Desktop
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'windows_native.py'
+      - 'computer_executor.py'
+      - 'computer_agent.py'
+      - '.github/workflows/windows-desktop.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - 'windows_native.py'
+      - 'computer_executor.py'
+      - 'computer_agent.py'
+      - '.github/workflows/windows-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-electron:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Windows native and frozen runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install "pyinstaller>=6.10,<7" "pillow>=11,<13" "psutil>=6,<9" "pywinauto>=0.6.9,<1" "playwright==1.58.0"
+
+      - name: Test Win32 controller safety defaults (without OS clicks)
+        env:
+          LHM_DB_PATH: lhm-ci-native-unit.sqlite3
+        run: python -m unittest discover -s tests -p test_windows_native.py -v
+
+      - name: Run Python runtime import test
+        env:
+          LHM_DB_PATH: lhm-ci-native-runtime.sqlite3
+        run: python desktop/runtime.py self-test
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Validate Electron JavaScript before packaging
+        run: |
+          node --check desktop/main.cjs
+          node --check desktop/settings-preload.cjs
+          node --check desktop/settings.js
+          node --check desktop/test/security.test.cjs
+          node --test desktop/test/security.test.cjs
+
+      - name: Freeze local FastAPI, Worker and Windows Native Runner
+        shell: pwsh
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --collect-submodules pywinauto desktop/runtime.py
+
+      - name: Smoke test actual bundled runtime EXE
+        shell: pwsh
+        env:
+          LHM_DB_PATH: lhm-ci-native-executable.sqlite3
+        run: |
+          & .\dist\lhm-runtime\lhm-runtime.exe self-test
+          if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime failed" }
+
+      - name: Install Electron desktop dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+
+      - name: Repeat desktop unit tests with installed Electron
+        working-directory: desktop
+        run: npm test
+
+      - name: Package Windows NSIS installer (unsigned pilot)
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:win
+
+      - name: Check Windows installer exists and is not empty
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path desktop/dist -Filter "LHM-Robot-Desktop-Setup-*.exe" | Select-Object -First 1
+          if ($null -eq $installer -or $installer.Length -lt 10000000) {
+            throw "Windows Electron installer missing or suspiciously small"
+          }
+          Write-Host "Windows Electron installer built: $($installer.Name) ($($installer.Length) bytes)"
+          Get-FileHash $installer.FullName -Algorithm SHA256
+
+      - name: Upload Windows installer for owner QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: LHM-Robot-Desktop-Windows-x64-Installer
+          path: desktop/dist/LHM-Robot-Desktop-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 7
