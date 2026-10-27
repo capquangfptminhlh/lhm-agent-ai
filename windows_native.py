@@ -36,7 +36,21 @@ def _allowlist():
 
 def _user32():
     _require_windows()
-    return ctypes.windll.user32
+    u=ctypes.windll.user32
+    # Explicit 64-bit HWND prototypes (ctypes defaults to c_int, which
+    # truncates real handles on 64-bit Windows).
+    u.GetForegroundWindow.restype=wintypes.HWND
+    u.IsWindow.argtypes=[wintypes.HWND]
+    u.IsWindowVisible.argtypes=[wintypes.HWND]
+    u.GetWindowTextLengthW.argtypes=[wintypes.HWND]
+    u.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
+    u.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
+    u.SetForegroundWindow.argtypes=[wintypes.HWND]
+    u.ShowWindow.argtypes=[wintypes.HWND,ctypes.c_int]
+    u.SetCursorPos.argtypes=[ctypes.c_int,ctypes.c_int]
+    u.SendInput.argtypes=[wintypes.UINT,ctypes.c_void_p,ctypes.c_int]
+    return u
 
 def _window_info(hwnd):
     """Inspect a top-level window, never bypass the executable allowlist."""
