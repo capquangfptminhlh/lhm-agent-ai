@@ -1,6 +1,9 @@
-name: OpenRouter Free API live smoke (manual only)
+name: OpenRouter Free API live smoke (manual + one-shot branch)
 
 on:
+  push:
+    branches: [smoke/openrouter-free-one-shot-20261027]
+    paths: ['.github/workflows/openrouter-live-smoke.yml']
   workflow_dispatch:
     inputs:
       confirm_free_api_call:
@@ -14,7 +17,7 @@ permissions:
 
 jobs:
   openrouter-free-smoke:
-    if: ${{ inputs.confirm_free_api_call == true }}
+    if: ${{ github.event_name == 'push' || inputs.confirm_free_api_call == true }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
