@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0c1728">
+<title>LHM Agent AI · Văn phòng 3D Live</title>
+<link rel="stylesheet" href="/office3d/scene.css">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<div class="shell">
+  <aside class="navrail">
+    <div class="logo"><span class="logo-mark">L<span>✦</span></span><span>LHM <strong>AGENT AI</strong><small>VIRTUAL WORKSPACE</small></span></div>
+    <div class="nav-heading">KHÔNG GIAN</div>
+    <a href="/office3d" class="nav-item active" aria-current="page"><span>◈</span> Văn phòng 3D <i>LIVE</i></a>
+    <a href="/office" class="nav-item"><span>▦</span> Văn phòng 2D</a>
+    <a href="/workflow-builder" class="nav-item"><span>◇</span> Workflow Builder</a>
+    <div class="nav-heading">VẬN HÀNH</div>
+    <a href="/dashboard" class="nav-item"><span>▤</span> Dashboard</a>
+    <a href="/tool-hub" class="nav-item"><span>⚙</span> Tool Hub</a>
+    <a href="/docs" class="nav-item"><span>⌘</span> API Docs</a>
+    <div class="nav-bottom"><span class="online-dot" id="railDot"></span>
+      <div><strong id="railStatus">Đang kết nối...</strong><small>Luồng sự kiện SQLite/worker</small></div></div>
+  </aside>
+  <main class="main">
+    <header class="top">
+      <div><div class="eyebrow">LIVE OPERATIONS <span class="tiny-line"></span> 3D MISSION CONTROL</div>
+        <h1>Văn phòng AI <em>3D</em></h1>
+        <p>16 nhân sự chuyên môn · 8 phòng ban · Trạng thái đồng bộ với phần mềm thực</p>
+      </div>
+      <div class="top-actions"><label class="workspace-label">DOANH NGHIỆP
+        <select id="workspace" aria-label="Chọn doanh nghiệp"><option>Đang tải...</option></select></label>
+        <button type="button" id="syncBtn" class="iconbtn" title="Đồng bộ ngay" aria-label="Đồng bộ ngay">↻</button>
+        <span id="liveBadge" class="live-badge">● ĐANG KẾT NỐI</span>
+      </div>
+    </header>
+    <section class="stats" aria-label="Các chỉ số được ghi nhận thực tế">
+      <div class="stat"><span class="stat-icon violet">◈</span><div><small>ĐỘI NGŨ AI</small><strong id="agentCount">16</strong><span>8 phòng ban</span></div></div>
+      <div class="stat"><span class="stat-icon blue">▶</span><div><small>ĐANG XỬ LÝ</small><strong id="runningCount">—</strong><span id="queueCount">— đang chờ</span></div></div>
+      <div class="stat"><span class="stat-icon mint">✓</span><div><small>HOÀN THÀNH</small><strong id="doneCount">—</strong><span>Nhiệm vụ có kết quả</span></div></div>
+      <div class="stat"><span class="stat-icon gold">＄</span><div><small>CHI PHÍ AI</small><strong id="costCount">—</strong><span>Ước tính token ghi nhận</span></div></div>
+    </section>
+    <div class="content-grid">
+      <section class="world-card" aria-label="Không gian làm việc 3D">
+        <div class="world-head">
+          <div><span class="smallcap"><span class="online-dot"></span> LIVE AGENT WORLD</span>
+            <h2>Tổng quan văn phòng</h2><p>Click nhân vật hoặc chọn nhân viên ở bảng bên phải</p></div>
+          <div class="world-toolbar" role="group" aria-label="Điều khiển góc nhìn">
+            <button id="camIso" class="toolbtn selected" type="button">◈ Toàn cảnh</button>
+            <button id="camTop" class="toolbtn" type="button">▦ Từ trên</button>
+            <button id="qualityToggle" class="toolbtn" type="button" title="Chế độ nhẹ cho điện thoại">⚡ Nhẹ</button>
+          </div>
+        </div>
+        <div id="canvasHost" class="canvas-host" tabindex="0" aria-label="Không gian văn phòng ba chiều tương tác bằng chuột hoặc cảm ứng">
+          <div id="actorLabels" class="actor-labels" aria-hidden="true"></div>
+          <div id="sceneLoading" class="scene-loading"><span class="loading-glow">◈</span><strong>Đang dựng văn phòng 3D...</strong><span>Đang tải thư viện đồ họa và trạng thái từ LHM backend</span></div>
+          <div id="sceneFallback" class="scene-fallback" hidden><strong>Thiết bị không hiển thị được WebGL 3D</strong>
+            <span>Văn phòng 2D vẫn dùng chung dữ liệu Agent thật.</span><a href="/office">Mở văn phòng 2D →</a></div>
+          <div class="scene-brand">✦ LHM · AI WORKFORCE</div>
+          <div class="scene-hint">Kéo để xoay · Cuộn để phóng to · Chạm nhân vật để giao việc</div>
+        </div>
+        <div class="world-foot">
+          <div class="legend"><span><i class="state-dot running"></i> Đang làm</span><span><i class="state-dot queued"></i> Chờ việc</span><span><i class="state-dot idle"></i> Rảnh</span><span><i class="state-dot error"></i> Có lỗi</span></div>
+          <div class="sync-text" id="lastSync">Chưa đồng bộ</div>
+        </div>
+      </section>
+      <aside class="detail-column">
+        <section class="panel agent-panel">
+          <div class="panel-title"><h2>Hồ sơ nhân sự</h2><span class="pill" id="selectedDept">Chọn Agent</span></div>
+          <div id="agentProfile" class="agent-profile"><div class="empty-card">Chọn một nhân vật trong văn phòng để xem công việc thực tế.</div></div>
+        </section>
+        <section class="panel roster-panel">
+          <div class="panel-title"><h2>Danh sách Agent</h2><span class="pill" id="rosterCount">16 nhân sự</span></div>
+          <div class="roster" id="roster" role="list"></div>
+        </section>
+      </aside>
+    </div>
+    <div class="bottom-grid">
+      <section class="panel">
+        <div class="panel-title"><h2>Hoạt động thực tế</h2><span class="pill">Từ SQLite event log</span></div>
+        <div id="eventList" class="history"><div class="empty-card">Chưa có sự kiện nào.</div></div>
+      </section>
+      <section class="panel">
+        <div class="panel-title"><h2>Hệ thống vận hành</h2><span class="pill" id="workerPill">Đang xác minh...</span></div>
+        <div class="system-info">
+          <div><span>AI Provider</span><strong id="providerLabel">—</strong></div>
+          <div><span>Worker</span><strong id="workerLabel">—</strong></div>
+          <div><span>Yêu cầu tool chờ duyệt</span><strong id="pendingTools">—</strong></div>
+          <div><span>Chế độ dữ liệu</span><strong>Live SQLite · Không mô phỏng</strong></div>
+        </div>
+        <div class="action-links"><a href="/workflow-builder">◇ Thiết kế quy trình</a><a href="/tool-hub">⚙ Duyệt công cụ</a></div>
+        <p class="fineprint">Nhân vật chỉ “làm việc” khi backend xác nhận task running. Giao diện không tự tạo hoạt động hay kết quả giả. Render cần WebGL và tải thư viện Three.js từ CDN.</p>
+      </section>
+    </div>
+  </main>
+</div>
+<dialog id="taskDialog" class="task-dialog" aria-labelledby="taskTitle">
+  <form id="taskForm" method="dialog" class="task-form">
+    <div class="panel-title"><h2 id="taskTitle">Giao việc cho nhân viên AI</h2><button type="button" class="closebtn" id="closeDialog" aria-label="Đóng">×</button></div>
+    <label>Agent<select id="taskRole" required></select></label>
+    <label>Nhiệm vụ<textarea id="taskInstruction" minlength="5" maxlength="8000" required placeholder="Mô tả mục tiêu, yêu cầu đầu ra và tiêu chí hoàn thành"></textarea></label>
+    <label>Dữ liệu nguồn / bối cảnh<textarea id="taskContext" maxlength="5000" placeholder="Thông tin cần dùng, dẫn nguồn, quy định và giới hạn"></textarea></label>
+    <label class="checkline"><input id="taskApproval" type="checkbox"> Chờ duyệt trước khi chạy</label>
+    <div class="dialog-actions"><button type="button" class="toolbtn" id="cancelDialog">Hủy</button><button type="submit" class="primarybtn" id="submitTask">Tạo nhiệm vụ</button></div>
+  </form>
+</dialog>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script type="module" src="/office3d/scene.js"></script>
+</body></html>
