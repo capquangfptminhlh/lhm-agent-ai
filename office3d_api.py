@@ -88,6 +88,14 @@ def office3d_vendor_three():
                         media_type="text/javascript")
 
 
+@router.get("/office3d/vendor/three.core.js")
+def office3d_vendor_three_core():
+    # three.module.js (r186) re-exports from ./three.core.js; without this
+    # file the whole module graph 404s and the 3D scene falls back.
+    return FileResponse(ROOT / "static" / "vendor" / "three" / "three.core.js",
+                        media_type="text/javascript")
+
+
 @router.get("/office3d/vendor/addons/controls/OrbitControls.js")
 def office3d_vendor_orbit_controls():
     return FileResponse(ROOT / "static" / "vendor" / "three" / "addons" / "controls" / "OrbitControls.js",

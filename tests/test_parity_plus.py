@@ -310,6 +310,13 @@ class Office3DVendorTests(unittest.TestCase):
         lib = self.client.get("/office3d/vendor/three.module.js")
         self.assertEqual(lib.status_code, 200)
         self.assertGreater(len(lib.content), 100_000)
+        # r186 splits the build: three.module.js re-exports three.core.js.
+        # If the core file is not served, the browser module graph 404s and
+        # the scene falls back (this exact bug failed browser-webgl CI once).
+        self.assertIn(b"three.core.js", lib.content)
+        core = self.client.get("/office3d/vendor/three.core.js")
+        self.assertEqual(core.status_code, 200)
+        self.assertGreater(len(core.content), 1_000_000)
         controls = self.client.get("/office3d/vendor/addons/controls/OrbitControls.js")
         self.assertEqual(controls.status_code, 200)
         self.assertIn("OrbitControls", controls.text)

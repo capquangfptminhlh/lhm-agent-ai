@@ -9,7 +9,7 @@ Repo được khảo sát ngày 2026-10-27 cho đợt Parity+ (P1/P2/Office3D).
 
 | Thành phần | Nguồn | License | Cách tích hợp |
 |---|---|---|---|
-| Three.js r186 + OrbitControls | three.js (`three@0.186.0`, jsDelivr) | MIT (bản license nằm tại `static/vendor/three/LICENSE`) | **Vendor local** tại `static/vendor/three/`; importmap của Văn phòng 3D trỏ về `/office3d/vendor/...` do chính backend phục vụ. Hết phụ thuộc CDN — trước đây trang 3D chết khi CDN không tải được. Realtime giữ nguyên cơ chế SSE `/api/office3d/events` (snapshot khi trạng thái DB thật thay đổi + heartbeat, polling dự phòng). |
+| Three.js r186 + OrbitControls | three.js (`three@0.186.0`, jsDelivr) | MIT (bản license nằm tại `static/vendor/three/LICENSE`) | **Vendor local** tại `static/vendor/three/` (gồm cả `three.core.js` — bản r186 tách build, thiếu file này là module graph sập); importmap của Văn phòng 3D trỏ về `/office3d/vendor/...` do chính backend phục vụ. Hết phụ thuộc CDN — trước đây trang 3D chết khi CDN không tải được. Realtime giữ nguyên cơ chế SSE `/api/office3d/events` (snapshot khi trạng thái DB thật thay đổi + heartbeat, polling dự phòng). |
 | Playwright | Microsoft Playwright | Apache-2.0 | Đã dùng từ trước cho browser sidecar (mở/đọc/click/fill trong Chrome riêng của từng Agent). |
 
 ## Đã khảo sát — tham chiếu thiết kế, KHÔNG nhúng code
