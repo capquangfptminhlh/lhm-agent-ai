@@ -65,16 +65,15 @@ def main():
                     contexts = browser.contexts
                     assert contexts, "Electron has no Chromium browser context"
                     context = contexts[0]
-                    deadline = time.monotonic() + 70
-                    page = None
-                    while time.monotonic() < deadline:
-                        pages = [p for p in context.pages if "127.0.0.1:7770" in p.url]
-                        if pages:
-                            page = pages[0]
-                            break
-                        time.sleep(0.75)
-                    assert page is not None, ("Electron main window did not load local backend; "
-                                                  "CDP pages=" + repr([p.url for c in contexts for p in c.pages]))
+                    # Playwright sync mode processes CDP events while executing its
+                    # own wait methods. time.sleep() prevents navigation events
+                    # from updating context.pages/page.url and causes false FAIL.
+                    assert context.pages, "No Electron Chromium page available"
+                    page = context.pages[0]
+                    page.wait_for_url("http://127.0.0.1:7770/**",
+                                      wait_until="domcontentloaded", timeout=80000)
+                    assert page.url.startswith("http://127.0.0.1:7770/"), (
+                        "Packaged Electron did not reach local backend: " + page.url)
                     console_errors = []
                     page.on("pageerror", lambda err: console_errors.append(str(err)[:180]))
                     paths = ["/office3d", "/team-chat", "/computer", "/workflow-builder",
