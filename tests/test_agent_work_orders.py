@@ -111,6 +111,28 @@ class FixedAgentWorkTests(unittest.TestCase):
             external=c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0]
         self.assertEqual(external,0)
 
+    def test_completed_content_can_create_a_review_only_wordpress_job(self):
+        body={"objective":"Viết một bài SEO hoàn chỉnh theo dữ liệu giả định",
+              "idempotency_key":"fixed-to-wp-12345"}
+        response=self.client.post("/workspaces/demo/agents/content/work-orders",json=body)
+        self.assertEqual(response.status_code,201,response.text)
+        taskid=response.json()["task_id"]
+        sample="Bản nháp giới thiệu sản phẩm; phải duyệt trước khi đăng."
+        with core.db() as c:
+            c.execute("UPDATE tasks SET status='completed',result=? WHERE id=?",(sample,taskid))
+        handoff={"source_task_id":taskid,"action":"wordpress.create_post",
+                 "idempotency_key":"fixed-hand-off-12345",
+                 "title":"Bài SEO thử nghiệm","status":"draft"}
+        response=self.client.post("/workspaces/demo/tool-jobs/from-agent",json=handoff)
+        self.assertEqual(response.status_code,201,response.text)
+        payload=response.json()
+        self.assertEqual(payload["status"],"awaiting_approval")
+        self.assertEqual(self.client.post("/tool-jobs/"+payload["id"]+"/execute").status_code,409)
+        with core.db() as c:
+            r=c.execute("SELECT result_json,status FROM tool_jobs WHERE id=?",(payload["id"],)).fetchone()
+        self.assertEqual(r["status"],"awaiting_approval")
+        self.assertIsNone(r["result_json"])
+
     def test_isolation_and_fail_closed_validation(self):
         with self.assertRaises(Exception):
             work.role_profile("phantom")
@@ -130,7 +152,8 @@ class FixedAgentWorkTests(unittest.TestCase):
         text=r.text
         self.assertIn('id="submit"',text)
         self.assertIn('id="role"',text)
-        self.assertIn("external",text)
+        self.assertIn('id="wpDraft"',text)
+        self.assertIn("wordpress.create_post",text)
         self.assertNotIn("eval(",text)
         self.assertNotIn("innerHTML",text)
 
