@@ -210,16 +210,22 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
         return {"url":page.url,"title":heading[:180],"text":text,
                 "links":links,"controls":inputs}
 
+def __native_tool(tool: str,args: dict):
+    from windows_native import execute
+    return execute(tool,args)
+
+
 async def perform(req: ToolRequest) -> dict:
     ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
     if PAUSED and tool in MUTATIONS:
         raise HTTPException(423,"Emergency pause is active; no mutations allowed")
-    _home(ws,role)
     if tool in WINDOWS_TOOLS:
+        # Validate platform BEFORE touching the sandbox volume. A Linux
+        # worker with an unmounted /agent-data must fail closed with 503.
         if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
             raise HTTPException(503,"Windows native control is not available")
-        from windows_native import execute
-        return execute(tool,args)
+        return __native_tool(tool,args)
+    _home(ws,role)
     if tool=="list_files":
         path=_safe_path(ws,role,args.get("path","."))
         if not path.is_dir():
