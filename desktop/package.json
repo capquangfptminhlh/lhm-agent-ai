@@ -27,7 +27,8 @@
       "settings.html",
       "splash.html",
       "package.json",
-      "settings.js"
+      "settings.js",
+      "openrouter-free-test.cjs"
     ],
     "extraResources": [
       {

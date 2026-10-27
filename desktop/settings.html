@@ -19,6 +19,11 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <label>Nhà cung cấp<select id="provider"><option value="openrouter">OpenRouter</option><option value="deepseek">DeepSeek</option></select></label>
 <label>OpenRouter API key <span id="openStatus"></span><input id="openKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
 <label class="check"><input type="checkbox" id="clearOpenrouter">Xóa khóa OpenRouter đã lưu</label>
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 0">
+<button id="openTest" type="button" disabled>Thử gọi OpenRouter Free</button>
+<span style="font-size:12px;color:#607f99">Chỉ gửi 1 câu hỏi kiểm tra tới <code>openrouter/free</code>.</span>
+</div>
+<div id="openTestResult" class="notice" style="background:#f0f6ff;border-color:#d6e8fb;color:#365e82;display:none;white-space:pre-wrap;overflow-wrap:anywhere" role="status" aria-live="polite"></div>
 <label>DeepSeek API key <span id="deepStatus"></span><input id="deepKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
 <label class="check"><input type="checkbox" id="clearDeepseek">Xóa khóa DeepSeek đã lưu</label>
 </div>
@@ -27,17 +32,17 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <select id="agentParallelism"><option value="1">1 (mặc định, tiết kiệm API)</option><option value="2">2 Agent</option><option value="3">3 Agent</option><option value="4">4 Agent (tối đa trong phiên này)</option></select></label>
 <p>Chỉ các tác vụ của phòng ban/Agent khác nhau mới chạy đồng thời. Các thao tác màn hình/chuột trên desktop Windows vẫn xử lý tuần tự, không mở 4 con trỏ độc lập. Quota model có thể hết nhanh hơn khi chạy song song.</p>
 </div>
-<div class="card"><h2>2. Robot nhìn màn hình (tùy chọn)</h2>
+<div class="card"><h2>3. Robot nhìn màn hình (tùy chọn)</h2>
 <label class="check"><input type="checkbox" id="visionEnabled"> Cho phép gửi ảnh cửa sổ được chọn đến model AI để nhận dạng giao diện</label>
 <label>OpenRouter vision model cụ thể có hỗ trợ ảnh, bắt buộc :free
 <input id="visionModel" placeholder="provider/vision-model:free" autocomplete="off"></label>
 <p>Chức năng mặc định TẮT. Mỗi lần Agent muốn đọc ảnh phải được anh duyệt trong Computer Console. Screenshot chỉ gửi đi, không lưu trong SQLite; nhà cung cấp AI có chính sách lưu dữ liệu riêng. Không dùng với cửa sổ chứa mật khẩu, tài khoản ngân hàng hoặc dữ liệu khách nhạy cảm.</p>
 </div>
-<div class="card"><h2>3. Sandbox code cục bộ</h2>
+<div class="card"><h2>4. Sandbox code cục bộ</h2>
 <label class="check"><input type="checkbox" id="sandboxEnabled"> Cho phép Robot dùng Docker sandbox để chạy Python/kiểm thử (luôn phải duyệt từng lần)</label>
 <p>Không bắt buộc nếu chỉ muốn điều khiển ứng dụng Windows. Chức năng này yêu cầu Docker Desktop đã cài và image <code>python:3.12-slim</code> được tải sẵn. Sandbox không có mạng, không nhận API key, chỉ mount thư mục file riêng của Agent. Không bao giờ chạy Python do AI sinh trực tiếp trên Windows.</p>
 </div>
-<div class="card"><h2>2. Windows Controller</h2>
+<div class="card"><h2>5. Windows Controller</h2>
 <label>Tên ứng dụng được robot phép điều khiển (EXE chính xác, cách nhau dấu phẩy)<input id="allowedApps" placeholder="notepad.exe, code.exe"></label>
 <p>Để trống = không cho thao tác bất kỳ ứng dụng Windows nào. Robot chỉ hiển thị các cửa sổ thuộc ứng dụng trong danh sách.</p>
 <label>Website HTTPS được phép mở bằng browser automation<input id="allowedHosts" placeholder="example.com, docs.example.com"></label>
