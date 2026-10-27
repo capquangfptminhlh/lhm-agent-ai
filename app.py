@@ -22,6 +22,7 @@ from workflow_builder import router as workflow_builder_router
 from computer_agent import router as computer_router
 from team_collaboration import router as team_router
 from agent_work_orders import router as agent_work_router
+from department_tools import router as department_router
 from repo_agent_bindings import router as repository_agents_router
 from repo_agent_bindings import router as repo_agents_router
 from pydantic import BaseModel, Field
@@ -44,6 +45,7 @@ app.include_router(workflow_builder_router)
 app.include_router(computer_router)
 app.include_router(team_router)
 app.include_router(agent_work_router)
+app.include_router(department_router)
 app.include_router(repository_agents_router)
 app.include_router(repo_agents_router)
 
