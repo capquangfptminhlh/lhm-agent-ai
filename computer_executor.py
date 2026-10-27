@@ -181,6 +181,22 @@ async def _command(ws: str,role: str,args: dict[str,Any]) -> dict:
             "stdout":stdout[:MAX_OUTPUT_CHARS].decode("utf-8","replace"),
             "stderr":stderr[:MAX_OUTPUT_CHARS].decode("utf-8","replace")}
 
+_UNMASKED_SENSITIVE = re.compile(
+    r"(?i)\b(?:cvv|cvc|card number|credit card|payment details|"
+    r"bank account|số thẻ|mã cvv|thông tin thanh toán|mật khẩu)\b")
+_UNMASKED_EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_UNMASKED_CARD = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
+
+
+def _check_public_browser_text_for_evidence(value: str) -> None:
+    """Refuse screenshots when non-input text is possibly confidential."""
+    if not isinstance(value,str):
+        raise HTTPException(403,"Cannot verify browser evidence redaction")
+    if _UNMASKED_SENSITIVE.search(value) or _UNMASKED_EMAIL.search(value) \
+            or _UNMASKED_CARD.search(value):
+        raise HTTPException(403,"Sensitive page cannot be safely redacted")
+
+
 async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
     global _PLAYWRIGHT
     try:
@@ -277,15 +293,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             # confidence), fail closed and require manual evidence review.
             try:
                 visible=(await page.locator("body").inner_text(timeout=7000))[:60000]
-                if re.search(r"(?i)\b(?:cvv|cvc|card number|credit card|"
-                             r"payment details|bank account|số thẻ|mã cvv|"
-                             r"thông tin thanh toán|mật khẩu)\b",visible):
-                    raise HTTPException(403,"Sensitive page: evidence capture denied")
-                if re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-                             visible):
-                    raise HTTPException(403,"Unmasked email: evidence capture denied")
-                if re.search(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)",visible):
-                    raise HTTPException(403,"Possible payment number: evidence denied")
+                _check_public_browser_text_for_evidence(visible)
                 selector=("input,textarea,select,[contenteditable],"
                           "[role=textbox],iframe,canvas,video,img,"
                           "[data-sensitive],[data-private],[autocomplete]")
