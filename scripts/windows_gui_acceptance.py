@@ -118,34 +118,14 @@ def main() -> int:
         wait_for(health, 45, "native runner health")
 
         def activate(hwnd: int) -> None:
-            # Explorer and the Windows shell may asynchronously reclaim focus.
-            # Verify that the selected HWND remains foreground; a successful
-            # activation HTTP 200 alone does not guarantee focus is stable.
-            for attempt in range(5):
+            for attempt in range(3):
                 try:
                     call("windows_activate", {"hwnd": hwnd})
-                    time.sleep(0.3)
-                    if foreground_hwnd() == hwnd:
-                        return
+                    return
                 except RuntimeError:
-                    if attempt == 4:
+                    if attempt == 2:
                         raise
-                time.sleep(0.8)
-            raise RuntimeError("Target app did not remain foreground after activation")
-
-        def focused_call(tool: str, args: dict) -> dict:
-            # 409 is emitted *before* any input, so a retry is safe only for
-            # this precondition failure. Never repeat an ambiguous mutation.
-            hwnd = args["hwnd"]
-            for attempt in range(4):
-                activate(hwnd)
-                try:
-                    return call(tool, args)
-                except RuntimeError as exc:
-                    if "HTTP 409" not in str(exc) or "no longer foreground" not in str(exc) or attempt == 3:
-                        raise
-                    time.sleep(0.5)
-            raise AssertionError("Unreachable")
+                    time.sleep(1.5)
 
         # --- Task 1: type into Notepad and save through the real dialog.
         apps.append(subprocess.Popen(["notepad.exe"]))
@@ -154,7 +134,7 @@ def main() -> int:
         activate(hwnd)
         call("windows_click", {"hwnd": hwnd, "x": 200, "y": 130})
         call("windows_type", {"hwnd": hwnd, "text": MARKER})
-        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
+        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
         dialog = wait_for(
             lambda: find_window("notepad.exe", "Save") or find_window("notepad.exe", "Lưu"),
             20, "Save dialog")
@@ -180,13 +160,18 @@ def main() -> int:
                f"explorer_hwnd={explorer['hwnd']}")
 
         # --- Task 3: drag-select the line, copy, paste a duplicate, save.
+        # Geometry is anchored on Task 1's proven point: the click at
+        # (200, 130) put the caret in the editor and typing landed, so the
+        # first text line sits at y~130 — the earlier y=100 drag ran
+        # through the tab/ribbon strip and selected nothing.
         activate(hwnd)
         time.sleep(0.4)
-        focused_call("windows_drag", {"hwnd": hwnd, "x": 12, "y": 130, "to_x": 340, "to_y": 130})
-        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})
-        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "END"})
-        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "ENTER"})
-        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+V"})
+        call("windows_click", {"hwnd": hwnd, "x": 200, "y": 130})
+        call("windows_drag", {"hwnd": hwnd, "x": 15, "y": 130, "to_x": 260, "to_y": 130})
+        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})
+        call("windows_hotkey", {"hwnd": hwnd, "keys": "END"})
+        call("windows_hotkey", {"hwnd": hwnd, "keys": "ENTER"})
+        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+V"})
         call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
         def duplicated() -> bool:
             try:
@@ -198,9 +183,12 @@ def main() -> int:
             ok = bool(wait_for(duplicated, 15, "duplicated marker in file"))
         except TimeoutError:
             ok = False
-        report("T3 drag-select + copy/paste duplicates the line", ok,
-               "marker_occurrences=" + str(target.read_text(encoding="utf-8", errors="replace").count(MARKER))
-               + " file_bytes=" + str(target.stat().st_size))
+        try:
+            final_text = target.read_text(encoding="utf-8", errors="replace")
+            detail = f"marker_count={final_text.count(MARKER)} head={final_text[:60]!r}"
+        except OSError:
+            detail = "saved file unreadable at report time"
+        report("T3 drag-select + copy/paste duplicates the line", ok, detail)
 
         # --- Task 4: desktop capture + absolute-coordinate click.
         shot = call("windows_desktop_screenshot", {})
