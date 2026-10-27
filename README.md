@@ -1,3 +1,18 @@
+## Robot Vision + Sandbox + AI nhân viên song song
+
+Trong phần mềm Electron **LHM Robot → Thiết lập Robot**, anh có thể
+bật nhận dạng màn hình thật với một model OpenRouter hỗ trợ ảnh và có
+hậu tố `:free`, bật sandbox Docker tùy chọn để chạy mã cách ly, và
+chọn 1–4 Agent suy luận cùng lúc. **Mọi screenshot gửi ra ngoài đều
+phải được anh duyệt từng lần**; mã AI chỉ chạy trong container không có
+mạng, không được chạy trực tiếp trên Windows. Các Agent vẫn chia sẻ một
+màn hình và chuột, không phải 16 VM độc lập.
+
+Xem [ROBOT_GROK_ARCHITECTURE.md](ROBOT_GROK_ARCHITECTURE.md) để biết cấu
+hình, các giới hạn và điều kiện nghiệm thu trên Windows thật.
+
+---
+
 ## Agent-to-Agent Team Chat — nhân viên AI tự trao đổi
 
 **Mở `/team-chat`** để tạo nhóm 2–8 Agent, đặt mục tiêu và giới hạn
