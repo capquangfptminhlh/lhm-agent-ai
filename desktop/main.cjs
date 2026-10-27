@@ -75,6 +75,7 @@ function saveSettings(input) {
     provider, allowedHosts:[...new Set(allowedHosts)],
     allowedApps:[...new Set(allowedApps)],
     visionEnabled:input.visionEnabled===true,
+    fullScreenEnabled:input.fullScreenEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
@@ -105,6 +106,7 @@ function settingsForUI() {
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
+    fullScreenEnabled:c.fullScreenEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
@@ -128,6 +130,7 @@ function envForRuntime() {
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
+    LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
     LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
@@ -150,6 +153,7 @@ function nativeEnv(runtimeEnv) {
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
+    "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
   return env;

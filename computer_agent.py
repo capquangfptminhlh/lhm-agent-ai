@@ -42,11 +42,17 @@ TOOLS = {
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
   "windows_click":"Click inside focused allowed app window; {hwnd: int, x: local int, y: local int}; approval required",
+  "windows_right_click":"Right-click at local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
+  "windows_double_click":"Double-click local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
+  "windows_hotkey":"Send only approved shortcuts Ctrl+S/A/C/V/F/Z/Y/Shift+S or Enter/Esc/arrows within selected foreground HWND; human approved; {hwnd:int,keys:str}",
+  "windows_desktop_screenshot":"View all monitors only with explicit Electron consent AND human step approval; no image persistence; {}",
   "windows_type":"Type Unicode text to an allowed foreground app; {hwnd: int, text: string}; approval required",
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll","vision_observe"}
+SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
+                 "windows_right_click","windows_double_click","windows_hotkey",
+                 "windows_desktop_screenshot","vision_observe"}
 MAX_STEPS=15
 MAX_ARG_BYTES=16_000
 MAX_OUTPUT_CHARS=12_000
