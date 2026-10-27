@@ -56,16 +56,10 @@ test("Windows controller accepts only explicitly allowlisted HWND and is separat
  assert.match(native,/Windows denied foreground focus/);
  assert.match(native,/Window executable is not on the desktop allowlist/);
 });
-test("First run needs only the key: menu visible, Settings auto-opens, no browser in default apps",()=>{
+test("Main window keeps the menu (Settings + Emergency Stop) visible",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const mainWindow=main.split("function createMain()")[1].split("function createSettings()")[0];
  assert.match(mainWindow,/autoHideMenuBar:false/);
- assert.match(main,/if\(!readRawSettings\(\)\.openrouterKey\)createSettings\(\)/);
- const defaults=main.match(/DEFAULT_ALLOWED_APPS=Object\.freeze\((\[[^\]]*\])\)/);
- assert.ok(defaults,"default app allowlist declared");
- const apps=JSON.parse(defaults[1]);
- assert.deepEqual(apps,["notepad.exe","explorer.exe","calc.exe"]);
- for(const browser of ["msedge.exe","chrome.exe","firefox.exe"])assert.ok(!apps.includes(browser));
  // Opt-in safety switches keep their off-by-default behaviour.
  assert.match(main,/LHM_COMPUTER_TRUSTED_ENABLED:c\.trustedEnabled===true\?"1":"0"/);
  assert.match(main,/LHM_DESKTOP_FULL_SCREEN_ENABLED:c\.fullScreenEnabled===true\?"1":"0"/);

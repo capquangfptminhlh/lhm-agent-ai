@@ -13,8 +13,12 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 .notice{border-radius:9px;background:#fff7e7;border:1px solid #f1dfa9;color:#845e21;font-size:11px;padding:12px}
 .status{min-height:25px;color:#27774c;font-weight:700;font-size:12px;margin-top:12px}.status.error{color:#b14353}
 </style></head><body><main>
-<h1>◈ Thiết lập LHM Robot Desktop</h1>
-<p>Cấu hình này được lưu trên máy Windows của anh. Model API key được mã hóa bằng hệ thống bảo vệ dữ liệu của hệ điều hành nếu khả dụng. Không nhập token vào website bên ngoài.</p>
+<h1>◈ LHM Robot — Bắt đầu nhanh</h1>
+<p>Chỉ cần nhập OpenRouter API key một lần, sau đó giao việc. Không cần cấu hình 16 Agent. Nếu cho phép ứng dụng mẫu, Robot có thể thử Notepad, Explorer, Calculator trong chế độ Giám sát.</p>
+<div class="card"><h2>Trạng thái phần mềm</h2>
+<div id="readiness" role="status" aria-live="polite" style="font-size:12px;white-space:pre-line;line-height:1.8">Đang kiểm tra dịch vụ...</div>
+<button id="refreshReadiness" type="button" style="background:#566a7e">Kiểm tra lại</button>
+</div>
 <div class="card"><h2>1. Bộ não AI</h2>
 <p class="notice">OpenRouter Free Only — hệ thống chỉ dùng model trong danh sách miễn phí đã duyệt; không hỗ trợ nhà cung cấp/model trả phí.</p><input type="hidden" id="provider" value="openrouter">
 <label>OpenRouter API key <span id="openStatus"></span><input id="openKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
@@ -25,7 +29,11 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 </div>
 <div id="openTestResult" class="notice" style="background:#f0f6ff;border-color:#d6e8fb;color:#365e82;display:none;white-space:pre-wrap;overflow-wrap:anywhere" role="status" aria-live="polite"></div>
 
+<p>Gói miễn phí dùng OpenRouter key của anh, không có key dùng chung được cài sẵn. Nếu chưa có key, anh cần tạo một lần ở OpenRouter.</p>
+<button id="quickStart" type="button">Lưu &amp; bắt đầu — cho phép 3 ứng dụng thử nghiệm</button>
+<p>Thao tác này cấp quyền cho Notepad, File Explorer và Calculator. Robot vẫn xin duyệt từng bước; không cấp quyền website, thanh toán hoặc dữ liệu nhạy cảm.</p>
 </div>
+<details id="advanced"><summary style="cursor:pointer;font-weight:750;background:#e4ecf4;padding:13px;border-radius:10px;margin-top:15px">Tùy chỉnh nâng cao (không bắt buộc để thử Notepad)</summary>
 <div class="card"><h2>2. Điều phối Agent</h2>
 <label>Số Agent được suy luận AI đồng thời
 <select id="agentParallelism"><option value="1">1 (mặc định, tiết kiệm API)</option><option value="2">2 Agent</option><option value="3">3 Agent</option><option value="4">4 Agent (tối đa trong phiên này)</option></select></label>
@@ -51,6 +59,7 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <label>Website HTTPS được phép mở bằng browser automation<input id="allowedHosts" placeholder="example.com, docs.example.com"></label>
 <p>Để trống = robot không được mở website ngoài. Không sử dụng IP, wildcard hoặc localhost.</p>
 </div>
+</details>
 <div class="notice">Robot chạy bằng quyền Windows của người đang đăng nhập; chưa có VM cách ly cho mỗi Agent. Không đưa ứng dụng ngân hàng, ví tiền, phần mềm quản lý mật khẩu hoặc ứng dụng chứa dữ liệu nhạy cảm vào danh sách cho phép. Các thao tác click/gõ vẫn yêu cầu anh duyệt từng bước.</div>
 <div style="margin-top:17px"><button id="save" type="button">Lưu cấu hình</button><p id="status" class="status" role="status"></p></div>
 </main>

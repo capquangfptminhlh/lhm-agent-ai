@@ -11,6 +11,7 @@ const crypto = require("node:crypto");
 const {spawn} = require("node:child_process");
 const http = require("node:http");
 const {requestFreeCompletion} = require("./openrouter-free-test.cjs");
+const {readiness} = require("./readiness.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const BACKEND_ORIGIN = "http://127.0.0.1:7770";
@@ -100,20 +101,12 @@ function saveSettings(input) {
   fs.renameSync(temp,settingsPath());
   return data;
 }
-// First-run defaults so the owner only has to paste the OpenRouter key
-// (owner feedback 2026-10-28: GrokBot needs no setup). Local editors only:
-// browsers stay out because their real sessions (e.g. Google Ads) would
-// become visible to the Agent. Supervised mode and vision stay off.
-const DEFAULT_ALLOWED_APPS=Object.freeze(["notepad.exe","explorer.exe","calc.exe"]);
-function allowedAppsSetting(c) {
-  return Array.isArray(c.allowedApps)?c.allowedApps:[...DEFAULT_ALLOWED_APPS];
-}
 function settingsForUI() {
   const c=readRawSettings();
   return {
     provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
-    allowedApps:allowedAppsSetting(c).join(","),
+    allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
     fullScreenEnabled:c.fullScreenEnabled===true,
@@ -137,7 +130,7 @@ function envForRuntime() {
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
     LHM_DESKTOP_NATIVE:"1",
-    LHM_DESKTOP_ALLOWED_APPS:allowedAppsSetting(c).join(","),
+    LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
@@ -352,6 +345,27 @@ function secureSession() {
   });
 }
 function settingsIPC(){
+  ipcMain.handle("settings:readiness",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    const c=readRawSettings();
+    const check=async(url,token)=>{
+      try {return (await backendFetch(url,token)).status;} catch {return null;}
+    };
+    const [apiStatus,nativeStatus]=await Promise.all([
+      check(BACKEND_ORIGIN+"/health",adminToken),
+      check(NATIVE_ORIGIN+"/health",runnerToken)
+    ]);
+    const running=name=>{
+      const child=children.get(name);
+      return !!child && child.exitCode===null && !child.killed;
+    };
+    return readiness({version:app.getVersion(),apiStatus,nativeStatus,
+      workerRunning:running("worker"),keyStored:!!c.openrouterKey,
+      keyUnlocked:!!unwrapSecret(c.openrouterKey),
+      allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
+      allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
+  });
   ipcMain.handle("settings:test-openrouter",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
@@ -387,6 +401,9 @@ app.whenReady().then(async()=>{
   adminToken=crypto.randomBytes(32).toString("base64url");
   runnerToken=crypto.randomBytes(32).toString("base64url");
   secureSession();settingsIPC();makeMenu();createMain();
+  // First run must explain the ONE required user-owned credential, not
+  // silently show six interfaces which cannot call a model yet.
+  if(!readRawSettings().openrouterKey)createSettings();
   if(process.platform!=="win32"){
     dialog.showErrorBox("Chỉ hỗ trợ Windows","LHM Robot Desktop Native hiện yêu cầu Windows 10/11.");
     return;
@@ -398,10 +415,8 @@ app.whenReady().then(async()=>{
     launchService("api",env);
     await waitBackend();
     launchService("worker",env);
-    openPage("/office3d");
-    // No key yet: open Settings straight away instead of leaving the owner
-    // to discover it in the menu.
-    if(!readRawSettings().openrouterKey)createSettings();
+    // Land on the work Console, not the decorative 3D office.
+    openPage("/computer");
   }catch(e){
     writeLog("electron","Startup "+e.message+"\n");
     dialog.showMessageBox(mainWindow,{

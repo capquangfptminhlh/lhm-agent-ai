@@ -1,6 +1,6 @@
 {
   "name": "lhm-robot-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "LHM Robot Desktop for Windows — supervised local Agent computer control",
   "main": "main.cjs",
@@ -23,6 +23,7 @@
     },
     "files": [
       "main.cjs",
+      "readiness.cjs",
       "settings-preload.cjs",
       "settings.html",
       "splash.html",
