@@ -67,7 +67,7 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --specpath build --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --collect-submodules pywinauto desktop/runtime.py
 
       - name: Smoke test actual bundled runtime EXE
         shell: pwsh
