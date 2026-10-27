@@ -30,13 +30,15 @@ ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
                     "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
 WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_activate","windows_click","windows_type","windows_scroll",
-                 "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot"}
+                 "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
+                 "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
 PAUSED = False
 MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
              "windows_activate","windows_click","windows_type","windows_scroll",
-             "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot"}
+             "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
+             "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
@@ -50,7 +52,8 @@ class ToolRequest(BaseModel):
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_type","windows_scroll",
-                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot"]
+                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
+                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"]
     args: dict[str,Any] = Field(default_factory=dict)
 
 def _auth(authorization: str | None) -> None:
@@ -195,6 +198,16 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
                 value=args.get("text")
                 if not isinstance(value,str) or len(value)>3000:
                     raise HTTPException(422,"Text must be <=3000 chars")
+                # Password fields are never filled by the Agent in any
+                # mode (operating decision 2026-10-27: secrets always stay
+                # with the human). Fail closed before any fill happens.
+                try:
+                    field_type=await element.evaluate(
+                        "e => ((e.getAttribute && e.getAttribute('type')) || '').toLowerCase()")
+                except Exception:
+                    field_type=""
+                if field_type=="password":
+                    raise HTTPException(403,"Agent never fills password fields; enter secrets manually")
                 await element.fill(value,timeout=7000)
         if tool=="browser_screenshot":
             png=await page.screenshot(type="png",full_page=False,timeout=15000)

@@ -32,7 +32,10 @@ def main(argv=None):
         import robot_sandbox
         assert callable(app.app) and callable(computer_executor.runner)
         assert "windows_click" in computer_agent.TOOLS
+        assert "windows_drag" in computer_agent.TOOLS
+        assert "windows_desktop_click" in computer_agent.TOOLS
         assert "vision_observe" in computer_agent.TOOLS
+        assert "vision_locate" in computer_agent.TOOLS
         assert "sandbox_run" in computer_agent.TOOLS
         print("LHM Windows runtime imports PASS",flush=True)
         return

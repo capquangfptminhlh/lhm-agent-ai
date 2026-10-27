@@ -111,7 +111,9 @@ class Live3DOfficeTests(unittest.TestCase):
     def test_routes_and_safe_fallback_navigation(self):
         html=self.client.get("/office3d")
         self.assertEqual(html.status_code,200)
-        self.assertIn("three@0.186.0",html.text)
+        # Three.js r186 is vendored and served by this backend (no CDN).
+        self.assertIn("/office3d/vendor/three.module.js",html.text)
+        self.assertNotIn("cdn.jsdelivr.net/npm/three",html.text)
         self.assertIn("sceneFallback",html.text)
         self.assertIn("scene.js",html.text)
         self.assertIn('href="/office"',html.text)
