@@ -79,7 +79,8 @@ def _steps(c: sqlite3.Connection, rid: str) -> list[dict[str,Any]]:
     for row in rows:
         d=dict(row)
         d["args"]=json.loads(d.pop("args_json"))
-        d["result"]=json.loads(d.pop("result_json")) if d.pop("result_json") else None
+        result_json=d.pop("result_json")
+        d["result"]=json.loads(result_json) if result_json else None
         out.append(d)
     return out
 
@@ -211,7 +212,7 @@ def _system_prompt(role: str) -> str:
 def _parse_action(content: str) -> tuple[str,dict]:
     value=content.strip()
     if value.startswith("```"):
-        value=re.sub(r"^\`\`\`(?:json)?\s*|\s*\`\`\`$","",value).strip()
+        value=re.sub(r"^```(?:json)?\s*|\s*```$","",value).strip()
     try:
         obj=json.loads(value)
     except (ValueError,TypeError):
