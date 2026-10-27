@@ -10,6 +10,7 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const {spawn} = require("node:child_process");
 const http = require("node:http");
+const {requestFreeCompletion} = require("./openrouter-free-test.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const BACKEND_ORIGIN = "http://127.0.0.1:7770";
@@ -323,6 +324,17 @@ function secureSession() {
   });
 }
 function settingsIPC(){
+  ipcMain.handle("settings:test-openrouter",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    const encrypted=readRawSettings().openrouterKey;
+    const key=unwrapSecret(encrypted);
+    if(!key)
+      throw Error("Chưa có OpenRouter API key đã lưu. Lưu khóa và khởi động lại phần mềm trước khi kiểm tra.");
+    // Read only from Windows safeStorage, never renderer IPC.
+    // Fixed model openrouter/free; NEVER inject a paid fallback.
+    return await requestFreeCompletion(key);
+  });
   ipcMain.handle("settings:load",event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)throw Error("Not settings window");
     return settingsForUI();
