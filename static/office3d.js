@@ -255,11 +255,13 @@ class LiveOffice3D {
     this.scene.fog=new THREE.FogExp2(0xdce9f6,.014);
     this.camera=new THREE.OrthographicCamera(-18,18,11,-11,.1,200);
     this.camera.position.set(28,30,35);this.camera.lookAt(0,0,0);
+    this.camera.zoom=this.host.clientWidth<620?.91:1.20;
+    this.camera.updateProjectionMatrix();
     this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,1.75));
     this.renderer.outputColorSpace=THREE.SRGBColorSpace;
     this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure=1.13;
+    this.renderer.toneMappingExposure=.98;
     this.renderer.shadowMap.enabled=true;
     this.renderer.shadowMap.type=THREE.PCFShadowMap;
     this.renderer.domElement.setAttribute('aria-label','Văn phòng 3D với trạng thái nhân sự từ backend');
@@ -270,8 +272,8 @@ class LiveOffice3D {
     this.controls.enablePan=false;
     this.controls.enableZoom=true;this.controls.minZoom=.63;this.controls.maxZoom=2.0;
     this.controls.maxPolarAngle=1.45;this.controls.minPolarAngle=.37;
-    const ambient=new THREE.HemisphereLight(0xffffff,0xb6cde4,2.0);this.scene.add(ambient);
-    const sunlight=new THREE.DirectionalLight(0xffffff,3.0);sunlight.position.set(-12,27,15);
+    const ambient=new THREE.HemisphereLight(0xffffff,0xb6cde4,1.45);this.scene.add(ambient);
+    const sunlight=new THREE.DirectionalLight(0xffffff,2.1);sunlight.position.set(-12,27,15);
     sunlight.castShadow=true;sunlight.shadow.mapSize.set(2048,2048);
     sunlight.shadow.camera.left=-25;sunlight.shadow.camera.right=25;
     sunlight.shadow.camera.top=24;sunlight.shadow.camera.bottom=-24;
@@ -297,9 +299,9 @@ class LiveOffice3D {
     const x=-10.6+col*7.07,z=-5.05+row*10.15;
     const group=new THREE.Group();group.position.set(x,0,z);this.root.add(group);
     const tint=new THREE.Color(palette[index%palette.length]);
-    const mat=new THREE.MeshStandardMaterial({color:tint,roughness:.95,transparent:true,opacity:.12});
-    const outline=new THREE.MeshStandardMaterial({color:tint,roughness:.6,transparent:true,opacity:.32});
-    box(group,6.79,.07,8.42,0,.022,0,mat);
+    const mat=new THREE.MeshStandardMaterial({color:tint.clone().lerp(new THREE.Color(0xf7fbff),.70),roughness:.96});
+    const outline=new THREE.MeshStandardMaterial({color:tint,roughness:.67,transparent:true,opacity:.72});
+    box(group,6.79,.12,8.42,0,.035,0,mat);
     // Low, transparent glass separators preserve 3D depth.
     box(group,6.75,.55,.045,0,.29,-4.1,materials.glass);
     box(group,.04,.44,7.0,-3.38,.23,0,materials.glass);
@@ -455,7 +457,11 @@ class LiveOffice3D {
       a.group.localToWorld(pos);
       pos.project(this.camera);
       const show=pos.z<1&&pos.z>-1&&Math.abs(pos.x)<1.1&&Math.abs(pos.y)<1.1;
-      a.label.style.display=show?'block':'none';
+      // Avoid overlapping labels: roster already lists every Agent.
+      // Highlight selected, running, awaiting approval and blocked states.
+      const noteworthy=a.selected || a.status==='running' ||
+        ['awaiting_approval','failed','blocked_budget','blocked_dependency'].includes(a.status);
+      a.label.style.display=(show&&noteworthy)?'block':'none';
       if(show){
         a.label.style.left=((pos.x+1)*.5*width)+'px';
         a.label.style.top=((1-pos.y)*.5*height)+'px';
