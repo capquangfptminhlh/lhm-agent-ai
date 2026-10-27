@@ -34,7 +34,43 @@ WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot","browser_find","browser_press"} | WINDOWS_TOOLS
-PAUSED = False
+PAUSED = False  # compatibility; authoritative state is the persisted file
+
+def _pause_file() -> Path:
+    return ROOT/".emergency-pause.json"
+
+def _is_paused() -> bool:
+    state=_pause_file()
+    if not state.exists():
+        return PAUSED
+    try:
+        value=json.loads(state.read_text(encoding="utf-8"))
+        if not isinstance(value,dict) or type(value.get("paused")) is not bool:
+            return True  # invalid stop state must fail closed
+        return value["paused"]
+    except (OSError,ValueError,TypeError):
+        return True  # unreadable/corrupt persistent state => remain stopped
+
+def _persist_pause(paused: bool) -> bool:
+    import tempfile
+    global PAUSED
+    ROOT.mkdir(parents=True,exist_ok=True)
+    name=None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w",encoding="utf-8",dir=ROOT,
+                                         prefix=".emergency-",suffix=".tmp",delete=False) as tmp:
+            name=tmp.name
+            os.chmod(name,0o600)
+            json.dump({"paused":paused},tmp)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+        os.replace(name,_pause_file())
+        PAUSED=paused
+    finally:
+        if name and os.path.exists(name):
+            os.unlink(name)
+    return _is_paused()
+
 MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill","browser_press",
              "windows_activate","windows_click","windows_type","windows_scroll",
              "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
@@ -255,7 +291,7 @@ def __native_tool(tool: str,args: dict):
 
 async def perform(req: ToolRequest) -> dict:
     ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
-    if PAUSED and tool in MUTATIONS:
+    if _is_paused() and tool in MUTATIONS:
         raise HTTPException(423,"Emergency pause is active; no mutations allowed")
     if tool in WINDOWS_TOOLS:
         # Validate platform BEFORE touching the sandbox volume. A Linux
@@ -329,7 +365,7 @@ async def health(authorization: str | None = Header(None)):
     _auth(authorization)
     return {"ok":True,
             "mode":"windows_native" if os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1" else "separate_runner",
-            "paused":PAUSED,
+            "paused":_is_paused(),
             "agent_isolation":"directories_not_vms",
             "tools":sorted(ALLOWED_TOOLS)}
 
@@ -352,7 +388,6 @@ class PauseIn(BaseModel):
 @runner.post("/v1/pause")
 async def emergency_pause(inp: PauseIn, authorization: str | None = Header(None)):
     _auth(authorization)
-    global PAUSED
-    PAUSED = inp.paused
-    return {"paused":PAUSED,
+    persisted=_persist_pause(inp.paused)
+    return {"paused":persisted,
             "notice":"In-flight Windows actions may have already completed; pause blocks NEW mutations."}
