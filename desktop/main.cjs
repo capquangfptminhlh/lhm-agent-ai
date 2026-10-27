@@ -58,8 +58,12 @@ function saveSettings(input) {
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
   }
-  if (allowedApps.length > 20 || allowedApps.some(a=>!/^[a-z0-9._-]{3,70}\.exe$/.test(a))) {
-    throw new Error("Danh sách ứng dụng chỉ gồm tên EXE chính xác, ví dụ notepad.exe.");
+  const blocked=new Set(["cmd.exe","powershell.exe","pwsh.exe","wt.exe",
+    "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe","wscript.exe",
+    "cscript.exe","mshta.exe","rundll32.exe","python.exe","pythonw.exe","node.exe"]);
+  if (allowedApps.length > 20 || allowedApps.some(a=>
+      !/^[a-z0-9._-]{3,70}\.exe$/.test(a) || blocked.has(a))) {
+    throw new Error("Chỉ cho phép EXE ứng dụng thông thường, không cho terminal hoặc công cụ hệ thống.");
   }
   const data = {
     provider, allowedHosts:[...new Set(allowedHosts)],
