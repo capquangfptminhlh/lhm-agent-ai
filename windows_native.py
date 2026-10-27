@@ -116,6 +116,34 @@ def _focus(hwnd):
     u.ShowWindow(wintypes.HWND(hwnd),9)
     u.SetForegroundWindow(wintypes.HWND(hwnd))
     if u.GetForegroundWindow()!=hwnd:
+        # Foreground-lock recovery (standard Win32 technique): Windows
+        # grants foreground rights to a process that has just sent input,
+        # and AttachThreadInput lets this thread act on the current
+        # foreground window's input queue during the switch. Without
+        # this, activation is denied whenever another process holds the
+        # foreground lock (services, CI sessions, freshly spawned apps).
+        try:
+            u.keybd_event(0x12,0,0,0)  # ALT down: this process sent input
+            u.keybd_event(0x12,0,2,0)  # ALT up
+        except Exception:
+            pass
+        try:
+            fg=u.GetForegroundWindow()
+            kernel32=ctypes.windll.kernel32
+            current_tid=kernel32.GetCurrentThreadId()
+            fg_tid=u.GetWindowThreadProcessId(fg,None) if fg else 0
+            attached=False
+            if fg_tid and fg_tid!=current_tid:
+                attached=bool(u.AttachThreadInput(current_tid,fg_tid,True))
+            try:
+                u.BringWindowToTop(wintypes.HWND(hwnd))
+                u.SetForegroundWindow(wintypes.HWND(hwnd))
+            finally:
+                if attached:
+                    u.AttachThreadInput(current_tid,fg_tid,False)
+        except Exception:
+            pass
+    if u.GetForegroundWindow()!=hwnd:
         raise HTTPException(409,"Windows denied foreground focus. Click the app manually and retry.")
     return i
 
@@ -124,6 +152,23 @@ def _foreground(hwnd):
     if _user32().GetForegroundWindow()!=hwnd:
         raise HTTPException(409,"Target window is no longer foreground")
     return i
+
+def _foreground_or_refocus(hwnd):
+    """Foreground check for interaction tools, with ONE bounded re-focus.
+
+    Focus gets stolen in real sessions (notifications, task switcher
+    settling, another app finishing launch). The step already targets
+    this exact allowlisted window, so a single re-focus attempt of the
+    same window is inside the tool's contract; if Windows still refuses,
+    the original 409 stands.
+    """
+    try:
+        return _foreground(hwnd)
+    except HTTPException as exc:
+        if exc.status_code!=409:
+            raise
+        _focus(hwnd)
+        return _foreground(hwnd)
 
 def _coordinates(i,args):
     x=args.get("x");y=args.get("y")
@@ -384,7 +429,7 @@ def execute(tool: str,args: dict):
         i=_focus(hwnd)
         return {"focused":True,"window":i}
     if tool=="windows_click":
-        i=_foreground(hwnd)
+        i=_foreground_or_refocus(hwnd)
         x,y=_coordinates(i,args)
         u=_user32()
         if not u.SetCursorPos(x,y):
@@ -393,7 +438,7 @@ def execute(tool: str,args: dict):
         u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
         return {"clicked":True,"hwnd":hwnd,"x":args["x"],"y":args["y"]}
     if tool in ("windows_right_click", "windows_double_click"):
-        i=_foreground(hwnd)
+        i=_foreground_or_refocus(hwnd)
         x,y=_coordinates(i,args)
         u=_user32()
         if not u.SetCursorPos(x,y):
@@ -409,19 +454,19 @@ def execute(tool: str,args: dict):
         return {"action":"right" if tool=="windows_right_click" else "double",
                 "hwnd":hwnd,"x":args["x"],"y":args["y"]}
     if tool=="windows_drag":
-        i=_foreground(hwnd)
+        i=_foreground_or_refocus(hwnd)
         sx,sy,ex,ey=_drag_points(i,args)
         _drag_absolute(_user32(),sx,sy,ex,ey)
         return {"dragged":True,"hwnd":hwnd,
                 "from":{"x":args["x"],"y":args["y"]},
                 "to":{"x":args["to_x"],"y":args["to_y"]}}
     if tool=="windows_hotkey":
-        _foreground(hwnd)
+        _foreground_or_refocus(hwnd)
         combo=_validate_hotkey(args.get("keys"))
         _press_hotkey(combo)
         return {"pressed":combo,"hwnd":hwnd}
     if tool=="windows_type":
-        _foreground(hwnd)
+        _foreground_or_refocus(hwnd)
         text=args.get("text")
         if not isinstance(text,str) or not text or len(text)>MAX_TEXT or any(
             ord(ch)<32 and ch not in ("\n","\t") for ch in text):
@@ -430,7 +475,7 @@ def execute(tool: str,args: dict):
         # Do not echo typed text; it could be confidential.
         return {"typed":True,"characters":len(text),"hwnd":hwnd}
     if tool=="windows_scroll":
-        i=_foreground(hwnd)
+        i=_foreground_or_refocus(hwnd)
         amount=args.get("steps",3)
         if type(amount) is not int or not -8<=amount<=8 or amount==0:
             raise HTTPException(422,"Scroll steps must be -8..8 excluding zero")

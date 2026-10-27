@@ -92,14 +92,49 @@ class ApprovalMatrixTests(unittest.TestCase):
             self.assertTrue(agent._approval_required("windows_click", run))
         with patch.dict(os.environ, {"LHM_COMPUTER_TRUSTED_ENABLED": "1"}):
             self.assertFalse(agent._approval_required("windows_click", run))
-            self.assertFalse(agent._approval_required("browser_fill", run))
             self.assertFalse(agent._approval_required("write_file", run))
-            # Never automatic in any mode:
+            # Never automatic in any mode. browser_click/browser_fill joined
+            # this set after review: a browser click can submit/post and a
+            # fill can send data out, which the operating decision reserves
+            # for manual approval in every mode.
             for tool in ("run_command", "sandbox_run", "vision_observe", "vision_locate",
                          "windows_desktop_click", "windows_desktop_drag",
-                         "windows_desktop_scroll", "windows_desktop_screenshot"):
+                         "windows_desktop_scroll", "windows_desktop_screenshot",
+                         "browser_click", "browser_fill"):
                 self.assertTrue(agent._approval_required(tool, run), tool)
 
+
+class NativeTrustedSendSafetyTests(unittest.TestCase):
+    def test_native_mutations_only_autonomous_for_known_local_app(self):
+        run={"mode":"trusted","workspace_id":"demo","role":"research"}
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            for process,approval in (("notepad.exe",False),
+                                     ("calc.exe",False),
+                                     ("msedge.exe",True),
+                                     ("chrome.exe",True),
+                                     ("outlook.exe",True),
+                                     ("explorer.exe",True),
+                                     ("unknown.exe",True)):
+                for tool in ("windows_click","windows_type","windows_hotkey",
+                             "windows_drag","windows_double_click"):
+                    async def pretend_runner(_run,_tool,_args):
+                        self.assertEqual(_tool,"windows_snapshot")
+                        return {"window":{"process":process}}
+                    with self.subTest(process=process,tool=tool):
+                        with patch.object(agent,"runner_call",AsyncMock(side_effect=pretend_runner)):
+                            gated=asyncio.run(agent._approval_for_action(tool,{"hwnd":101},run))
+                        self.assertEqual(gated,approval)
+
+    def test_native_action_rejects_unavailable_or_unknown_window(self):
+        run={"mode":"trusted","workspace_id":"demo","role":"research"}
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            for returned in ({}, {"window":{"process":""}}, {"window":None}):
+                with patch.object(agent,"runner_call",AsyncMock(return_value=returned)):
+                    self.assertTrue(asyncio.run(agent._approval_for_action("windows_click",{"hwnd":9},run)))
+            with patch.object(agent,"runner_call",AsyncMock(side_effect=TimeoutError())):
+                self.assertTrue(asyncio.run(agent._approval_for_action("windows_type",{"hwnd":9},run)))
+            self.assertTrue(asyncio.run(agent._approval_for_action("windows_click",{"hwnd":"bad"},run)))
+            self.assertTrue(asyncio.run(agent._approval_for_action("browser_fill",{"selector":"#name"},run)))
 
 class TrustedModeApiTests(unittest.TestCase):
     def setUp(self):
@@ -159,8 +194,14 @@ class TrustedModeApiTests(unittest.TestCase):
         with patch.dict(os.environ, {"LHM_COMPUTER_TRUSTED_ENABLED": "1"}):
             run = self.create(mode="trusted", key="parity-case-auto").json()
             url = "/computer/runs/" + run["id"] + "/tick"
+            async def safe_native_run(run, tool, args):
+                if tool=="windows_snapshot":
+                    return {"window":{"process":"notepad.exe"},"controls":[]}
+                if tool=="windows_click":
+                    return {"clicked":True}
+                raise AssertionError("Unexpected tool: "+tool)
             with patch.object(agent, "_next_action", AsyncMock(return_value=("windows_click", {"hwnd": 7, "x": 5, "y": 5}))):
-                with patch.object(agent, "runner_call", AsyncMock(return_value={"clicked": True})):
+                with patch.object(agent, "runner_call", AsyncMock(side_effect=safe_native_run)):
                     response = self.client.post(url)
                     self.assertEqual(response.status_code, 200, response.text)
                     self.assertEqual(response.json()["status"], "queued")
@@ -276,8 +317,10 @@ class PostVerifyTests(unittest.TestCase):
                                   (step_id,)).fetchone())
         self.assertEqual(step["status"], "completed")
         result = __import__("json").loads(step["result_json"])
-        self.assertEqual(result["_verification"]["method"], "uia_snapshot")
-        self.assertEqual(result["_verification"]["controls"], 3)
+        self.assertEqual(result["_verification"]["method"], "state_pair")
+        self.assertEqual(result["_verification"]["pre"]["controls"], 3)
+        self.assertEqual(result["_verification"]["post"]["controls"], 3)
+        self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
 
 
