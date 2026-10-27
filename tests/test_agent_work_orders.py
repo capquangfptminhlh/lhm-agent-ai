@@ -120,6 +120,25 @@ class FixedAgentWorkTests(unittest.TestCase):
         sample="Bản nháp giới thiệu sản phẩm; phải duyệt trước khi đăng."
         with core.db() as c:
             c.execute("UPDATE tasks SET status='completed',result=? WHERE id=?",(sample,taskid))
+        review_endpoint="/workspaces/demo/agent-work-orders/"+response.json()["id"]+"/quality-review"
+        before=self.client.post("/workspaces/demo/tool-jobs/from-agent",json={
+            "source_task_id":taskid,"action":"wordpress.create_post",
+            "idempotency_key":"fixed-no-qa-123456","title":"Bài chưa QA"})
+        self.assertEqual(before.status_code,409)
+        queued=self.client.post(review_endpoint)
+        self.assertEqual(queued.status_code,201,queued.text)
+        qa_id=queued.json()["qa_task_id"]
+        self.assertTrue(qa_id)
+        self.assertEqual(self.client.post(review_endpoint).json()["qa_task_id"],qa_id)
+        review='{"verdict":"pass","reason":"Nội dung demo đã kiểm tra"}'
+        from publication_gate import record_review
+        with core.db() as c:
+            c.execute("UPDATE tasks SET status='completed',result=? WHERE id=?",(review,qa_id))
+            record_review(c,{"id":qa_id,"role":"quality","workspace_id":"demo",
+                             "depends_on":taskid},review)
+        approved=self.client.get("/workspaces/demo/agent-work-orders/"+response.json()["id"]).json()
+        self.assertTrue(approved["qa_passed"])
+        self.assertTrue(approved["can_submit_wordpress"])
         handoff={"source_task_id":taskid,"action":"wordpress.create_post",
                  "idempotency_key":"fixed-hand-off-12345",
                  "title":"Bài SEO thử nghiệm","status":"draft"}
