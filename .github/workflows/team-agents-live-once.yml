@@ -1,0 +1,46 @@
+name: Agent Team Live Free Acceptance (one-shot branch)
+
+on:
+  push:
+    branches: [test/agents-team-live-free-once-20261027]
+    paths:
+      - '.github/workflows/team-agents-live-once.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: one-shot-agent-live-free-20261027
+  cancel-in-progress: false
+
+jobs:
+  live-team-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install backend dependencies only
+        run: python -m pip install -r requirements.txt
+      - name: Offline agent-to-agent integration tests (no provider credentials)
+        run: python -m unittest discover -s tests -p test_team_collaboration.py -v
+      - name: Real OpenRouter Free multi-agent handoff - MAX FOUR live requests
+        env:
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+          LHM_LLM_PROVIDER: openrouter
+          OPENROUTER_MODEL: openrouter/free
+          LHM_OPENROUTER_FREE_ONLY: '1'
+          DEEPSEEK_API_KEY: ''
+          LHM_ALLOW_PRO: '0'
+        run: python scripts/live_team_agent_acceptance.py
+      - name: Save redacted metadata report (no prompt or keys)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-team-free-validation
+          path: team-agents-live-free-result.json
+          if-no-files-found: ignore
+          retention-days: 7
