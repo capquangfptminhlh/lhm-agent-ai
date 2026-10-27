@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import httpx
@@ -69,6 +70,62 @@ def local_free_quota(c: Any, epoch: int) -> dict[str, int]:
             "used_1m": minute, "limit_1m": minute_limit}
 
 
+def validate_free_chat_reply(payload: Any, requested: str) -> dict[str, Any]:
+    """Fail closed with SAFE error categories; never print raw upstream content.
+
+    Some Free endpoints return reasoning without final text, malformed usage,
+    or a non-text response. These are not valid completed Agent replies and
+    must never be persisted or silently counted as successful.
+    """
+    if not isinstance(payload, dict):
+        raise HTTPException(502, "OpenRouter: phản hồi không phải JSON object")
+    actual = payload.get("model")
+    if actual is not None and (not isinstance(actual, str) or
+                              not is_free_model(actual) or actual == "openrouter/free"):
+        raise HTTPException(502, "OpenRouter: model trả về không xác minh được :free")
+    if requested != "openrouter/free" and actual is not None and actual != requested:
+        raise HTTPException(502, "OpenRouter: model trả về khác model Free đã chọn")
+    choices=payload.get("choices")
+    if not isinstance(choices,list) or not choices or not isinstance(choices[0],dict):
+        raise HTTPException(502, "OpenRouter: thiếu choices")
+    message=choices[0].get("message")
+    if not isinstance(message,dict):
+        raise HTTPException(502, "OpenRouter: thiếu message")
+    content=message.get("content")
+    if isinstance(content,list):
+        pieces=[]
+        for piece in content:
+            if not isinstance(piece,dict) or piece.get("type")!="text" or not isinstance(piece.get("text"),str):
+                raise HTTPException(502, "OpenRouter: message không phải nội dung văn bản")
+            pieces.append(piece["text"])
+        content="".join(pieces)
+        message["content"]=content
+    if not isinstance(content,str) or not content.strip():
+        # Common failure mode: model spends output tokens on hidden reasoning
+        # and gives no final answer. Retrying blindly could burn Free quota.
+        raise HTTPException(502, "OpenRouter: không có câu trả lời văn bản (có thể hết token)")
+    usage=payload.get("usage")
+    if not isinstance(usage,dict):
+        raise HTTPException(502, "OpenRouter: thiếu thống kê token")
+    for name in ("prompt_tokens","completion_tokens"):
+        number=usage.get(name)
+        if type(number) is not int or number<0:
+            raise HTTPException(502, "OpenRouter: thống kê token không hợp lệ")
+    costs=[v for v in (usage.get("cost"),payload.get("cost")) if v is not None]
+    if not costs and os.environ.get("LHM_OPENROUTER_FREE_ONLY")=="1":
+        raise HTTPException(502, "OpenRouter: thiếu xác nhận chi phí 0 USD")
+    for value in costs:
+        if value is None or isinstance(value,bool):
+            raise HTTPException(502, "OpenRouter: dữ liệu chi phí không hợp lệ")
+        try:
+            cost=Decimal(str(value))
+        except (InvalidOperation,ValueError,TypeError) as exc:
+            raise HTTPException(502, "OpenRouter: dữ liệu chi phí không hợp lệ") from exc
+        if not cost.is_finite() or cost != 0:
+            raise HTTPException(502, "OpenRouter: chi phí khác 0 hoặc không hợp lệ")
+    return payload
+
+
 async def call_free_model(role: str, ws: Any, instruction: str, context: str,
                           model: str) -> dict[str, Any]:
     if not is_free_model(model):
@@ -108,17 +165,7 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
             })
         response.raise_for_status()
         payload = response.json()
-        message = payload["choices"][0]["message"]["content"]
-        usage = payload["usage"]
-        if not isinstance(message, str) or not message.strip():
-            raise ValueError("missing response text")
-        if not isinstance(usage, dict) or not isinstance(usage.get("prompt_tokens"), int) \
-           or not isinstance(usage.get("completion_tokens"), int):
-            raise ValueError("missing token usage")
-        # Fail closed on any unexpected positive provider-reported charge.
-        if float(usage.get("cost", 0) or 0) > 0 or float(payload.get("cost", 0) or 0) > 0:
-            raise HTTPException(502, "OpenRouter báo có chi phí; đã chặn kết quả để đối soát hóa đơn")
-        return payload
+        return validate_free_chat_reply(payload, model)
     except httpx.HTTPStatusError as exc:
         code = exc.response.status_code
         if code == 429:
