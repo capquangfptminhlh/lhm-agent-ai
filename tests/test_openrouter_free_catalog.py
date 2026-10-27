@@ -27,14 +27,14 @@ class FreeCatalogTests(unittest.TestCase):
     def test_role_preference_is_only_over_verified_candidates(self):
         models = ["google/gemma-4-31b:free", "nvidia/nemotron-3:free"]
         self.assertEqual(rank_for_role(models, "director")[0], "nvidia/nemotron-3:free")
-        self.assertEqual(rank_for_role(models, "content")[0], "google/gemma-4-31b:free")
+        self.assertEqual(rank_for_role(models, "content")[0], "nvidia/nemotron-3:free")
 
     def test_invalid_catalog_fails_closed(self):
         with self.assertRaises(ValueError):
             eligible_free_models({"models": []})
 
     def test_selection_does_not_guess_on_network_failure(self):
-        with patch("openrouter_free_catalog.fetch_verified_models", new=AsyncMock(side_effect=RuntimeError("offline"))):
+        with patch("openrouter_free_catalog.fetch_verified_text_models", new=AsyncMock(side_effect=RuntimeError("offline"))):
             with self.assertRaises(RuntimeError):
                 asyncio.run(select_free_model("director"))
 

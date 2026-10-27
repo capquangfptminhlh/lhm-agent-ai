@@ -15,7 +15,10 @@ ROLE_HINTS = {
     "research": ("gemma", "nemotron", "xingchen"),
     "director": ("nemotron", "gemma"),
     "strategy": ("nemotron", "gemma"),
-    "content": ("gemma", "nemotron"),
+    # Gemma Free returned 429 during the real Content Agent smoke while
+    # the approved Nemotron text model completed four adjacent roles.
+    # Prefer observed-working text candidates, still catalog-verify each call.
+    "content": ("nemotron", "gemma"),
     "quality": ("nemotron", "gemma"),
     "compliance": ("nemotron", "gemma"),
     "analytics": ("nemotron", "gemma"),
@@ -56,6 +59,54 @@ def eligible_free_models(catalog: Any) -> list[str]:
     return sorted(set(result))
 
 
+
+def is_text_chat_candidate(item: Any) -> bool:
+    """Filter verified zero-cost models for conversational text Agent work.
+
+    A :free model can be a safety classifier, vision specialist, or a model
+    whose output modality cannot serve the Agent's JSON/text conversation.
+    This check is intentionally conservative. Catalog metadata is not proof
+    of response reliability, so final message/usage validation is still required.
+    """
+    if not isinstance(item, dict):
+        return False
+    model_id = str(item.get("id") or "").lower()
+    name = str(item.get("name") or "").lower()
+    # Owner-approved safety model remains eligible for *moderation* features,
+    # but not for generating the team's actual instructions/deliverables.
+    blocked = ("content-safety", "content safety", "moderation", "guardrail")
+    if any(word in model_id or word in name for word in blocked):
+        return False
+    architecture = item.get("architecture")
+    if not isinstance(architecture, dict):
+        return False
+    input_modes = architecture.get("input_modalities")
+    output_modes = architecture.get("output_modalities")
+    if (not isinstance(input_modes, list) or
+            not isinstance(output_modes, list) or
+            "text" not in input_modes or "text" not in output_modes):
+        return False
+    return True
+
+
+async def fetch_verified_text_models(*, timeout: float = 10) -> list[str]:
+    """Only owner-approved, zero-priced AND text-capable OpenRouter models."""
+    from openrouter_user_allowlist import approved_catalog_item
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+        response = await client.get(CATALOG_URL, params={"output_modalities": "text"})
+        response.raise_for_status()
+        document = response.json()
+    if not isinstance(document, dict) or not isinstance(document.get("data"), list):
+        raise ValueError("Invalid OpenRouter model catalog")
+    models = sorted({
+        item["id"] for item in document["data"]
+        if approved_catalog_item(item) and is_zero_price(item.get("pricing"))
+        and is_text_chat_candidate(item)
+    })
+    if not models:
+        raise ValueError("No approved, verifiably free text Agent model")
+    return models
+
 def rank_for_role(models: list[str], role: str) -> list[str]:
     hints = ROLE_HINTS.get(role, ("nemotron", "gemma", "xingchen"))
     return sorted(models, key=lambda model: (
@@ -77,4 +128,4 @@ async def fetch_verified_models(*, timeout: float = 10) -> list[str]:
 
 
 async def select_free_model(role: str) -> str:
-    return rank_for_role(await fetch_verified_models(), role)[0]
+    return rank_for_role(await fetch_verified_text_models(), role)[0]
