@@ -191,7 +191,7 @@ class DepartmentIntegrationTests(unittest.TestCase):
         self.assertEqual(body["task_id"],order["task_id"])
         self.assertEqual(result.json()["status"],"accepted_unverified")
         self.assertEqual(result.json()["receipt"]["confirmation"],"workflow_triggered_unverified")
-        self.assertNotIn("\\"accepted\\":true",result.text.lower())
+        self.assertNotIn(chr(34)+"accepted"+chr(34)+":true",result.text.lower())
         # No duplicate external side effects on repeated POST.
         repeated=self.client.post("/tool-jobs/"+job["id"]+"/execute")
         self.assertEqual(repeated.status_code,409)
