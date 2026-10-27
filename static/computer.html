@@ -1,0 +1,150 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM Agent AI · Computer Control</title>
+<style>
+:root{font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;color:#17334d;background:#f3f6fb}*{box-sizing:border-box}
+body{margin:0}button,input,select,textarea{font:inherit}button{cursor:pointer}
+a{color:#246ec0;text-decoration:none}header{background:#11263d;color:#edf6ff;padding:17px 26px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+header strong{font-size:19px}nav{display:flex;gap:13px;flex-wrap:wrap}nav a{color:#c9e0f4;font-weight:700;font-size:12px}
+main{max-width:1500px;margin:auto;padding:25px 22px 50px}h1{font-size:27px;letter-spacing:-.9px;margin:0 0 3px}h2{font-size:17px;letter-spacing:-.3px;margin:0 0 12px}.desc{color:#72869c;font-size:12px;margin:5px 0 21px}
+.grid{display:grid;grid-template-columns:355px minmax(0,1fr);gap:17px;align-items:start}.panel{background:white;padding:19px;border-radius:16px;border:1px solid #dfe8f3;box-shadow:0 8px 30px #23496609;margin-bottom:15px;min-width:0}
+label{display:grid;gap:5px;color:#597086;font-size:12px;font-weight:700;margin:11px 0}input,select,textarea{background:#fff;color:#17334d;border:1px solid #cfdaea;border-radius:10px;padding:11px;width:100%;outline-color:#74adf6}
+textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d73d0;border:1px solid #1d73d0;padding:10px 13px;color:#fff;font-size:12px;font-weight:760}.btn.secondary{background:#f0f6fe;border-color:#d2e2f2;color:#225f9b}.btn.danger{background:#fff0f1;border-color:#f3d0d5;color:#b13c4f}.btn:disabled{opacity:.5;cursor:default}
+.line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.meta{color:#8496a7;font-size:11px}.status{font-size:10px;font-weight:850;border-radius:20px;padding:5px 9px;background:#edf1f7;color:#58728a;white-space:nowrap}
+.status.completed_unverified{background:#e8f0fc;color:#36628e}.status.completed{background:#e3f5eb;color:#16794c}.status.processing,.status.queued{background:#e6f0ff;color:#1b65b5}.status.awaiting_approval{background:#fff1d8;color:#956312}.status.needs_review,.status.cancelled{background:#ffeff1;color:#b04656}
+.note{font-size:12px;line-height:1.7;background:#eff6ff;border:1px solid #d6e6f7;color:#436888;border-radius:10px;padding:13px;margin-top:10px}.note.warn{background:#fff7e7;color:#835f24;border-color:#f2e0b8}
+.runner{border:1px solid #e0e9f4;border-radius:10px;padding:10px;margin:8px 0;cursor:pointer;color:#416480;font-size:12px;text-align:left;width:100%;background:#fcfdff}
+.runner:hover,.runner.selected{background:#e9f3ff;border-color:#b7d7f6}.runner strong{display:block;color:#1f3d58;margin-bottom:4px}.runner .meta{margin-bottom:5px}.empty{border:1px dashed #dbe5f0;border-radius:10px;padding:26px;text-align:center;color:#8ca1b5;font-size:12px}
+.step{border-left:3px solid #dce7f4;margin-bottom:11px;padding:11px 12px;background:#f8fbff;border-radius:0 10px 10px 0;font-size:12px}.step.approval{border-left-color:#eeae37;background:#fffaf0}.step strong{font-size:12px}.step pre{background:#edf2f8;color:#2e4864;border-radius:8px;padding:10px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:170px;overflow:auto}
+.screen{background:#15273a;border:1px solid #243e59;border-radius:12px;min-height:300px;display:grid;place-items:center;overflow:hidden;position:relative}
+.screen img{width:100%;height:auto;max-height:540px;object-fit:contain;display:block}.screen span{color:#92acc5;font-size:12px;text-align:center;padding:20px}
+.chips{display:flex;gap:9px;flex-wrap:wrap}.chip{background:#e8f3ff;padding:6px 10px;color:#306ca3;font-size:11px;border-radius:7px;font-weight:720}
+#notice{font-size:12px;min-height:19px;color:#18784f;margin-top:10px}#notice.error{color:#b03b50}
+@media(max-width:1050px){.grid{grid-template-columns:1fr}.screen{min-height:220px}}@media(max-width:650px){header{padding:14px}main{padding:14px 11px}h1{font-size:24px}}
+</style></head><body>
+<header><strong>◈ LHM <span style="color:#7bc0f7">COMPUTER</span></strong>
+<nav><a href="/office3d">Văn phòng 3D</a><a href="/workflow-builder">Workflows</a><a href="/agent-tools">Agent Tools</a><a href="/dashboard">Dashboard</a></nav></header>
+<main>
+<div class="line between"><div><h1>Máy tính cho từng AI Agent</h1><p class="desc">Một bảng điều khiển kiểu Codex: giao nhiệm vụ, quan sát tiến độ, duyệt thao tác và xem màn hình Chrome trong sandbox.</p></div>
+<div class="chips"><span class="chip">Terminal</span><span class="chip">Files</span><span class="chip">Chrome / Playwright</span><span class="chip">Approval Gate</span></div></div>
+<div class="grid">
+<div>
+<section class="panel"><h2>Giao nhiệm vụ mới</h2>
+<label>Doanh nghiệp<select id="workspace"></select></label>
+<label>Nhân viên AI<select id="role"></select></label>
+<label>Mục tiêu cần thực hiện<textarea id="objective" maxlength="2500" placeholder="Ví dụ: Mở trang example.com, nghiên cứu thông tin công khai, tạo báo cáo summary.md vào workspace rồi kiểm tra file."></textarea></label>
+<label>Tối đa bước xử lý<select id="maxSteps"><option value="5">5 bước</option><option value="10" selected>10 bước</option><option value="15">15 bước</option></select></label>
+<button id="create" type="button" class="btn">▶ Giao việc cho Computer Agent</button>
+<div class="note warn"><strong>Đây là môi trường chia sẻ container, chưa phải một VM riêng cách ly bảo mật cho mỗi Agent.</strong> Các thao tác ghi dữ liệu hoặc gây tác động</strong> — terminal, click, điền form — phải được duyệt trước. Model không có quyền chạy tùy tiện trên máy tính thật của anh.</div>
+<div id="notice" role="status" aria-live="polite"></div>
+</section>
+<section class="panel"><div class="line between"><h2 style="margin:0">Danh sách phiên làm việc</h2><button class="btn secondary" id="refresh" type="button">↻ Làm mới</button></div>
+<div id="runs" style="margin-top:12px"><div class="empty">Chưa có Computer session</div></div></section>
+</div>
+<div>
+<section class="panel"><div class="line between"><h2 style="margin:0">Computer Console</h2><span id="runState" class="status">Chưa chọn phiên</span></div>
+<div id="sessionInfo" class="meta">Chọn phiên làm việc để xem nhật ký lệnh thật.</div>
+<div class="line" style="margin-top:12px"><button id="oneTick" class="btn secondary" type="button" disabled>▶ Chạy 1 bước</button>
+<button id="stop" class="btn danger" type="button" disabled>■ Hủy phiên</button><span class="meta" id="runModel">—</span></div>
+<h2 style="margin-top:22px">Các bước thực hiện</h2><div id="steps"><div class="empty">Chưa có bước nào</div></div>
+<div id="outcome" class="note" hidden></div>
+</section>
+<section class="panel"><div class="line between"><h2 style="margin:0">Màn hình trình duyệt Agent</h2>
+<button id="screenshot" type="button" class="btn secondary" disabled>◉ Chụp màn hình</button></div>
+<p class="meta">Hình chụp thật từ Chrome trong Computer Runner. Không dùng ảnh minh họa hoặc tiến độ giả.</p>
+<div class="screen"><span id="screenEmpty">Chưa có Browser session. Chạy browser_open rồi bấm Chụp màn hình.</span><img id="screenImage" alt="Ảnh chụp màn hình Chrome thật của Agent" hidden></div>
+</section>
+</div></div>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=async(path,opts={})=>{const r=await fetch(path,{headers:{"Content-Type":"application/json"},...opts});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(typeof j.detail==="string"?j.detail:JSON.stringify(j.detail||r.status));return j};
+let ws="demo",selected=null,runs=[];
+function report(s,error=false){$("notice").textContent=s;$("notice").className=error?"error":""}
+function status(x){return '<span class="status '+esc(x)+'">'+esc(x)+'</span>'}
+function bytes(x){return esc(JSON.stringify(x,null,2))}
+async function initialize(){
+ try{const [workspaces,catalog]=await Promise.all([api("/workspaces"),api("/catalog")]);
+ const w=workspaces.workspaces||[],params=new URLSearchParams(location.search);
+ const preferred=params.get("workspace");
+ ws=w.some(x=>x.id===preferred)?preferred:(w.some(x=>x.id==="demo")?"demo":w[0]?.id);
+ $("workspace").innerHTML=w.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join("");
+ $("workspace").value=ws;
+ const roles=catalog.roles||{};
+ $("role").innerHTML=Object.entries(roles).map(([k,v])=>'<option value="'+esc(k)+'">'+esc(v.name||k)+'</option>').join("");
+ const requestedRole=params.get("role");
+ if(Object.prototype.hasOwnProperty.call(roles,requestedRole))$("role").value=requestedRole;
+ await loadRuns();
+ if(requestedRole&&runs.some(r=>r.role===requestedRole)){selected=runs.find(r=>r.role===requestedRole).id;renderSelected();}
+ }catch(e){report("Không kết nối backend: "+e.message,true)}
+}
+$("workspace").onchange=async()=>{ws=$("workspace").value;selected=null;await loadRuns()};
+$("create").onclick=async()=>{
+ const b=$("create");b.disabled=true;
+ try{const objective=$("objective").value.trim(),role=$("role").value,max_steps=Number($("maxSteps").value);
+ const idem=crypto.randomUUID?crypto.randomUUID():String(Date.now())+"-agent";
+ const r=await api("/workspaces/"+encodeURIComponent(ws)+"/computer/runs",{method:"POST",body:JSON.stringify({role,objective,max_steps,idempotency_key:idem})});
+ selected=r.id;report("Đã tạo phiên. Worker chạy khi đã cấu hình model và Computer Runner.");await loadRuns()
+ }catch(e){report(e.message,true)}finally{b.disabled=false}
+};
+async function loadRuns(){
+ try{const j=await api("/workspaces/"+encodeURIComponent(ws)+"/computer/runs");runs=j.runs||[];
+ if(selected&&!runs.some(x=>x.id===selected))selected=null;
+ if(!selected&&runs.length)selected=runs[0].id;
+ $("runs").innerHTML=runs.map(r=>'<button class="runner '+(selected===r.id?"selected":"")+'" data-id="'+esc(r.id)+'"><div class="line between"><strong>'+esc(r.role)+'</strong>'+status(r.status)+'</div><div>'+esc(r.objective.slice(0,140))+'</div><div class="meta">'+r.step_count+'/'+r.max_steps+' bước · '+new Date(r.created_at*1000).toLocaleString("vi-VN")+'</div></button>').join("")||'<div class="empty">Chưa có phiên nào</div>';
+ $("runs").querySelectorAll("[data-id]").forEach(x=>x.onclick=()=>{selected=x.dataset.id;renderSelected();});
+ renderSelected();
+ }catch(e){report(e.message,true)}
+}
+function renderSelected(){
+ const r=runs.find(x=>x.id===selected);
+ $("runState").outerHTML; // intentional no-op avoids replacing event-bound element
+ $("runState").textContent=r?.status||"Chưa chọn phiên";
+ $("runState").className="status "+(r?.status||"");
+ $("sessionInfo").textContent=r?r.role+" · "+r.objective:"Chọn phiên làm việc để xem nhật ký lệnh thật";
+ $("runModel").textContent=r?.model||"—";
+ $("oneTick").disabled=!r||r.status!=="queued";
+ $("stop").disabled=!r||!["queued","awaiting_approval"].includes(r.status);
+ $("screenshot").disabled=!r;
+ $("outcome").hidden=!r?.outcome&&!r?.error;
+ $("outcome").textContent=r?.status==="completed_unverified"?("AI tự báo xong — chưa nghiệm thu thủ công: "+r.outcome):(r?.outcome||r?.error||"");
+ $("steps").innerHTML=r?.steps?.length?r.steps.map(step=>{
+ const approval=step.status==="awaiting_approval";
+ const args=step.args||{};
+ return '<div class="step '+(approval?"approval":"")+'"><div class="line between"><strong>#'+step.number+' · '+esc(step.tool)+'</strong>'+status(step.status)+'</div>'+
+ '<details open><summary class="meta">Tham số lệnh (chỉ thực thi trong sandbox)</summary><pre>'+bytes(args)+'</pre></details>'+
+ (step.result?'<details><summary class="meta">Kết quả thực</summary><pre>'+bytes(step.result)+'</pre></details>':'')+
+ (step.error?'<p style="color:#aa3e4d">'+esc(step.error)+'</p>':'')+
+ (approval?'<div class="line"><button class="btn" data-approve="'+esc(step.id)+'">✓ Duyệt thao tác</button><button class="btn danger" data-reject="'+esc(step.id)+'">✕ Từ chối</button></div>':'')+'</div>'
+ }).join(""):'<div class="empty">Chưa chạy công cụ nào</div>';
+ $("steps").querySelectorAll("[data-approve]").forEach(x=>x.onclick=()=>approval(x.dataset.approve,true));
+ $("steps").querySelectorAll("[data-reject]").forEach(x=>x.onclick=()=>approval(x.dataset.reject,false));
+}
+async function approval(id,yes){
+ const r=runs.find(x=>x.id===selected),step=r?.steps.find(x=>x.id===id);if(!r||!step)return;
+ if(yes&&!confirm("Cho phép "+step.tool+" với chính xác tham số đang hiển thị? Hành động này có thể thay đổi file hoặc website."))return;
+ try{await api("/computer/runs/"+encodeURIComponent(r.id)+"/steps/"+encodeURIComponent(id)+"/"+(yes?"approve":"reject"),{method:"POST"});
+ report(yes?"Đã duyệt bước. Worker tiếp tục thực thi.":"Đã từ chối bước; Agent sẽ chọn giải pháp khác.");
+ await loadRuns()
+ }catch(e){report(e.message,true)}
+}
+$("oneTick").onclick=async()=>{
+ const r=runs.find(x=>x.id===selected);if(!r)return;
+ $("oneTick").disabled=true;
+ try{const x=await api("/computer/runs/"+encodeURIComponent(r.id)+"/tick",{method:"POST"});
+ report("Đã chạy một nhịp: "+x.status);await loadRuns()
+ }catch(e){report(e.message,true)}finally{$("oneTick").disabled=false}
+};
+$("stop").onclick=async()=>{if(!selected||!confirm("Hủy phiên làm việc này?"))return;try{await api("/computer/runs/"+encodeURIComponent(selected)+"/cancel",{method:"POST"});await loadRuns()}catch(e){report(e.message,true)}};
+$("refresh").onclick=loadRuns;
+$("screenshot").onclick=async()=>{
+ if(!selected)return;const image=$("screenImage");image.hidden=true;$("screenEmpty").hidden=false;$("screenEmpty").textContent="Đang chụp ảnh màn hình thật...";
+ try{const response=await fetch("/computer/runs/"+encodeURIComponent(selected)+"/screenshot",{cache:"no-store"});
+ if(!response.ok)throw Error("Chưa có browser hoặc runner chưa hoạt động (HTTP "+response.status+")");
+ const blob=await response.blob();if(blob.type!=="image/png")throw Error("Không phải ảnh PNG từ runner");
+ const src=URL.createObjectURL(blob);image.onload=()=>URL.revokeObjectURL(src);image.src=src;image.hidden=false;$("screenEmpty").hidden=true;
+ }catch(e){$("screenEmpty").textContent=e.message;report(e.message,true)}
+};
+initialize();setInterval(()=>{if(document.visibilityState==="visible")loadRuns()},6000);
+</script></body></html>

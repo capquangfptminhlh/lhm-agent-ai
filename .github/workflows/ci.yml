@@ -33,7 +33,7 @@ jobs:
         run: docker build --tag lhm-agent-ai:ci .
       - name: Smoke-test Docker application and Workflow Builder
         run: |
-          docker run --rm -e LHM_DB_PATH=/data/ci.sqlite3 -e LHM_ADMIN_TOKEN= lhm-agent-ai:ci python -c "from app import app; from fastapi.testclient import TestClient; c=TestClient(app); assert c.get('/health').status_code==200; assert c.get('/workflow-builder').status_code==200; assert c.get('/office3d').status_code==200; assert c.get('/api/office3d/snapshot').status_code==200; assert c.get('/tools/catalog').status_code==200; assert c.get('/agent-tools').status_code==200; assert c.get('/tools/specialists/readiness').status_code==200; print('Docker smoke OK')"
+          docker run --rm -e LHM_DB_PATH=/data/ci.sqlite3 -e LHM_ADMIN_TOKEN= lhm-agent-ai:ci python -c "from app import app; from fastapi.testclient import TestClient; c=TestClient(app); assert c.get('/health').status_code==200; assert c.get('/workflow-builder').status_code==200; assert c.get('/office3d').status_code==200; assert c.get('/api/office3d/snapshot').status_code==200; assert c.get('/tools/catalog').status_code==200; assert c.get('/agent-tools').status_code==200; assert c.get('/tools/specialists/readiness').status_code==200; assert c.get('/computer').status_code==200; assert c.get('/workspaces/demo/computer/runs').status_code==200; print('Docker smoke OK')"
 
 
   browser-webgl:
@@ -54,6 +54,8 @@ jobs:
         env:
           CI: 'true'
         run: python scripts/smoke_office3d.py
+      - name: Smoke-test Agent Computer with REAL Chrome/Playwright
+        run: python -m scripts.smoke_computer_browser
       - name: Upload office screenshot for visual QA
         if: always()
         uses: actions/upload-artifact@v4
@@ -62,3 +64,24 @@ jobs:
           path: office3d-browser-smoke.png
           if-no-files-found: ignore
           retention-days: 7
+
+  computer-sidecar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate Compose sandbox and verify runner does not receive main credentials
+        run: |
+          cp .env.example .env
+          LHM_COMPUTER_RUNNER_TOKEN=ci-example-token docker compose --profile computer config --quiet
+          LHM_COMPUTER_RUNNER_TOKEN=ci-example-token docker compose --profile computer config --format json > compose-resolved.json
+          python -c "import json; d=json.load(open('compose-resolved.json')); e=d['services']['computer'].get('environment',{}); assert 'OPENROUTER_API_KEY' not in e and 'DEEPSEEK_API_KEY' not in e and 'LHM_POSTIZ_API_KEY' not in e and 'env_file' not in d['services']['computer']; print('Sidecar env isolation PASS')"
+      - name: Build Playwright Computer Runner image
+        run: docker build --file Dockerfile.computer --tag lhm-computer:ci .
+      - name: Authenticate runner and execute sandbox file tool
+        run: |
+          docker run --rm --network none \
+            -e LHM_COMPUTER_RUNNER_TOKEN=test-only-ci-token \
+            -e LHM_COMPUTER_HOME=/tmp/agent-data \
+            lhm-computer:ci python -c "from fastapi.testclient import TestClient; from computer_executor import runner; t=TestClient(runner); auth={'Authorization':'Bearer test-only-ci-token'}; assert t.get('/health',headers=auth).status_code==200; j={'workspace_id':'demo','role':'research','tool':'write_file','args':{'path':'ci-smoke.txt','content':'Computer sandbox PASS'}}; assert t.post('/v1/tool',headers=auth,json=j).status_code==200; j['tool']='read_file'; j['args']={'path':'ci-smoke.txt'}; assert t.post('/v1/tool',headers=auth,json=j).json()['content']=='Computer sandbox PASS'; print('Computer sidecar Docker smoke OK')"
