@@ -86,6 +86,13 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
     user = instruction[:8000] + (
         "\n\nDỮ LIỆU ĐẦU VÀO (chưa kiểm chứng):\n" + context if context else ""
     )
+    # Check the live OpenRouter catalog before selecting any explicit free model.
+    if model == "openrouter/free" and os.environ.get("LHM_OPENROUTER_FREE_AUTO_SELECT") == "1":
+        from openrouter_free_catalog import select_free_model
+        try:
+            model = await select_free_model(role)
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(503, "Không xác minh được model miễn phí; dừng nhiệm vụ") from exc
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json",
                "X-Title": "LHM Agent OS"}
     try:
