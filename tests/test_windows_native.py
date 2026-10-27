@@ -66,12 +66,47 @@ class WindowsNativeTests(unittest.TestCase):
             ("windows_activate",{"hwnd":123}),
             ("windows_click",{"hwnd":123,"x":10,"y":20}),
             ("windows_type",{"hwnd":123,"text":"hello"}),
-            ("windows_scroll",{"hwnd":123,"steps":1})
+            ("windows_scroll",{"hwnd":123,"steps":1}),
+            ("windows_right_click",{"hwnd":123,"x":10,"y":20}),
+            ("windows_double_click",{"hwnd":123,"x":10,"y":20}),
+            ("windows_hotkey",{"hwnd":123,"keys":"CTRL+S"}),
+            ("windows_desktop_screenshot",{})
         ]:
             self.assertEqual(self._post(tool,args).status_code,423,tool)
         self.assertEqual(self.client.post("/v1/pause",headers=self.auth,
                       json={"paused":False}).status_code,200)
         self.assertFalse(self.client.get("/health",headers=self.auth).json()["paused"])
+
+    def test_safe_shortcuts_never_allow_os_launcher(self):
+        for key in ("CTRL+S", "CTRL+SHIFT+S", "ENTER", "ESC", "LEFT", "BACKSPACE"):
+            self.assertEqual(wn._validate_hotkey(key.lower()), key)
+        for key in ("ALT+TAB", "WIN+R", "CTRL+ALT+DELETE", "CTRL+SHIFT+ESC",
+                    "ALT+F4", "CTRL+P", "", "S", "WIN+E"):
+            with self.subTest(key=key):
+                with self.assertRaises(HTTPException) as err:
+                    wn._validate_hotkey(key)
+                self.assertEqual(err.exception.status_code, 422)
+
+    def test_full_desktop_capture_disabled_and_step_approval_required(self):
+        with patch.object(wn,"_require_windows"):
+            with patch.dict(os.environ,{"LHM_DESKTOP_FULL_SCREEN_ENABLED":"0"}):
+                with self.assertRaises(HTTPException) as denied:
+                    wn.execute("windows_desktop_screenshot",{})
+                self.assertEqual(denied.exception.status_code,403)
+        with self.assertRaises(HTTPException) as not_native:
+            wn.execute("windows_desktop_screenshot",{})
+        self.assertEqual(not_native.exception.status_code,503)
+        self.assertTrue(ca._approval_required("windows_desktop_screenshot"))
+
+    def test_new_mouse_hotkey_tools_are_native_only(self):
+        for tool,args in [
+            ("windows_right_click", {"hwnd":123,"x":20,"y":20}),
+            ("windows_double_click", {"hwnd":123,"x":20,"y":20}),
+            ("windows_hotkey", {"hwnd":123,"keys":"CTRL+S"}),
+        ]:
+            response=self._post(tool,args)
+            self.assertEqual(response.status_code,503,(tool,response.text))
+            self.assertTrue(ca._approval_required(tool))
 
     def test_native_process_key_env_is_not_exposed_by_runtime_code(self):
         # Desktop runner injects only selected Windows/system env vars,
@@ -98,7 +133,9 @@ class WindowsNativeTests(unittest.TestCase):
         self.assertEqual(self.client.get("/health").status_code,401)
 
     def test_llm_desktop_actions_are_always_approval_gated(self):
-        for tool in ("windows_activate","windows_click","windows_type","windows_scroll"):
+        for tool in ("windows_activate","windows_click","windows_type","windows_scroll",
+                     "windows_right_click","windows_double_click","windows_hotkey",
+                     "windows_desktop_screenshot"):
             self.assertTrue(ca._approval_required(tool))
         self.assertFalse(ca._approval_required("windows_list"))
         with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"0"}):
