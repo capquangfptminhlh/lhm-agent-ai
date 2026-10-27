@@ -94,6 +94,36 @@ class EvidenceArtifactTests(unittest.TestCase):
                     self.assertEqual(mock.await_args.args[2],{"hwnd":123})
                     self.assertTrue((Path(home)/win["path"]).exists())
 
+    def test_browser_evidence_rejects_non_editable_secrets(self):
+        import computer_executor as runner
+        for leaked in ["Card number 4111 1111 1111 1111", 
+                       "Mật khẩu trong trang",
+                       "support@example.com",
+                       "Số thẻ của khách", "CVV 123", "Bank account overview"]:
+            with self.subTest(leaked=leaked):
+                with self.assertRaises(HTTPException) as exc:
+                    runner._check_public_browser_text_for_evidence(leaked)
+                self.assertEqual(exc.exception.status_code,403)
+        runner._check_public_browser_text_for_evidence(
+            "Welcome to the demo product search. Name  Email  Submit")
+
+    def test_evidence_runner_requires_opt_in_and_obeys_stop(self):
+        from fastapi.testclient import TestClient
+        import computer_executor as runner
+        client=TestClient(runner.runner)
+        headers={"Authorization":"Bearer private-runner-evidence-token"}
+        payload={"workspace_id":"demo","role":"research",
+                 "tool":"browser_evidence","args":{}}
+        with patch.dict(os.environ,{"LHM_COMPUTER_RUNNER_TOKEN":
+                                   "private-runner-evidence-token",
+                                   "LHM_EVIDENCE_CAPTURE_ENABLED":"0"}):
+            response=client.post("/v1/tool",json=payload,headers=headers)
+            self.assertEqual(response.status_code,403,response.text)
+        # This new tool must be in the emergency-stop mutation set. No
+        # screenshot should be taken after stop, even in an already-open tab.
+        self.assertIn("browser_evidence",runner.MUTATIONS)
+        self.assertIn("windows_evidence",runner.MUTATIONS)
+
     def test_ungroundable_desktop_action_fails_closed(self):
         import computer_agent as agent
         with self.assertRaises(HTTPException) as err:
