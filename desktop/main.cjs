@@ -11,6 +11,7 @@ const crypto = require("node:crypto");
 const {spawn} = require("node:child_process");
 const http = require("node:http");
 const {requestFreeCompletion} = require("./openrouter-free-test.cjs");
+const {readiness} = require("./readiness.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const BACKEND_ORIGIN = "http://127.0.0.1:7770";
@@ -342,6 +343,27 @@ function secureSession() {
   });
 }
 function settingsIPC(){
+  ipcMain.handle("settings:readiness",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    const c=readRawSettings();
+    const check=async(url,token)=>{
+      try {return (await backendFetch(url,token)).status;} catch {return null;}
+    };
+    const [apiStatus,nativeStatus]=await Promise.all([
+      check(BACKEND_ORIGIN+"/health",adminToken),
+      check(NATIVE_ORIGIN+"/health",runnerToken)
+    ]);
+    const running=name=>{
+      const child=children.get(name);
+      return !!child && child.exitCode===null && !child.killed;
+    };
+    return readiness({version:app.getVersion(),apiStatus,nativeStatus,
+      workerRunning:running("worker"),keyStored:!!c.openrouterKey,
+      keyUnlocked:!!unwrapSecret(c.openrouterKey),
+      allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
+      allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
+  });
   ipcMain.handle("settings:test-openrouter",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
@@ -377,6 +399,9 @@ app.whenReady().then(async()=>{
   adminToken=crypto.randomBytes(32).toString("base64url");
   runnerToken=crypto.randomBytes(32).toString("base64url");
   secureSession();settingsIPC();makeMenu();createMain();
+  // First run must explain the ONE required user-owned credential, not
+  // silently show six interfaces which cannot call a model yet.
+  if(!readRawSettings().openrouterKey)createSettings();
   if(process.platform!=="win32"){
     dialog.showErrorBox("Chỉ hỗ trợ Windows","LHM Robot Desktop Native hiện yêu cầu Windows 10/11.");
     return;
