@@ -75,7 +75,8 @@ def _persist_pause(paused: bool) -> bool:
 MUTATIONS = {"write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill","browser_press",
              "windows_activate","windows_click","windows_type","windows_scroll",
              "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
-             "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
+             "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll",
+             "browser_evidence","windows_evidence"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
@@ -325,6 +326,8 @@ async def perform(req: ToolRequest) -> dict:
     ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
     if _is_paused() and tool in MUTATIONS:
         raise HTTPException(423,"Emergency pause is active; no mutations allowed")
+    if tool in ("browser_evidence","windows_evidence") and os.environ.get("LHM_EVIDENCE_CAPTURE_ENABLED")!="1":
+        raise HTTPException(403,"Evidence capture requires explicit local opt-in")
     if tool in WINDOWS_TOOLS:
         # Validate platform BEFORE touching the sandbox volume. A Linux
         # worker with an unmounted /agent-data must fail closed with 503.
