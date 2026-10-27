@@ -12,6 +12,7 @@ from app import execute_task
 from openrouter_provider import model_configured
 from tool_hub import execute_tool_job, configured, TOOL_ACTIONS
 from workflow_builder import sync_ready_builder_runs
+from computer_agent import process_one_computer_run, recover_computer_runs
 
 
 async def recover_stuck() -> None:
@@ -68,10 +69,13 @@ async def main() -> None:
                       "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",(now(),))
         if time.time()-last_recover>60:
             await recover_stuck()
+            recover_computer_runs()
             last_recover=time.time()
         # Finalize completed builder workflows: create review-gated tool requests
         # only. Tool Hub still requires a separate human approval.
         sync_ready_builder_runs()
+        # Computer sessions run one LLM/tool step per poll and pause for approvals.
+        await process_one_computer_run()
         # Approved external actions run even without an AI API key.
         await process_one_approved_tool()
         with db() as c:
