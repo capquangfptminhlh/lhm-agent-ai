@@ -10,7 +10,7 @@ main{max-width:1500px;margin:auto;padding:25px 22px 50px}h1{font-size:27px;lette
 label{display:grid;gap:5px;color:#597086;font-size:12px;font-weight:700;margin:11px 0}input,select,textarea{background:#fff;color:#17334d;border:1px solid #cfdaea;border-radius:10px;padding:11px;width:100%;outline-color:#74adf6}
 textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d73d0;border:1px solid #1d73d0;padding:10px 13px;color:#fff;font-size:12px;font-weight:760}.btn.secondary{background:#f0f6fe;border-color:#d2e2f2;color:#225f9b}.btn.danger{background:#fff0f1;border-color:#f3d0d5;color:#b13c4f}.btn:disabled{opacity:.5;cursor:default}
 .line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.meta{color:#8496a7;font-size:11px}.status{font-size:10px;font-weight:850;border-radius:20px;padding:5px 9px;background:#edf1f7;color:#58728a;white-space:nowrap}
-.status.completed{background:#e3f5eb;color:#16794c}.status.processing,.status.queued{background:#e6f0ff;color:#1b65b5}.status.awaiting_approval{background:#fff1d8;color:#956312}.status.needs_review,.status.cancelled{background:#ffeff1;color:#b04656}
+.status.completed_unverified{background:#e8f0fc;color:#36628e}.status.completed{background:#e3f5eb;color:#16794c}.status.processing,.status.queued{background:#e6f0ff;color:#1b65b5}.status.awaiting_approval{background:#fff1d8;color:#956312}.status.needs_review,.status.cancelled{background:#ffeff1;color:#b04656}
 .note{font-size:12px;line-height:1.7;background:#eff6ff;border:1px solid #d6e6f7;color:#436888;border-radius:10px;padding:13px;margin-top:10px}.note.warn{background:#fff7e7;color:#835f24;border-color:#f2e0b8}
 .runner{border:1px solid #e0e9f4;border-radius:10px;padding:10px;margin:8px 0;cursor:pointer;color:#416480;font-size:12px;text-align:left;width:100%;background:#fcfdff}
 .runner:hover,.runner.selected{background:#e9f3ff;border-color:#b7d7f6}.runner strong{display:block;color:#1f3d58;margin-bottom:4px}.runner .meta{margin-bottom:5px}.empty{border:1px dashed #dbe5f0;border-radius:10px;padding:26px;text-align:center;color:#8ca1b5;font-size:12px}
@@ -34,7 +34,7 @@ textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d7
 <label>Mục tiêu cần thực hiện<textarea id="objective" maxlength="2500" placeholder="Ví dụ: Mở trang example.com, nghiên cứu thông tin công khai, tạo báo cáo summary.md vào workspace rồi kiểm tra file."></textarea></label>
 <label>Tối đa bước xử lý<select id="maxSteps"><option value="5">5 bước</option><option value="10" selected>10 bước</option><option value="15">15 bước</option></select></label>
 <button id="create" type="button" class="btn">▶ Giao việc cho Computer Agent</button>
-<div class="note warn"><strong>Các thao tác ghi dữ liệu hoặc gây tác động</strong> — terminal, click, điền form — phải được duyệt trước. Model không có quyền chạy tùy tiện trên máy tính thật của anh.</div>
+<div class="note warn"><strong>Đây là môi trường chia sẻ container, chưa phải một VM riêng cách ly bảo mật cho mỗi Agent.</strong> Các thao tác ghi dữ liệu hoặc gây tác động</strong> — terminal, click, điền form — phải được duyệt trước. Model không có quyền chạy tùy tiện trên máy tính thật của anh.</div>
 <div id="notice" role="status" aria-live="polite"></div>
 </section>
 <section class="panel"><div class="line between"><h2 style="margin:0">Danh sách phiên làm việc</h2><button class="btn secondary" id="refresh" type="button">↻ Làm mới</button></div>
@@ -103,7 +103,7 @@ function renderSelected(){
  $("stop").disabled=!r||!["queued","awaiting_approval"].includes(r.status);
  $("screenshot").disabled=!r;
  $("outcome").hidden=!r?.outcome&&!r?.error;
- $("outcome").textContent=r?.outcome||r?.error||"";
+ $("outcome").textContent=r?.status==="completed_unverified"?("AI tự báo xong — chưa nghiệm thu thủ công: "+r.outcome):(r?.outcome||r?.error||"");
  $("steps").innerHTML=r?.steps?.length?r.steps.map(step=>{
  const approval=step.status==="awaiting_approval";
  const args=step.args||{};
