@@ -34,7 +34,7 @@ class FreeCatalogTests(unittest.TestCase):
             eligible_free_models({"models": []})
 
     def test_selection_does_not_guess_on_network_failure(self):
-        with patch("openrouter_free_catalog.fetch_verified_models", new=AsyncMock(side_effect=RuntimeError("offline"))):
+        with patch("openrouter_free_catalog.fetch_verified_text_models", new=AsyncMock(side_effect=RuntimeError("offline"))):
             with self.assertRaises(RuntimeError):
                 asyncio.run(select_free_model("director"))
 
