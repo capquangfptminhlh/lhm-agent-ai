@@ -69,7 +69,20 @@ def main():
                     # own wait methods. time.sleep() prevents navigation events
                     # from updating context.pages/page.url and causes false FAIL.
                     assert context.pages, "No Electron Chromium page available"
-                    page = context.pages[0]
+                    # First-run now creates TWO native Chromium windows.
+                    # CDP enumeration order is undefined: choose the main
+                    # splash/localhost page, NEVER the settings.html window.
+                    print("Electron window URLs: "+
+                          repr([p.url for p in context.pages]),flush=True)
+                    main_candidates=[
+                        p for p in context.pages
+                        if "splash.html" in p.url or
+                           p.url.startswith("http://127.0.0.1:7770/")
+                    ]
+                    assert len(main_candidates)==1, (
+                        "Cannot identify main Electron window; URLs="+
+                        repr([p.url for p in context.pages]))
+                    page=main_candidates[0]
                     page.wait_for_url("http://127.0.0.1:7770/**",
                                       wait_until="domcontentloaded", timeout=80000)
                     assert page.url.startswith("http://127.0.0.1:7770/"), (
