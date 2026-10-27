@@ -118,14 +118,34 @@ def main() -> int:
         wait_for(health, 45, "native runner health")
 
         def activate(hwnd: int) -> None:
-            for attempt in range(3):
+            # Explorer and the Windows shell may asynchronously reclaim focus.
+            # Verify that the selected HWND remains foreground; a successful
+            # activation HTTP 200 alone does not guarantee focus is stable.
+            for attempt in range(5):
                 try:
                     call("windows_activate", {"hwnd": hwnd})
-                    return
+                    time.sleep(0.3)
+                    if foreground_hwnd() == hwnd:
+                        return
                 except RuntimeError:
-                    if attempt == 2:
+                    if attempt == 4:
                         raise
-                    time.sleep(1.5)
+                time.sleep(0.8)
+            raise RuntimeError("Target app did not remain foreground after activation")
+
+        def focused_call(tool: str, args: dict) -> dict:
+            # 409 is emitted *before* any input, so a retry is safe only for
+            # this precondition failure. Never repeat an ambiguous mutation.
+            hwnd = args["hwnd"]
+            for attempt in range(4):
+                activate(hwnd)
+                try:
+                    return call(tool, args)
+                except RuntimeError as exc:
+                    if "HTTP 409" not in str(exc) or "no longer foreground" not in str(exc) or attempt == 3:
+                        raise
+                    time.sleep(0.5)
+            raise AssertionError("Unreachable")
 
         # --- Task 1: type into Notepad and save through the real dialog.
         apps.append(subprocess.Popen(["notepad.exe"]))
@@ -134,7 +154,7 @@ def main() -> int:
         activate(hwnd)
         call("windows_click", {"hwnd": hwnd, "x": 200, "y": 130})
         call("windows_type", {"hwnd": hwnd, "text": MARKER})
-        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
+        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
         dialog = wait_for(
             lambda: find_window("notepad.exe", "Save") or find_window("notepad.exe", "Lưu"),
             20, "Save dialog")
@@ -162,11 +182,11 @@ def main() -> int:
         # --- Task 3: drag-select the line, copy, paste a duplicate, save.
         activate(hwnd)
         time.sleep(0.4)
-        call("windows_drag", {"hwnd": hwnd, "x": 40, "y": 100, "to_x": 260, "to_y": 100})
-        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})
-        call("windows_hotkey", {"hwnd": hwnd, "keys": "END"})
-        call("windows_hotkey", {"hwnd": hwnd, "keys": "ENTER"})
-        call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+V"})
+        focused_call("windows_drag", {"hwnd": hwnd, "x": 40, "y": 100, "to_x": 260, "to_y": 100})
+        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+C"})
+        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "END"})
+        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "ENTER"})
+        focused_call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+V"})
         call("windows_hotkey", {"hwnd": hwnd, "keys": "CTRL+S"})
         def duplicated() -> bool:
             try:
