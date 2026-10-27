@@ -61,7 +61,11 @@ the Agent reply and hands the next turn to another permitted coworker.
   the actual text is preserved (bounded) and the next participant
   is chosen in round-robin order. No attempted tool calls are parsed
   or executed from text.
-- `done=true` produces `completed_unverified`, **not** confirmed
+- An Agent cannot close the team chat on the first turn; at least one
+  other participant must exchange a real response. If a Quality Agent is
+  selected, the Quality Agent must contribute a response before anyone
+  can conclude. This is a *participation gate*, not proof of QA accuracy.
+- `done=true` then produces `completed_unverified`, **not** confirmed
   business completion. A human must verify claims and any cited sources.
 - Uses the same task budgets, model key requirements, OpenRouter free
   attempt caps and per-task upper-cost accounting as LHM.
