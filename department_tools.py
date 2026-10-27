@@ -215,6 +215,8 @@ def prepare_department_tool(ws: str, role: str, inp: PrepareToolIn):
         raise HTTPException(404,"Agent không tồn tại")
     from tool_hub import ToolJobIn, _pilot_ws, create_tool_job
     _pilot_ws(ws)
+    if not configured(role):
+        raise HTTPException(409, "Agent chưa có webhook phòng ban hợp lệ; chưa thể bàn giao workflow")
     prepare_work_orders()
     with db() as c:
         order = c.execute(
