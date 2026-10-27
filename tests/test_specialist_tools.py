@@ -94,8 +94,10 @@ class SpecialistToolTests(unittest.TestCase):
         self.assertEqual(self.create("comfyui.generate_image",{**IMAGE,"width":4096}).status_code,422)
         self.assertEqual(self.create("comfyui.generate_image",{**IMAGE,"steps":250}).status_code,422)
         self.assertEqual(self.create("comfyui.generate_image",{**IMAGE,"prompt":""}).status_code,422)
-        allowed=self.create("comfyui.generate_image",{**IMAGE,"workflow":{"999":{"class_type":"PythonEval"}}})
-        self.assertEqual(allowed.status_code,201,allowed.text)
+        blocked=self.create("comfyui.generate_image",{**IMAGE,"workflow":{"999":{"class_type":"PythonEval"}}})
+        self.assertEqual(blocked.status_code,422,blocked.text)
+        accepted=self.create("comfyui.generate_image",IMAGE)
+        self.assertEqual(accepted.status_code,201,accepted.text)
         graph=p._comfyui_graph(IMAGE)
         self.assertEqual(len(graph),7)
         self.assertEqual({x["class_type"] for x in graph.values()},
