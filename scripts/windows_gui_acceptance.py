@@ -181,6 +181,10 @@ def main() -> int:
                f"png_b64={len(png)}")
     except Exception as exc:
         report("SUITE", False, f"{type(exc).__name__}: {exc}")
+        # Surface the cause as a check annotation (job logs need sign-in;
+        # annotations are how this failure stays diagnosable from outside).
+        detail = f"{type(exc).__name__}: {exc}".replace("\n", " ")[:400]
+        print(f"::error ::GUI-ACCEPTANCE {detail}", flush=True)
         try:
             runner_log.flush()
             tail = (workdir / "runner.log").read_text(
@@ -203,6 +207,10 @@ def main() -> int:
         runner_log.close()
     failed = [name for name, ok, _ in RESULTS if not ok]
     print(f"GUI ACCEPTANCE: {len(RESULTS) - len(failed)}/{len(RESULTS)} PASS", flush=True)
+    for name, ok, detail in RESULTS:
+        if not ok:
+            safe = f"{name} :: {detail}".replace("\n", " ")[:400]
+            print(f"::error ::GUI-TASK-FAIL {safe}", flush=True)
     return 1 if failed else 0
 
 

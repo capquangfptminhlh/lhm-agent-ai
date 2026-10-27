@@ -129,9 +129,15 @@ def main():
             # from the packaged runtime under test above.
             gui = subprocess.run(
                 [sys.executable, str(ROOT / "scripts" / "windows_gui_acceptance.py")],
-                cwd=str(ROOT), timeout=200, check=False)
+                cwd=str(ROOT), timeout=170, check=False,
+                capture_output=True, text=True)
+            sys.stdout.write(gui.stdout or "")
+            sys.stderr.write(gui.stderr or "")
             assert gui.returncode == 0, "Real Windows GUI acceptance failed"
-        except Exception:
+        except Exception as exc:
+            # Annotations are readable without job-log access; keep the
+            # actual exception visible there for outside diagnosis.
+            print(f"::error ::PACKAGED-E2E {type(exc).__name__}: {exc}"[:500], flush=True)
             for handle in handles:
                 handle.flush()
             for mode in ["native", "api"]:
