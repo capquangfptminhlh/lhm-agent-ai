@@ -19,6 +19,7 @@ from office_api import router as office_router
 from office3d_api import router as office3d_router
 from tool_hub import router as tool_hub_router
 from workflow_builder import router as workflow_builder_router
+from computer_agent import router as computer_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
@@ -36,6 +37,7 @@ app.include_router(office_router)
 app.include_router(office3d_router)
 app.include_router(tool_hub_router)
 app.include_router(workflow_builder_router)
+app.include_router(computer_router)
 
 
 @app.middleware("http")
@@ -207,7 +209,7 @@ def choose_role(instruction: str) -> str:
 @app.get("/")
 def home():
     return {"app": "LHM Agent OS", "dashboard": "/dashboard", "office": "/office", "api_docs": "/docs",
-            "tool_hub": "/tool-hub", "note": "Local MVP; reviewed tool actions only, no unapproved external publishing"}
+            "tool_hub": "/tool-hub", "computer": "/computer", "note": "Local MVP; reviewed tool actions only, no unapproved external publishing"}
 
 
 @app.get("/dashboard")
