@@ -109,5 +109,14 @@
   </form>
 </dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script type="module" src="/office3d/scene.js"></script>
+<script type="module">
+import("/office3d/scene.js").catch(error => {
+  console.error("LHM 3D module:", error);
+  document.getElementById("sceneLoading").hidden = true;
+  const fallback = document.getElementById("sceneFallback");
+  fallback.hidden = false;
+  fallback.querySelector("span").textContent =
+    "Không thể tải Three.js từ CDN hoặc trình duyệt chặn ES modules. Văn phòng 2D vẫn hoạt động.";
+});
+</script>
 </body></html>
