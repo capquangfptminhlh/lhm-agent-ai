@@ -40,6 +40,8 @@ def validate_model(model: str) -> None:
     """Never accept a paid OpenRouter model through this free adapter."""
     if not isinstance(model, str) or len(model) > 128:
         raise HTTPException(422, "Model không hợp lệ")
+    if os.environ.get("LHM_OPENROUTER_FREE_ONLY") == "1" and not is_free_model(model):
+        raise HTTPException(422, "OpenRouter Free Only: từ chối tất cả model trả phí")
     if model.startswith("openrouter/") or model.endswith(":free") or "/" in model:
         if not is_free_model(model):
             raise HTTPException(422, "Chỉ hỗ trợ OpenRouter free; không tự chuyển sang model mất phí")

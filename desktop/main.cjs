@@ -50,7 +50,8 @@ function unwrapSecret(encoded) {
 }
 function saveSettings(input) {
   const current = readRawSettings();
-  const provider = input.provider === "deepseek" ? "deepseek" : "openrouter";
+  if (input.provider && input.provider !== "openrouter") throw new Error("Chỉ hỗ trợ OpenRouter Free.");
+  const provider = "openrouter";
   const allowedHosts = String(input.allowedHosts || "").toLowerCase()
       .split(",").map(x=>x.trim()).filter(Boolean);
   const allowedApps = String(input.allowedApps || "").toLowerCase()
@@ -78,11 +79,11 @@ function saveSettings(input) {
     sandboxEnabled:input.sandboxEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
-    deepseekKey:current.deepseekKey || ""
+    deepseekKey:""
   };
   if ((input.clearOpenrouter === true)) data.openrouterKey="";
   if ((input.clearDeepseek === true)) data.deepseekKey="";
-  for (const [key, field] of [["openrouterKey","openrouterKey"],["deepseekKey","deepseekKey"]]) {
+  for (const [key, field] of [["openrouterKey","openrouterKey"]]) {
     const raw=input[field];
     if (isSecureSecret(raw)) {
       if (raw.length > 600 || !safeStorage.isEncryptionAvailable()) {
@@ -100,14 +101,14 @@ function saveSettings(input) {
 function settingsForUI() {
   const c=readRawSettings();
   return {
-    provider:c.provider||"openrouter",
+    provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
-    hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:!!c.deepseekKey,
+    hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
   };
 }
@@ -130,9 +131,13 @@ function envForRuntime() {
     LHM_COMPUTER_VISION_MODEL:typeof c.visionModel==="string"?c.visionModel:"",
     LHM_SANDBOX_ENABLED:c.sandboxEnabled===true?"1":"0",
     LHM_AGENT_PARALLELISM:String([1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1),
-    LHM_LLM_PROVIDER:c.provider==="deepseek"?"deepseek":"openrouter",
+    LHM_LLM_PROVIDER:"openrouter",
+    OPENROUTER_MODEL:"openrouter/free",
+    LHM_OPENROUTER_FREE_ONLY:"1",
+    LHM_OPENROUTER_FREE_AUTO_SELECT:"1",
+    LHM_ALLOW_PRO:"0",
     OPENROUTER_API_KEY:unwrapSecret(c.openrouterKey),
-    DEEPSEEK_API_KEY:unwrapSecret(c.deepseekKey)
+    DEEPSEEK_API_KEY:""
   };
 }
 function nativeEnv(runtimeEnv) {
@@ -161,6 +166,9 @@ function runtimeCommand(mode) {
   return {binary:python,args:[path.join(PROJECT_ROOT,"desktop","runtime.py"),mode]};
 }
 function writeLog(name,line) {
+  // CI-only startup diagnostics. Never output tokens, requests, or API payloads.
+  if (process.env.GITHUB_ACTIONS==="true" && name==="electron")
+    process.stderr.write("[LHM CI] "+line.slice(0,400));
   const folder=path.join(app.getPath("userData"),"logs");
   fs.mkdirSync(folder,{recursive:true});
   fs.appendFileSync(path.join(folder,name+".log"),line.slice(0,2000),{encoding:"utf8"});
@@ -221,11 +229,13 @@ async function waitBackend() {
     if(shutdown)throw new Error("Application is shutting down");
     try {
       const h=await backendFetch(BACKEND_ORIGIN+"/health",adminToken);
+      if(i===0 || h.status!==200)writeLog("electron","Backend /health HTTP "+h.status+" (attempt "+i+")\n");
       if(h.status===200)return;
       if(h.status===401)throw new Error("Port 7770 belongs to a different server");
     }catch(e){
       if(String(e.message).includes("different server"))throw e;
     }
+    if(i===0 || i===89)writeLog("electron","Backend not ready yet (attempt "+i+")\n");
     await new Promise(resolve=>setTimeout(resolve,400));
   }
   throw new Error("LHM backend did not become healthy. See the API runtime log.");
@@ -237,6 +247,7 @@ function sameOrigin(raw) {
 function openPage(route) {
   if(!mainWindow || mainWindow.isDestroyed())return;
   if(!Object.values(ROUTES).includes(route))return;
+  writeLog("electron","Navigate to "+route+"\n");
   mainWindow.loadURL(BACKEND_ORIGIN+route).catch(error=>
     writeLog("electron","Navigation failed "+error.message+"\n"));
 }
@@ -365,6 +376,7 @@ app.whenReady().then(async()=>{
   }
   try{
     const env=envForRuntime();
+    writeLog("electron","Launching native/API with model "+env.OPENROUTER_MODEL+"\n");
     launchService("native",nativeEnv(env));
     launchService("api",env);
     await waitBackend();

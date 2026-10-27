@@ -312,9 +312,12 @@ def get_workspace(ws: str):
 @app.post("/workspaces/{ws}/tasks", status_code=201)
 def create_task(ws: str, inp: TaskIn):
     role = inp.role or choose_role(inp.instruction)
-    model = "deepseek-v4-pro" if inp.complexity == "high" else MODEL
+    free_only = os.getenv("LHM_OPENROUTER_FREE_ONLY") == "1"
+    # Route even complex work to verified Free candidates on the desktop.
+    # Never silently try the historically billable DeepSeek Pro model.
+    model = "openrouter/free" if free_only else ("deepseek-v4-pro" if inp.complexity == "high" else MODEL)
     validate_model(model)
-    if inp.complexity == "high" and os.getenv("LHM_ALLOW_PRO", "0") != "1":
+    if inp.complexity == "high" and not free_only and os.getenv("LHM_ALLOW_PRO", "0") != "1":
         raise HTTPException(422, "Model nâng cao chưa được chủ doanh nghiệp bật để tránh phát sinh chi phí")
     with db() as c:
         fetch_workspace_or_404(c,ws)

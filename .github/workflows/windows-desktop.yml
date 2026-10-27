@@ -11,6 +11,11 @@ on:
       - 'robot_vision.py'
       - 'robot_sandbox.py'
       - 'worker.py'
+      - 'openrouter_provider.py'
+      - 'openrouter_free_catalog.py'
+      - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_packaged_e2e.py'
+      - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
   push:
     branches: [main]
@@ -19,6 +24,11 @@ on:
       - 'windows_native.py'
       - 'computer_executor.py'
       - 'computer_agent.py'
+      - 'openrouter_provider.py'
+      - 'openrouter_free_catalog.py'
+      - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_packaged_e2e.py'
+      - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
   workflow_dispatch:
 
@@ -83,6 +93,11 @@ jobs:
           & .\dist\lhm-runtime\lhm-runtime.exe self-test
           if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime failed" }
 
+      - name: Real packaged Windows runtime acceptance (HTTP and native auth)
+        shell: pwsh
+        timeout-minutes: 4
+        run: python scripts/windows_packaged_e2e.py
+
       - name: Install Electron desktop dependencies
         working-directory: desktop
         run: npm install --no-audit --no-fund
@@ -106,6 +121,20 @@ jobs:
           }
           Write-Host "Windows Electron installer built: $($installer.Name) ($($installer.Length) bytes)"
           Get-FileHash $installer.FullName -Algorithm SHA256
+
+      - name: Real packaged Electron GUI acceptance (6 screens, screenshot, local backend)
+        shell: pwsh
+        timeout-minutes: 8
+        run: python scripts/windows_electron_gui_e2e.py
+
+      - name: Upload actual Electron GUI screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: LHM-Robot-Desktop-Windows-GUI-QA
+          path: windows-electron-gui-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload Windows installer for owner QA
         uses: actions/upload-artifact@v4
