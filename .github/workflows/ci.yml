@@ -71,6 +71,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Validate Compose sandbox and verify runner does not receive main credentials
+        run: |
+          cp .env.example .env
+          LHM_COMPUTER_RUNNER_TOKEN=ci-example-token docker compose --profile computer config --quiet
+          LHM_COMPUTER_RUNNER_TOKEN=ci-example-token docker compose --profile computer config --format json > compose-resolved.json
+          python -c "import json; d=json.load(open('compose-resolved.json')); e=d['services']['computer'].get('environment',{}); assert 'OPENROUTER_API_KEY' not in e and 'DEEPSEEK_API_KEY' not in e and 'LHM_POSTIZ_API_KEY' not in e and 'env_file' not in d['services']['computer']; print('Sidecar env isolation PASS')"
       - name: Build Playwright Computer Runner image
         run: docker build --file Dockerfile.computer --tag lhm-computer:ci .
       - name: Authenticate runner and execute sandbox file tool
