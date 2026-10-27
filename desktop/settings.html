@@ -22,6 +22,11 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <label>DeepSeek API key <span id="deepStatus"></span><input id="deepKey" type="password" autocomplete="off" placeholder="Để trống để giữ khóa cũ"></label>
 <label class="check"><input type="checkbox" id="clearDeepseek">Xóa khóa DeepSeek đã lưu</label>
 </div>
+<div class="card"><h2>2. Điều phối Agent</h2>
+<label>Số Agent được suy luận AI đồng thời
+<select id="agentParallelism"><option value="1">1 (mặc định, tiết kiệm API)</option><option value="2">2 Agent</option><option value="3">3 Agent</option><option value="4">4 Agent (tối đa trong phiên này)</option></select></label>
+<p>Chỉ các tác vụ của phòng ban/Agent khác nhau mới chạy đồng thời. Các thao tác màn hình/chuột trên desktop Windows vẫn xử lý tuần tự, không mở 4 con trỏ độc lập. Quota model có thể hết nhanh hơn khi chạy song song.</p>
+</div>
 <div class="card"><h2>2. Robot nhìn màn hình (tùy chọn)</h2>
 <label class="check"><input type="checkbox" id="visionEnabled"> Cho phép gửi ảnh cửa sổ được chọn đến model AI để nhận dạng giao diện</label>
 <label>OpenRouter vision model cụ thể có hỗ trợ ảnh, bắt buộc :free
