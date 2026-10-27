@@ -56,6 +56,16 @@ jobs:
         run: python scripts/smoke_office3d.py
       - name: Smoke-test Agent Computer with REAL Chrome/Playwright
         run: python -m scripts.smoke_computer_browser
+      - name: Smoke-test real Team Chat in headless Chrome
+        run: python scripts/smoke_team_chat.py
+      - name: Upload Team Chat screenshot for visual QA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-chat-chrome-screenshot
+          path: team-chat-browser-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload office screenshot for visual QA
         if: always()
         uses: actions/upload-artifact@v4
