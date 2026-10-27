@@ -382,14 +382,19 @@ app.on("window-all-closed",()=>{if(process.platform!=="darwin")app.quit();});
 app.on("activate",()=>{if(!mainWindow)createMain();});
 app.whenReady().then(async()=>{
   app.setAppUserModelId("vn.lhm.robot.desktop");
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: app ready\n");
   if(!app.requestSingleInstanceLock()){app.quit();return;}
   app.on("second-instance",()=>{if(mainWindow){mainWindow.restore();mainWindow.focus();}});
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: instance lock acquired\n");
   adminToken=crypto.randomBytes(32).toString("base64url");
   runnerToken=crypto.randomBytes(32).toString("base64url");
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: registering emergency shortcut\n");
   emergencyShortcutActive=globalShortcut.register("Control+Alt+Pause",
     ()=>{emergencyStop().catch(()=>{});});
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: emergency shortcut registration returned\n");
   if(!emergencyShortcutActive)
     writeLog("electron","WARNING: Global emergency shortcut registration failed; menu stop remains available\\n");
+  if(process.env.GITHUB_ACTIONS==="true") process.stderr.write("[LHM CI] main: initializing windows and IPC\n");
   secureSession();settingsIPC();makeMenu();createMain();
   if(process.platform!=="win32"){
     dialog.showErrorBox("Chỉ hỗ trợ Windows","LHM Robot Desktop Native hiện yêu cầu Windows 10/11.");
