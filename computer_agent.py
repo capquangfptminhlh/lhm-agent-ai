@@ -413,7 +413,7 @@ async def computer_windows_screenshot(rid: str, hwnd: int):
         data=base64.b64decode(raw,validate=True)
     except (ValueError,TypeError) as exc:
         raise HTTPException(502,"Invalid Windows PNG") from exc
-    if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
         raise HTTPException(502,"Invalid Windows screenshot")
     return Response(data,media_type="image/png",headers={"Cache-Control":"no-store"})
 
