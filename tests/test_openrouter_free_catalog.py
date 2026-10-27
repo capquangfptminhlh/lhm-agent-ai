@@ -28,6 +28,8 @@ class FreeCatalogTests(unittest.TestCase):
         models = ["google/gemma-4-31b:free", "nvidia/nemotron-3:free"]
         self.assertEqual(rank_for_role(models, "director")[0], "nvidia/nemotron-3:free")
         self.assertEqual(rank_for_role(models, "content")[0], "nvidia/nemotron-3:free")
+        self.assertEqual(rank_for_role(models, "research")[0], "nvidia/nemotron-3:free")
+        self.assertEqual(rank_for_role(models, "support")[0], "nvidia/nemotron-3:free")
 
     def test_invalid_catalog_fails_closed(self):
         with self.assertRaises(ValueError):
