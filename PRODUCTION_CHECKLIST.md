@@ -37,3 +37,23 @@ Chưa nghiệm thu: đăng social thực với token khách, Postiz readback, me
 
 GitHub CI giờ còn kiểm tra **Docker image khởi động thật**, không chỉ unittest.
 Đây vẫn là local pilot, không phải SaaS an toàn để mở thẳng ra internet.
+
+## Specialist Agent Tools — phát hành chưa đủ điều kiện
+
+- [ ] Xác minh trực tiếp Crawl4AI 0.9+ local/token hoặc Crawl4AI Cloud; chỉ
+  dùng các domain HTTPS đã cho phép, kiểm tra redirect, DNS và egress phía crawler
+  để tránh SSRF; chưa kết nối crawler vào internet public tùy ý.
+- [ ] Twenty CRM: tạo thử Person trong workspace sandbox, kiểm tra id,
+  phân quyền API key và chống trùng email theo chính sách CRM.
+- [ ] Chatwoot: tạo Contact trong account thử, kiểm tra nguồn dữ liệu và
+  quyền thao tác; không gửi hội thoại chưa được đồng ý.
+- [ ] ComfyUI: kiểm thử checkpoint phù hợp với 7 node chuẩn, giới hạn GPU,
+  `prompt_id` và xác minh file ảnh qua `/history/{prompt_id}`.
+- [ ] Kiểm tra luồng Agent source `completed` → tool job → human approval →
+  worker dispatch → receipt; chỉnh sửa source phải chặn.
+- [ ] Thiết kế OAuth/Vault/RBAC riêng từng doanh nghiệp, egress policy, audit
+  không ghi PII, backup và metrics trước khi chuyển khỏi workspace pilot.
+- [ ] Không mở cổng ComfyUI/Crawl4AI tự do ngoài internet; qua proxy
+  có xác thực và rate limiting nếu bắt buộc truy cập từ xa.
+
+Các bài CI dùng mock provider và không được coi là live acceptance.
