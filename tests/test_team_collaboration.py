@@ -194,7 +194,8 @@ class AgentCollaborationTests(unittest.TestCase):
         result=team.sync_team_session(s["id"])
         self.assertEqual(result["status"],"needs_review")
         self.assertEqual(result["turn_count"],1)
-        self.assertEqual(len(result["messages"]),1)
+        detail=self.client.get(f"/workspaces/demo/team/sessions/{s['id']}").json()
+        self.assertEqual(len(detail["messages"]),1)
 
     def test_workspace_isolation(self):
         s=self.start(idem="demo-only-team")
