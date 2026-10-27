@@ -508,10 +508,12 @@ function renderProfile() {
     <p style="font-size:10px;color:#8191a3">${a.completed_tasks} việc hoàn thành trên ${a.total_tasks} việc ghi nhận</p>
     <div class="agent-actions"><button type="button" class="primarybtn" id="assignAgent">＋ Giao nhiệm vụ</button>
       <button type="button" class="secondarybtn" id="openComputer">▣ Máy tính Agent</button>
+      <button type="button" class="secondarybtn" id="openTeamChat">☏ Giao việc nhóm</button>
       ${a.task_id?'<button type="button" class="secondarybtn" id="showTask">Xem task</button>':''}
     </div>`;
   $('assignAgent').onclick=()=>showAssign(a.id);
   $('openComputer').onclick=()=>window.location.assign('/computer?workspace='+encodeURIComponent(current)+'&role='+encodeURIComponent(a.id));
+  $('openTeamChat').onclick=()=>window.location.assign('/team-chat?workspace='+encodeURIComponent(current)+'&starter='+encodeURIComponent(a.id));
   const view=$('showTask');
   if(view)view.onclick=()=>{
     const task=world.tasks.find(x=>x.id===a.task_id);
