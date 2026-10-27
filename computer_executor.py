@@ -10,7 +10,10 @@ import asyncio
 import base64
 import os
 import re
-import resource
+try:
+    import resource  # Linux-only child process limits.
+except ImportError:
+    resource = None
 import shutil
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -25,8 +28,13 @@ ROLE_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
 ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
                     "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
+WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
+                 "windows_activate","windows_click","windows_type","windows_scroll"}
 ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"}
+                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
+PAUSED = False
+MUTATIONS = {"write_file","edit_file","run_command","browser_click","browser_fill",
+             "windows_activate","windows_click","windows_type","windows_scroll"}
 MAX_FILE_BYTES = 96_000
 MAX_OUTPUT_CHARS = 12_000
 BROWSER_SESSIONS: dict[str,Any] = {}
@@ -37,7 +45,9 @@ class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
     tool: Literal["list_files","read_file","write_file","edit_file","run_command","browser_open",
-                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"]
+                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
+                  "windows_list","windows_snapshot","windows_screenshot","windows_activate",
+                  "windows_click","windows_type","windows_scroll"]
     args: dict[str,Any] = Field(default_factory=dict)
 
 def _auth(authorization: str | None) -> None:
@@ -83,6 +93,8 @@ def _allowed_domain(url: str) -> bool:
 def _child_limits() -> None:
     # POSIX runner on Linux only. Timeout and memory are defensive limits,
     # not a substitute for per-container / VM security boundaries.
+    if resource is None:
+        return
     resource.setrlimit(resource.RLIMIT_CPU,(15,16))
     resource.setrlimit(resource.RLIMIT_FSIZE,(12*1024*1024,12*1024*1024))
     resource.setrlimit(resource.RLIMIT_NOFILE,(128,128))
@@ -105,6 +117,10 @@ async def _command(ws: str,role: str,args: dict[str,Any]) -> dict:
     # child processes. Commands run as non-root inside a restricted sidecar.
     env={"PATH":"/usr/local/bin:/usr/bin:/bin","HOME":str(_home(ws,role)),
          "LANG":"C.UTF-8","PYTHONDONTWRITEBYTECODE":"1"}
+    # The host Windows runner is NOT a code sandbox. Unrestricted Python
+    # would have the logged-in user's filesystem and network privileges.
+    if os.name=="nt":
+        raise HTTPException(403,"Host Windows terminal disabled. Use Docker/VM sandbox.")
     proc=await asyncio.create_subprocess_exec(exe,*argv[1:],cwd=str(cwd),
         env=env,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
         preexec_fn=_child_limits,start_new_session=True)
@@ -136,7 +152,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             channel=os.environ.get("LHM_COMPUTER_BROWSER_CHANNEL","").strip()
             # Standard sidecar uses its bundled Chromium. CI may use the
             # system Chrome channel to exercise this real browser pathway.
-            options={"channel":channel} if channel in ("chrome","chromium") else {}
+            options={"channel":channel} if channel in ("chrome","chromium","msedge") else {}
             context=await _PLAYWRIGHT.chromium.launch_persistent_context(
                 str(profile),headless=True,accept_downloads=False,
                 args=["--no-sandbox","--disable-dev-shm-usage"],
@@ -196,7 +212,14 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
 
 async def perform(req: ToolRequest) -> dict:
     ws,role,tool,args=req.workspace_id,req.role,req.tool,req.args
+    if PAUSED and tool in MUTATIONS:
+        raise HTTPException(423,"Emergency pause is active; no mutations allowed")
     _home(ws,role)
+    if tool in WINDOWS_TOOLS:
+        if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
+            raise HTTPException(503,"Windows native control is not available")
+        from windows_native import execute
+        return execute(tool,args)
     if tool=="list_files":
         path=_safe_path(ws,role,args.get("path","."))
         if not path.is_dir():
@@ -255,7 +278,10 @@ async def perform(req: ToolRequest) -> dict:
 @runner.get("/health")
 async def health(authorization: str | None = Header(None)):
     _auth(authorization)
-    return {"ok":True,"mode":"separate_runner","agent_isolation":"directories_not_vms",
+    return {"ok":True,
+            "mode":"windows_native" if os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1" else "separate_runner",
+            "paused":PAUSED,
+            "agent_isolation":"directories_not_vms",
             "tools":sorted(ALLOWED_TOOLS)}
 
 @runner.post("/v1/tool")
@@ -270,3 +296,14 @@ async def tool_endpoint(request: ToolRequest,authorization: str | None = Header(
     except Exception as exc:
         # Do not leak browser cookies/tokens, page data or internal tracebacks.
         raise HTTPException(502,"Browser/runner action failed; inspect runner server logs") from exc
+
+class PauseIn(BaseModel):
+    paused: bool
+
+@runner.post("/v1/pause")
+async def emergency_pause(inp: PauseIn, authorization: str | None = Header(None)):
+    _auth(authorization)
+    global PAUSED
+    PAUSED = inp.paused
+    return {"paused":PAUSED,
+            "notice":"In-flight Windows actions may have already completed; pause blocks NEW mutations."}
