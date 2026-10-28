@@ -83,7 +83,7 @@ test("Electron releases ONLY owned Playwright Edge profile before stopping nativ
  assert.match(main,/await backendFetch\(NATIVE_ORIGIN/);
  assert.match(runner,/@runner\.post\("\/v1\/browser\/close"\)/);
  assert.match(runner,/_auth\(authorization\)/);
- assert.match(runner,/await context\.close\(\)/);
+ assert.match(runner,/await asyncio\.wait_for\(context\.close\(\)/);
 });
 test("Native runner receives no cloud secrets and no main env",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
