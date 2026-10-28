@@ -62,6 +62,15 @@ function saveSettings(input) {
       .split(",").map(x=>x.trim()).filter(Boolean);
   const allowedApps = String(input.allowedApps || "").toLowerCase()
       .split(",").map(x=>x.trim()).filter(Boolean);
+  const roleHosts={};
+  for(const role of ["content","sales","quality"]){
+    const key=role+"Hosts";
+    const hosts=String(input[key]||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+    if(hosts.length>20 || hosts.some(h=>!allowedHosts.includes(h))){
+      throw new Error("Website "+role+" phải là tập con của danh sách HTTPS tổng (tối đa 20).");
+    }
+    roleHosts[key]=[...new Set(hosts)];
+  }
   if (allowedHosts.length > 30 || allowedHosts.some(h=>
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
@@ -87,7 +96,7 @@ function saveSettings(input) {
     throw new Error("Vision model phải là tên model OpenRouter :free cụ thể, không dùng gói trả phí.");
   }
   const data = {
-    provider, allowedHosts:[...new Set(allowedHosts)],
+    provider, allowedHosts:[...new Set(allowedHosts)], ...roleHosts,
     allowedApps:[...new Set(allowedApps)],
     visionEnabled:input.visionEnabled===true,
     trustedEnabled:input.trustedEnabled===true,
@@ -122,6 +131,9 @@ function settingsForUI() {
   return {
     provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
+    contentHosts:Array.isArray(c.contentHosts)?c.contentHosts.join(","):"",
+    salesHosts:Array.isArray(c.salesHosts)?c.salesHosts.join(","):"",
+    qualityHosts:Array.isArray(c.qualityHosts)?c.qualityHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
@@ -159,6 +171,9 @@ function envForRuntime() {
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
+    LHM_COMPUTER_CONTENT_ALLOWED_HOSTS:(Array.isArray(c.contentHosts)?c.contentHosts:[]).join(","),
+    LHM_COMPUTER_SALES_ALLOWED_HOSTS:(Array.isArray(c.salesHosts)?c.salesHosts:[]).join(","),
+    LHM_COMPUTER_QUALITY_ALLOWED_HOSTS:(Array.isArray(c.qualityHosts)?c.qualityHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
     LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
@@ -186,6 +201,8 @@ function nativeEnv(runtimeEnv) {
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
     "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
+    "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS","LHM_COMPUTER_SALES_ALLOWED_HOSTS",
+    "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
