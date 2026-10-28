@@ -90,6 +90,12 @@ class RepairPRTests(unittest.TestCase):
                             side_effect=lambda *a,**kw:original(
                                 *a,transport=httpx.MockTransport(self.handle),**kw))
 
+    def approve(self,repair_id):
+        with patch.dict(os.environ,{"LHM_ADMIN_TOKEN":"owner-ci-admin"}):
+            return self.client.post(
+                "/workspaces/demo/repo-agents/agent-cnlg/repairs/"+repair_id+"/approve",
+                headers={"Authorization":"Bearer owner-ci-admin"})
+
     def payload(self,key="repair-10001",content='print("fixed")\n'):
         return {"workspace":"demo","diagnosis_id":self.diag_id,
                 "path":"src/fix.py","new_content":content,
@@ -118,8 +124,7 @@ class RepairPRTests(unittest.TestCase):
         self.assertFalse(staged["automatic_merge"])
         self.assertFalse(any(method!="GET" for method,_,_ in self.calls))
         with self.transport():
-            posted=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                                    staged["id"]+"/approve")
+            posted=self.approve(staged["id"])
         self.assertEqual(posted.status_code,200,posted.text)
         body=posted.json()
         self.assertEqual(body["status"],"pr_created")
@@ -127,17 +132,24 @@ class RepairPRTests(unittest.TestCase):
                          "https://github.com/capquangfptminhlh/cnlg/pull/42")
         self.assertEqual([m for m,_,_ in self.calls if m!="GET"],
                          ["POST","PUT","POST"])
-        again=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                               staged["id"]+"/approve")
+        again=self.approve(staged["id"])
         self.assertEqual(again.status_code,409)
         self.assertEqual(len(self.client.get("/workspaces/demo/repo-agents/agent-cnlg/repairs").
                              json()["repairs"]),1)
 
+    def test_local_service_without_admin_auth_must_not_write_github(self):
+        staged=self.stage()
+        response=self.client.post(
+            "/workspaces/demo/repo-agents/agent-cnlg/repairs/"+staged["id"]+"/approve")
+        self.assertEqual(response.status_code,403)
+        self.assertEqual(self.client.get(
+            "/workspaces/demo/repo-agents/agent-cnlg/repairs/"+staged["id"]
+        ).json()["status"],"awaiting_approval")
+
     def test_no_write_key_does_not_change_awaiting_approval(self):
         staged=self.stage()
         with patch.dict(os.environ,{"LHM_GITHUB_WRITE_TOKEN":""}):
-            r=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                               staged["id"]+"/approve")
+            r=self.approve(staged["id"])
         self.assertEqual(r.status_code,424)
         stored=self.client.get("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
                                staged["id"]).json()
@@ -149,8 +161,7 @@ class RepairPRTests(unittest.TestCase):
         self.calls.clear()
         self.current_head="d"*40
         with self.transport():
-            result=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                                    staged["id"]+"/approve")
+            result=self.approve(staged["id"])
         self.assertEqual(result.status_code,409)
         stored=self.client.get("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
                                staged["id"]).json()
@@ -161,8 +172,7 @@ class RepairPRTests(unittest.TestCase):
         staged=self.stage()
         self.pr_error=True
         with self.transport():
-            failed=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                                    staged["id"]+"/approve")
+            failed=self.approve(staged["id"])
         self.assertIn(failed.status_code,(424,502,503))
         stored=self.client.get("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
                                staged["id"]).json()
@@ -171,8 +181,7 @@ class RepairPRTests(unittest.TestCase):
         self.assertIsNone(stored["pull_request_number"])
         before=len(self.calls)
         with self.transport():
-            again=self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                                   staged["id"]+"/approve")
+            again=self.approve(staged["id"])
         self.assertEqual(again.status_code,409)
         self.assertEqual(len(self.calls),before)
 
@@ -191,8 +200,7 @@ class RepairPRTests(unittest.TestCase):
                                   staged["id"]+"/reject")
         self.assertEqual(rejected.status_code,200)
         self.assertEqual(rejected.json()["status"],"rejected")
-        self.assertEqual(self.client.post("/workspaces/demo/repo-agents/agent-cnlg/repairs/"+
-                                          staged["id"]+"/approve").status_code,409)
+        self.assertEqual(self.approve(staged["id"]).status_code,409)
 
     def test_wrong_workspace_agent_and_unsafe_path_never_read_github(self):
         for path in ("../secrets.py",".github/workflows/ci.yml",
