@@ -19,7 +19,7 @@ chính repository và kiểm SHA-256 khi cần.
 3. Mở **LHM Robot → Thiết lập Robot → Cài tiện ích OpenCLI vào Chrome riêng**.
    Nút này mở đúng trang [Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk).
    Trong profile Chrome chuyên dụng, anh tự xác nhận quyền extension.
-4. Trong **Thiết lập Robot**, chọn **Tìm Chrome profile đang kết nối**.
+4. Trong **Thiết lập Robot**, chọn **Khởi chạy Browser Bridge và tìm Chrome profile**. Đây là hành động chủ động của anh, chạy daemon OpenCLI trên máy cục bộ (localhost), có thể duy trì chạy sau khi đóng giao diện. Nếu daemon đã chạy, LHM không tự khởi động lại. Không tự đăng nhập Chrome.
    Phần mềm chỉ hiển thị các profile có extension OpenCLI đang kết nối,
    không tự chọn profile cá nhân. Anh chọn **đúng profile riêng của LHM**;
    ID profile sẽ tự điền vào ô. Không cần lệnh `opencli profile rename`.
