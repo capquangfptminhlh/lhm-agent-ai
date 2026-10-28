@@ -237,7 +237,7 @@ def execution_state(ws: str,order_id: str):
             ORDER BY rowid DESC LIMIT 25""",(ws,order["task_id"])).fetchall()
     jobs=[dict(x) for x in rows]
     statuses={j["status"] for j in jobs}
-    if "verified_published" in statuses:stage="completed"
+    if jobs and all(j["status"]=="verified_published" for j in jobs):stage="completed"
     elif "needs_reconciliation" in statuses:stage="needs_human"
     elif "executing" in statuses or "approved" in statuses:stage="executing"
     elif "accepted_unverified" in statuses:stage="verifying"
