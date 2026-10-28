@@ -111,3 +111,24 @@ Tuy nhiên các session vẫn hoạt động trong Chrome profile chuyên dụng
 chủ máy chọn: chúng không phải các máy ảo tách biệt, và vẫn có thể chia sẻ
 cookie/tài khoản đăng nhập bên trong cùng profile. Mọi click/fill tiếp tục
 chờ phê duyệt và kiểm lại URL/nhãn phần tử.
+
+## Website theo từng Agent — cấu hình trực tiếp trên Windows
+
+Trong **Thiết lập Robot → Windows Controller**, nhập danh sách HTTPS tổng
+(ví dụ `example.com,crm.example.com`) rồi khai báo riêng:
+
+- **Content Agent:** những trang tạo/sửa nội dung, có thể đề xuất click/fill
+  nhưng luôn cần duyệt từ anh.
+- **Sales Agent:** website CRM/kinh doanh, chỉ mở và đọc ở Computer Pilot.
+- **Quality Agent:** website cần đối chiếu, chỉ mở và đọc ở Computer Pilot.
+
+Danh sách từng vai trò phải là **tập con** của website tổng; để trống
+nghĩa là **không cấp quyền truy cập** cho vai trò đó. Cấu hình được
+truyền tới cả Windows Native Runner (Playwright + Edge) và OpenCLI;
+OpenCLI cũng kiểm tra lại URL sau điều hướng và sau thao tác.
+Phải lưu và khởi động lại Robot để kích hoạt. Các role khác chỉ dùng
+quyền chung được thiết kế riêng, không thừa hưởng quyền Content/Sales/Quality.
+
+Windows CI chạy kiểm thử `browser_snapshot` với **Edge thực** từ EXE
+đóng gói, trên trang trống `about:blank`, không đăng nhập hay mở
+Internet. Việc vào website đăng nhập của chủ máy vẫn cần nghiệm thu trên máy thật.
