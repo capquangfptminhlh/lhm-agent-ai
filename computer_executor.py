@@ -319,6 +319,7 @@ async def health(authorization: str | None = Header(None)):
             "mode":"windows_native" if os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1" else "separate_runner",
             "paused":PAUSED,
             "agent_isolation":"directories_not_vms",
+            "agent_reach_cli_installed":bool(shutil.which("agent-reach")),
             "tools":sorted(ALLOWED_TOOLS)}
 
 @runner.post("/v1/tool")
