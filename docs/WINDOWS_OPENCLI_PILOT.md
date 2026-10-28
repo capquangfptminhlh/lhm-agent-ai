@@ -19,16 +19,13 @@ chính repository và kiểm SHA-256 khi cần.
 3. Mở **LHM Robot → Thiết lập Robot → Cài tiện ích OpenCLI vào Chrome riêng**.
    Nút này mở đúng trang [Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk).
    Trong profile Chrome chuyên dụng, anh tự xác nhận quyền extension.
-4. Đặt alias profile OpenCLI là `lhm-work`. Với bản chưa hỗ trợ danh sách
-   profile trong giao diện, cách đặt tên từ CLI có thể thực hiện thủ công
-   bằng `opencli profile list` và `opencli profile rename <contextId> lhm-work`
-   nếu anh có CLI bên ngoài; nếu không, điền `contextId` thực tế
-   tương thích vào ô profile (không dùng profile mặc định).
-   Cấu hình Chrome profile là bước cần chủ máy thực hiện; không được
-   tự lấy phiên đăng nhập hoặc cookie.
-5. Trong Thiết lập Robot, nhập website HTTPS được phép (ví dụ
-   `example.com`), bật OpenCLI, nhập tên profile và danh sách host OpenCLI
-   là tập con của danh sách tổng. **Lưu và khởi động lại ứng dụng**.
+4. Trong **Thiết lập Robot**, chọn **Tìm Chrome profile đang kết nối**.
+   Phần mềm chỉ hiển thị các profile có extension OpenCLI đang kết nối,
+   không tự chọn profile cá nhân. Anh chọn **đúng profile riêng của LHM**;
+   ID profile sẽ tự điền vào ô. Không cần lệnh `opencli profile rename`.
+5. Nhập website HTTPS được phép (ví dụ `example.com`), bật OpenCLI
+   và danh sách host OpenCLI là tập con của danh sách tổng.
+   **Lưu và khởi động lại ứng dụng**.
 6. Bấm **Kiểm tra kết nối OpenCLI / Chrome**. Chỉ tiếp tục khi CLI đã cài,
    Bridge đã hoạt động và đúng profile đang kết nối. Agent Content có thể
    đề xuất click/điền sau khi anh duyệt; QA/Sales chỉ mở và đọc trang.
