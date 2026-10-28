@@ -76,6 +76,11 @@ def profile(role: str) -> dict[str,Any]:
             "verified_live":False}
 
 
+@router.get("/agents/runtime-pilot/ui")
+def runtime_pilot_page():
+    return FileResponse(Path(__file__).parent/"static"/"agent_pilot.html",media_type="text/html")
+
+
 @router.get("/agents/runtime-pilot")
 def runtime_pilot_profiles():
     return {"roles":[profile(x) for x in PILOT_TOOLS],
@@ -202,8 +207,12 @@ def execution_state(ws: str,order_id: str):
         if not order:raise HTTPException(404,"Không tìm thấy Work Order")
         task=c.execute("SELECT status,result FROM tasks WHERE id=? AND workspace_id=?",
                        (order["task_id"],ws)).fetchone()
-        qa=c.execute("SELECT verdict FROM qa_reviews WHERE source_task_id=? AND workspace_id=? ORDER BY rowid DESC LIMIT 1",
+        qa=c.execute("SELECT verdict,source_digest FROM qa_reviews WHERE source_task_id=? AND workspace_id=? ORDER BY rowid DESC LIMIT 1",
                      (order["task_id"],ws)).fetchone()
+        from publication_gate import digest
+        if qa and (not task or not isinstance(task["result"],str)
+                   or qa["source_digest"]!=digest(task["result"])):
+            qa=None
         pilot=c.execute("SELECT computer_run_id FROM pilot_computer_runs WHERE work_order_id=?",
                         (order_id,)).fetchone()
         comp=c.execute("SELECT status,error FROM computer_runs WHERE id=?",
