@@ -47,7 +47,7 @@ class OpenCLIPolicyTests(unittest.TestCase):
             with self.assertRaises(HTTPException):
                 bridge.validate(role,"opencli_click",{"ref":1,"url":"https://example.com/form","label":"Publish"})
         for args in ({"ref":True},{"ref":"1"},{"ref":0},{"ref":3001},
-                     {"ref":1,"url":"https://example.com"}):
+                     {"ref":1,"injected":"command"}):
             with self.assertRaises(HTTPException):
                 bridge.validate("content","opencli_click",{**args,"url":"https://example.com/form","label":"Publish"})
         bridge.validate("content","opencli_open",{"url":"https://example.com"})
