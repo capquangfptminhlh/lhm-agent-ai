@@ -150,7 +150,8 @@ def pilot_role_for_run(run_id: str) -> str | None:
     return row["role"] if row else None
 
 
-def assert_pilot_action(run: dict, tool: str, args: dict[str,Any]) -> None:
+def assert_pilot_action(run: dict, tool: str, args: dict[str,Any],
+                        previous: list[dict[str,Any]] | None = None) -> None:
     role=pilot_role_for_run(run["id"])
     if role is None:
         return  # legacy Computer runs retain their existing supervision gates
@@ -160,6 +161,18 @@ def assert_pilot_action(run: dict, tool: str, args: dict[str,Any]) -> None:
         raise HTTPException(403,"URL nằm ngoài whitelist host riêng của Agent "+role)
     if tool.startswith("windows_") or tool in ("run_command","sandbox_run","write_file","edit_file"):
         raise HTTPException(403,"Computer Pilot không cho thao tác máy chủ hoặc ghi mã")
+    # One-shot browser writes: same click/fill must not be silently repeated.
+    # Read-only failures get at most two matching retries, then escalate.
+    if previous is not None:
+        matching=[step for step in previous
+                  if step.get("tool")==tool and step.get("args")==args]
+        if tool in {"browser_click","browser_fill"} and any(
+                step.get("status") in {"completed","failed","needs_review"} for step in matching):
+            raise HTTPException(409,"Trùng thao tác browser có thể đã gửi dữ liệu; cần đối soát")
+        read_failures=sum(step.get("status") in {"failed","needs_review"}
+                          for step in matching)
+        if read_failures>=PILOT_RETRIES:
+            raise HTTPException(409,"Vượt giới hạn retry quan sát; cần người xử lý")
 
 
 class SocialHandoffIn(BaseModel):
