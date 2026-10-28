@@ -12,6 +12,9 @@ async function load(){
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
   $("reachEnabled").checked=x.reachEnabled===true;
+  $("opencliEnabled").checked=x.opencliEnabled===true;
+  $("opencliProfile").value=x.opencliProfile||"";
+  $("opencliHosts").value=x.opencliHosts||"";
   $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("openTest").disabled=!x.hasOpenrouterKey || !x.secureStorage;
@@ -30,6 +33,9 @@ $("save").onclick=async()=>{
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
     reachEnabled:$("reachEnabled").checked,
+    opencliEnabled:$("opencliEnabled").checked,
+    opencliProfile:$("opencliProfile").value,
+    opencliHosts:$("opencliHosts").value,
     agentParallelism:Number($("agentParallelism").value),
     openrouterKey:$("openKey").value,
     clearOpenrouter:$("clearOpenrouter").checked
