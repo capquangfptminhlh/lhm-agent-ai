@@ -75,6 +75,16 @@ test("Windows owner can scope Content Sales Quality domains; no implicit global 
    assert.match(envSection,new RegExp("LHM_COMPUTER_"+role+"_ALLOWED_HOSTS"));
  }
 });
+test("Electron releases ONLY owned Playwright Edge profile before stopping native runner",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const runner=fs.readFileSync(path.join(root,"..","computer_executor.py"),"utf8");
+ assert.match(main,/before-quit/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/browser\/close"/);
+ assert.match(main,/await backendFetch\(NATIVE_ORIGIN/);
+ assert.match(runner,/@runner\.post\("\/v1\/browser\/close"\)/);
+ assert.match(runner,/_auth\(authorization\)/);
+ assert.match(runner,/await context\.close\(\)/);
+});
 test("Native runner receives no cloud secrets and no main env",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const native=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];
