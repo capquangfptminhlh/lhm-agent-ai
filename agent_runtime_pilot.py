@@ -24,11 +24,11 @@ router = APIRouter(tags=["Agent Runtime Pilot"])
 
 PILOT_TOOLS = {
     # Browser writes are still always manually approved by Computer Agent.
-    "content": frozenset({"agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
+    "content": frozenset({"opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot","browser_click","browser_fill"}),
-    "sales": frozenset({"list_files","read_file","browser_open","browser_snapshot",
+    "sales": frozenset({"opencli_open","opencli_state","list_files","read_file","browser_open","browser_snapshot",
                          "browser_scroll","browser_screenshot"}),
-    "quality": frozenset({"agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
+    "quality": frozenset({"opencli_open","opencli_state","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot"}),
 }
 PILOT_HOST_ENV = {role: "LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS" for role in PILOT_TOOLS}
@@ -166,7 +166,7 @@ def assert_pilot_action(run: dict, tool: str, args: dict[str,Any],
     if previous is not None:
         matching=[step for step in previous
                   if step.get("tool")==tool and step.get("args")==args]
-        if tool in {"browser_click","browser_fill"} and any(
+        if tool in {"browser_click","browser_fill","opencli_click","opencli_fill"} and any(
                 step.get("status") in {"completed","failed","needs_review"} for step in matching):
             raise HTTPException(409,"Trùng thao tác browser có thể đã gửi dữ liệu; cần đối soát")
         read_failures=sum(step.get("status") in {"failed","needs_review"}
