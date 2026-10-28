@@ -17,6 +17,18 @@ test("Electron uses hardened renderer and does not expose Node to web pages",()=
  assert.match(main,/sameOrigin\(url\)/);
  assert.match(main,/setPermissionRequestHandler/);
 });
+test("OpenCLI Node and package are embedded in Windows installer; fixed extension shortcut",()=>{
+ const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
+ assert.equal(pkg.build.extraResources[1].to,"opencli-runtime");
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const settings=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
+ assert.match(main,/LHM_OPENCLI_BUNDLE_DIR/);
+ assert.match(main,/settings:opencli-extension/);
+ assert.match(main,/chromewebstore\.google\.com\/detail\/opencli/);
+ assert.match(settings,/id="opencliExtension"/);
+ assert.match(preload,/opencliExtension:.*settings:opencli-extension/);
+});
 test("OpenCLI status is settings-only and authenticated on Windows native runner",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
