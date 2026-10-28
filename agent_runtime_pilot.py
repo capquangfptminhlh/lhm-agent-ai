@@ -106,8 +106,8 @@ def start_computer_pilot(ws: str,order_id: str,inp: StartComputerIn):
         if not order:raise HTTPException(404,"Work Order không tồn tại")
         role=order["role"]
         if role not in PILOT_TOOLS:raise HTTPException(403,"Role này chưa được mở Computer Pilot")
-        if not allowed_hosts(role):
-            raise HTTPException(409,"Phải cấu hình whitelist host riêng cho "+role+" trước khi dùng browser")
+        # Read-only Agent-Reach and sandbox file observations require no browser
+        # hosts. Browser navigation still fails closed if role hosts are absent.
         existing=c.execute("SELECT computer_run_id FROM pilot_computer_runs WHERE work_order_id=?",
                            (order_id,)).fetchone()
         if existing:

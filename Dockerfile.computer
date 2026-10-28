@@ -7,6 +7,30 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m pip install --no-cache-dir "fastapi>=0.115,<1" "uvicorn>=0.30,<1" "playwright==1.58.0" "httpx>=0.27,<1"
+# Official Agent-Reach GitHub release asset, NOT the unrelated PyPI project.
+# Fixed version + GitHub-published SHA256. No setup/login/cookie import at build.
+RUN python - <<'PY'
+import hashlib, urllib.request
+url = 'https://github.com/Panniantong/Agent-Reach/releases/download/v1.6.0/agent_reach-1.6.0-py3-none-any.whl'
+path = '/tmp/agent_reach-1.6.0-py3-none-any.whl'
+with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent':'LHM-Agent-OS-Build'}), timeout=55) as response, open(path,'wb') as dest:
+    while True:
+        chunk = response.read(65536)
+        if not chunk: break
+        dest.write(chunk)
+digest = hashlib.sha256(open(path,'rb').read()).hexdigest()
+assert digest == '79455eafd94302561aa5f52b0722a0fc359279c3170a27c6990486027fd56830', digest
+print('Agent-Reach v1.6.0 verified GitHub release SHA-256', flush=True)
+PY
+RUN python -m pip install --no-cache-dir /tmp/agent_reach-1.6.0-py3-none-any.whl && rm /tmp/agent_reach-1.6.0-py3-none-any.whl
+RUN python - <<'PY'
+import json, subprocess
+for cmd in [('agent-reach','version'), ('agent-reach','channels')]:
+    p=subprocess.run(cmd,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=20)
+    d=json.loads(p.stdout)
+    assert d.get('ok') is True, d
+print('Agent-Reach CLI import + read-only channel discovery OK')
+PY
 COPY computer_executor.py agent_reach_bridge.py ./
 RUN useradd --system --uid 10001 --create-home lhmrunner \
     && mkdir -p /agent-data \
