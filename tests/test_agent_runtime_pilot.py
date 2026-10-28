@@ -127,7 +127,7 @@ class SharedAgentPilotTests(unittest.TestCase):
 
     def test_social_handoff_is_content_only_whitelisted_and_QA_passed(self):
         content=self.create_order()
-        self.assertEqual(self.handoff(content).status_code,409)
+        self.assertEqual(self.handoff(content).status_code,422)  # source AI task not completed
         self.finish_and_pass_qa(content)
         self.assertEqual(self.handoff(content,["not-approved"]).status_code,403)
         self.assertEqual(self.handoff(content,["channel-1","channel-1"]).status_code,403)
