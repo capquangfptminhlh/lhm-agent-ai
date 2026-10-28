@@ -36,6 +36,11 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <label>Đường dẫn file trong repo (ví dụ: src/app.py)
 <input id="repairPath" style="width:100%" placeholder="src/app.py" maxlength="230"></label>
 <button id="repairSource" type="button">Đọc file main để chỉnh sửa</button>
+<button id="aiSuggest" class="secondary" type="button">AI đề xuất bản vá</button>
+<button id="aiRead" class="secondary" type="button">Xem đề xuất AI</button>
+<button id="aiStage" type="button" hidden>Lưu bản vá AI để chủ duyệt</button>
+<div class="notice" id="aiStatus" role="status" aria-live="polite">AI chưa phân tích file này.</div>
+<pre id="aiDiff" hidden></pre>
 <label>Nội dung file mới (thay thế toàn bộ)
 <textarea id="sourceEditor" placeholder="Đọc file trước, rồi chỉnh sửa chính xác phần cần thay đổi..." spellcheck="false" maxlength="24000"></textarea></label>
 <label>Lý do sửa và cách kiểm tra
@@ -51,7 +56,8 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <script>
 "use strict";
 const agents=document.getElementById("agents"),result=document.getElementById("result");
-let selectedRepairAgent=null,selectedRepair=null,pendingKey=null;
+let selectedRepairAgent=null,selectedRepair=null,pendingKey=null,
+ selectedSuggestion=null,pendingAIKey=null;
 const el=id=>document.getElementById(id);
 const repairUrl=()=>"/workspaces/"+encodeURIComponent(el("workspace").value.trim())+
   "/repo-agents/"+encodeURIComponent(selectedRepairAgent.id)+"/repairs";
@@ -70,6 +76,8 @@ function displayRepair(d){
 }
 function chooseRepair(item){
  selectedRepairAgent=item;selectedRepair=null;pendingKey=null;
+ selectedSuggestion=null;pendingAIKey=null;el("aiStage").hidden=true;
+ el("aiDiff").hidden=true;el("aiStatus").textContent="AI chưa phân tích file này.";
  el("repairBox").hidden=false;
  el("repairRepo").textContent=item.repository+" / "+item.id;
  el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
@@ -200,6 +208,69 @@ el("repairSource").onclick=async()=>{
                 "\nĐang chỉnh sửa tại máy; CHƯA có ghi GitHub.");
  }catch(e){repairMessage("Không đọc được file: "+e.message)}
  finally{btn.disabled=false}
+};
+const aiRoot=()=>"/workspaces/"+encodeURIComponent(el("workspace").value.trim())+
+  "/repo-agents/"+encodeURIComponent(selectedRepairAgent.id)+"/ai-suggestions";
+function presentAI(d){
+ selectedSuggestion=d;
+ el("aiStatus").textContent="Agent: "+d.agent_id+
+   "\nFile: "+d.path+"\nWorker: "+d.task_status+
+   "\nBản vá hợp lệ: "+(d.suggestion_valid?"CÓ — chỉ là đề xuất AI":"CHƯA")+
+   (d.explanation?"\nGiải thích: "+d.explanation:"")+
+   (d.tests?"\nKiểm thử cần chạy: "+d.tests:"")+
+   (d.error?"\nLỖI: "+d.error:"")+
+   "\nGitHub chưa ghi; KHÔNG có PR tự động.";
+ el("aiDiff").hidden=!d.diff_preview;
+ el("aiDiff").textContent=d.diff_preview||"";
+ el("aiStage").hidden=!d.can_stage;
+}
+el("aiSuggest").onclick=async()=>{
+ if(!selectedRepairAgent)return;
+ const path=el("repairPath").value.trim();
+ if(!confirm("Gửi nội dung file "+path+" và báo cáo CI cho model AI đã cấu hình để đề xuất một bản vá?\nCó thể dùng quota OpenRouter. KHÔNG tự ghi GitHub."))return;
+ const button=el("aiSuggest");button.disabled=true;
+ try{
+  const diagnosis=await latestCompletedDiagnosis();
+  if(!pendingAIKey)pendingAIKey="ai-"+(globalThis.crypto?.randomUUID?.()||
+      String(Date.now())+"-"+Math.random().toString(36).slice(2));
+  const d=await request(aiRoot(),{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({workspace:el("workspace").value.trim(),
+     diagnosis_id:diagnosis.id,path,idempotency_key:pendingAIKey})
+  });
+  presentAI(d);
+ }catch(e){el("aiStatus").textContent="Chưa xác nhận gửi thành công: "+e.message+
+   "\nXem đề xuất AI đã lưu trước khi gửi lại tránh trùng việc."}
+ finally{button.disabled=false}
+};
+el("aiRead").onclick=async()=>{
+ if(!selectedRepairAgent)return;
+ const btn=el("aiRead");btn.disabled=true;
+ try{
+  const d=await request(aiRoot());
+  if(!d.suggestions.length){
+   el("aiStatus").textContent="Chưa có đề xuất AI từ Worker.";return;
+  }
+  presentAI(d.suggestions[0]);
+ }catch(e){el("aiStatus").textContent="Không xem được đề xuất: "+e.message}
+ finally{btn.disabled=false}
+};
+el("aiStage").onclick=async()=>{
+ if(!selectedRepairAgent||!selectedSuggestion?.can_stage)return;
+ if(!confirm("Chuyển diff từ AI thành đề xuất chờ CHỦ DUYỆT? Không gửi lên GitHub."))return;
+ const button=el("aiStage");button.disabled=true;
+ try{
+  const id=selectedSuggestion.id;
+  const patch=await request(aiRoot()+"/"+encodeURIComponent(id)+"/stage",
+                            {method:"POST"});
+  displayRepair(patch);
+  el("aiStatus").textContent="Đã lưu bản vá AI vào hàng chờ duyệt.\n"+
+    "Xem lại diff bên dưới trước khi bấm Duyệt tạo PR nháp.\n"+
+    "Chưa ghi GitHub.";
+  el("aiStage").hidden=true;
+ }catch(e){el("aiStatus").textContent="Không thể stage: "+e.message+
+   "\nNếu main đổi, yêu cầu AI đọc lại file mới."}
+ finally{button.disabled=false}
 };
 el("repairStage").onclick=async()=>{
  if(!selectedRepairAgent)return;
