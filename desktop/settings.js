@@ -11,6 +11,7 @@ async function load(){
   $("fullScreenEnabled").checked=x.fullScreenEnabled===true;
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
+  $("reachEnabled").checked=x.reachEnabled===true;
   $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("openTest").disabled=!x.hasOpenrouterKey || !x.secureStorage;
@@ -28,6 +29,7 @@ $("save").onclick=async()=>{
     fullScreenEnabled:$("fullScreenEnabled").checked,
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
+    reachEnabled:$("reachEnabled").checked,
     agentParallelism:Number($("agentParallelism").value),
     openrouterKey:$("openKey").value,
     clearOpenrouter:$("clearOpenrouter").checked
