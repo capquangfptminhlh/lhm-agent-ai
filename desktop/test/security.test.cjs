@@ -17,6 +17,19 @@ test("Electron uses hardened renderer and does not expose Node to web pages",()=
  assert.match(main,/sameOrigin\(url\)/);
  assert.match(main,/setPermissionRequestHandler/);
 });
+test("OpenCLI is explicit opt-in with dedicated Chrome profile and host scope",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
+ assert.match(main,/LHM_OPENCLI_ENABLED/);
+ assert.match(main,/LHM_OPENCLI_PROFILE/);
+ assert.match(main,/LHM_OPENCLI_ALLOWED_HOSTS/);
+ assert.match(main,/opencliHosts\.some\(x=>!allowedHosts\.includes\(x\)\)/);
+ for(const field of ["opencliEnabled","opencliProfile","opencliHosts"]){
+   assert.match(html,new RegExp('id="'+field+'"'));
+   assert.match(js,new RegExp(field));
+ }
+});
 test("Native runner receives no cloud secrets and no main env",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const native=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];
