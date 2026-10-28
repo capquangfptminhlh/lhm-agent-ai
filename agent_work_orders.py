@@ -52,6 +52,14 @@ class WorkOrderIn(BaseModel):
     idempotency_key: str = Field(min_length=8,max_length=100)
 
 
+class FleetIn(BaseModel):
+    """One bounded owner-authorized mission; 16 independent fixed-role drafts."""
+    mission: str = Field(min_length=10,max_length=1200)
+    context: str = Field(default="",max_length=3000)
+    idempotency_key: str = Field(min_length=8,max_length=80,
+                                  pattern=r"^[A-Za-z0-9_-]+$")
+
+
 def prepare_db() -> None:
     with db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS agent_work_orders(
@@ -68,6 +76,19 @@ def prepare_db() -> None:
         if "qa_task_id" not in cols:
             c.execute("ALTER TABLE agent_work_orders ADD COLUMN qa_task_id TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_agent_work_orders_workspace ON agent_work_orders(workspace_id,created_at)")
+        c.execute("""CREATE TABLE IF NOT EXISTS agent_fleets(
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+            mission TEXT NOT NULL, context TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL, created_at INTEGER NOT NULL,
+            UNIQUE(workspace_id,idempotency_key)
+        )""")
+        c.execute("""CREATE TABLE IF NOT EXISTS agent_fleet_orders(
+            fleet_id TEXT NOT NULL REFERENCES agent_fleets(id),
+            role TEXT NOT NULL, work_order_id TEXT NOT NULL UNIQUE
+                REFERENCES agent_work_orders(id),
+            PRIMARY KEY(fleet_id,role)
+        )""")
 
 
 def role_profile(role: str) -> dict[str,Any]:
@@ -216,47 +237,155 @@ def request_quality_review(ws: str,order_id: str):
         return {"qa_task_id":qa["id"],"status":qa["status"],"deduplicated":False}
 
 
+def _create_order_locked(c, ws: str, role: str, inp: WorkOrderIn,
+                         model: str) -> dict[str,Any]:
+    """Create one fixed-role task inside caller's existing IMMEDIATE transaction.
+
+    Shared with fleet creation so 16 tasks + membership are all-or-nothing;
+    neither path invokes a provider merely by inserting queue records.
+    """
+    job=JOBS[PRIMARY_JOBS[role]]
+    old=c.execute("""SELECT * FROM agent_work_orders
+        WHERE workspace_id=? AND role=? AND idempotency_key=?""",
+        (ws,role,inp.idempotency_key)).fetchone()
+    if old:
+        if old["objective"]!=inp.objective:
+            raise HTTPException(409,"Mã yêu cầu đã dùng với mục tiêu khác")
+        return {**_view(c,old),"deduplicated":True}
+    from app import task_record
+    instruction=(
+        f"NGHỀ CỐ ĐỊNH: {job['title']}. Chỉ thực hiện phạm vi chuyên môn này. "
+        f"MỤC TIÊU CỤ THỂ: {inp.objective}\n"
+        f"TIÊU CHÍ BÀN GIAO: {job['acceptance']}.\n"
+        "Xuất rõ 4 phần: 1. Công việc đã phân tích; 2. Sản phẩm bàn giao; "
+        "3. Nguồn hoặc dữ liệu cần xác minh; 4. Việc còn chờ kết nối/duyệt. "
+        "Không được khẳng định đã thao tác phần mềm, đăng bài, gửi tin, thay đổi dữ liệu "
+        "hoặc thực hiện giao dịch nếu không có công cụ và biên nhận thực tế."
+    )
+    task=task_record(c,ws,role,instruction,inp.context,
+                     model=model,idem="fixed:"+role+":"+inp.idempotency_key)
+    order_id=new_id()
+    c.execute("""INSERT INTO agent_work_orders
+      (id,workspace_id,role,job_id,objective,task_id,idempotency_key,created_at)
+      VALUES(?,?,?,?,?,?,?,?)""",
+      (order_id,ws,role,job["id"],inp.objective,task["id"],inp.idempotency_key,now()))
+    audit(c,ws,"agent.work_order_created",
+          f"{role}: fixed mission {job['id']} queued",task["id"])
+    row=c.execute("SELECT * FROM agent_work_orders WHERE id=?",(order_id,)).fetchone()
+    return {**_view(c,row),"deduplicated":False}
+
+
+def _selected_model() -> str:
+    import os
+    from openrouter_provider import validate_model
+    model="openrouter/free" if os.environ.get("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
+    validate_model(model)
+    return model
+
+
 @router.post("/workspaces/{ws}/agents/{role}/work-orders",status_code=201)
 def create_order(ws: str,role: str,inp: WorkOrderIn):
     prepare_db()
-    profile=role_profile(role)
-    job=JOBS[PRIMARY_JOBS[role]]
-    # Prevent a caller reusing an idempotency key to silently change a mission.
+    role_profile(role)
+    model=_selected_model()
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if not workspace(c,ws):
             raise HTTPException(404,"Không tìm thấy doanh nghiệp")
-        old=c.execute("""SELECT * FROM agent_work_orders
-            WHERE workspace_id=? AND role=? AND idempotency_key=?""",
-            (ws,role,inp.idempotency_key)).fetchone()
+        return _create_order_locked(c,ws,role,inp,model)
+
+
+def _fleet_view(c,row) -> dict[str,Any]:
+    from openrouter_provider import model_configured
+    orders=c.execute("""SELECT f.role,f.work_order_id,o.task_id,t.status,t.error
+        FROM agent_fleet_orders f
+        JOIN agent_work_orders o ON o.id=f.work_order_id
+        JOIN tasks t ON t.id=o.task_id AND t.workspace_id=?
+        WHERE f.fleet_id=?
+        ORDER BY f.rowid""",(row["workspace_id"],row["id"])).fetchall()
+    statuses=[r["status"] for r in orders]
+    errors={"failed","blocked_budget","blocked_dependency","cancelled"}
+    if any(status in errors for status in statuses):
+        phase="needs_review"
+    elif len(statuses)==len(PRIMARY_JOBS) and all(s=="completed" for s in statuses):
+        phase="drafts_ready_unverified"
+    elif any(s=="running" for s in statuses):
+        phase="working"
+    else:
+        phase="queued"
+    hb=c.execute("SELECT updated_at FROM worker_heartbeats WHERE id='default'").fetchone()
+    from core import MODEL
+    model=_selected_model()
+    return {
+        "id":row["id"],"workspace_id":row["workspace_id"],
+        "mission":row["mission"],"created_at":row["created_at"],
+        "status":phase,"role_count":len(orders),
+        "drafts_ready":sum(s=="completed" for s in statuses),
+        "queued":sum(s=="queued" for s in statuses),
+        "working":sum(s=="running" for s in statuses),
+        "needs_review":sum(s in errors for s in statuses),
+        "orders":[{"role":r["role"],"order_id":r["work_order_id"],
+                   "task_id":r["task_id"],"task_status":r["status"],
+                   "error":r["error"] if r["status"] in errors else None}
+                  for r in orders],
+        "readiness":{"api_key_configured":model_configured(model),
+                     "worker_recent_heartbeat":bool(hb and now()-int(hb["updated_at"])<45)},
+        "external_actions_performed":False,
+        "external_verification":False,
+        "notice":"16 Agent chỉ tạo bản nháp theo nghề. Mọi tác động ngoài hệ thống cần Tool Hub được duyệt và biên nhận riêng.",
+    }
+
+
+@router.post("/workspaces/{ws}/agent-fleets",status_code=201)
+def create_agent_fleet(ws: str,inp: FleetIn):
+    """Atomically queue one job for each of the 16 unique specialists.
+
+    Idempotency is per workspace+owner intent. Quota and model reservations
+    occur in the worker one task at a time, not as an unbounded batch burst.
+    """
+    prepare_db()
+    model=_selected_model()
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        if not workspace(c,ws):
+            raise HTTPException(404,"Không tìm thấy doanh nghiệp")
+        old=c.execute("SELECT * FROM agent_fleets WHERE workspace_id=? AND idempotency_key=?",
+                      (ws,inp.idempotency_key)).fetchone()
         if old:
-            if old["objective"]!=inp.objective:
-                raise HTTPException(409,"Mã yêu cầu đã dùng với mục tiêu khác")
-            result=_view(c,old)
-            result["deduplicated"]=True
-            return result
-        # Local import avoids a cyclic import with app's router registration.
-        from app import task_record
-        instruction=(
-          f"NGHỀ CỐ ĐỊNH: {job['title']}. Chỉ thực hiện phạm vi chuyên môn này. "
-          f"MỤC TIÊU CỤ THỂ: {inp.objective}\n"
-          f"TIÊU CHÍ BÀN GIAO: {job['acceptance']}.\n"
-          "Xuất rõ 4 phần: 1. Công việc đã phân tích; 2. Sản phẩm bàn giao; "
-          "3. Nguồn hoặc dữ liệu cần xác minh; 4. Việc còn chờ kết nối/duyệt. "
-          "Không được khẳng định đã thao tác phần mềm, đăng bài, gửi tin, thay đổi dữ liệu "
-          "hoặc thực hiện giao dịch nếu không có công cụ và biên nhận thực tế."
-        )
-        from openrouter_provider import validate_model
-        model="openrouter/free" if __import__("os").environ.get("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
-        validate_model(model)
-        task=task_record(c,ws,role,instruction,inp.context,
-                         model=model,idem="fixed:"+role+":"+inp.idempotency_key)
-        order_id=new_id()
-        c.execute("""INSERT INTO agent_work_orders
-          (id,workspace_id,role,job_id,objective,task_id,idempotency_key,created_at)
-          VALUES(?,?,?,?,?,?,?,?)""",
-          (order_id,ws,role,job["id"],inp.objective,task["id"],inp.idempotency_key,now()))
-        audit(c,ws,"agent.work_order_created",
-              f"{role}: fixed mission {job['id']} queued",task["id"])
-        row=c.execute("SELECT * FROM agent_work_orders WHERE id=?",(order_id,)).fetchone()
-        return {**_view(c,row),"deduplicated":False}
+            if old["mission"]!=inp.mission or old["context"]!=inp.context:
+                raise HTTPException(409,"Mã yêu cầu đã dùng với nhiệm vụ hoặc dữ liệu khác")
+            return {**_fleet_view(c,old),"deduplicated":True}
+        fid=new_id()
+        c.execute("""INSERT INTO agent_fleets(id,workspace_id,mission,context,idempotency_key,created_at)
+                     VALUES(?,?,?,?,?,?)""",
+                  (fid,ws,inp.mission,inp.context,inp.idempotency_key,now()))
+        for role in PRIMARY_JOBS:
+            order=_create_order_locked(c,ws,role,WorkOrderIn(
+                objective=inp.mission,context=inp.context,
+                idempotency_key="fleet_"+fid+"_"+role),model)
+            c.execute("""INSERT INTO agent_fleet_orders(fleet_id,role,work_order_id)
+                         VALUES(?,?,?)""",(fid,role,order["id"]))
+        audit(c,ws,"agent.fleet_queued",
+              "16 fixed-role draft tasks queued atomically; no external actions",fid)
+        record=c.execute("SELECT * FROM agent_fleets WHERE id=?",(fid,)).fetchone()
+        return {**_fleet_view(c,record),"deduplicated":False}
+
+
+@router.get("/workspaces/{ws}/agent-fleets")
+def list_agent_fleets(ws: str):
+    prepare_db()
+    with db() as c:
+        if not workspace(c,ws):raise HTTPException(404,"Không tìm thấy doanh nghiệp")
+        rows=c.execute("""SELECT * FROM agent_fleets WHERE workspace_id=?
+            ORDER BY created_at DESC,rowid DESC LIMIT 20""",(ws,)).fetchall()
+        return {"fleets":[_fleet_view(c,row) for row in rows]}
+
+
+@router.get("/workspaces/{ws}/agent-fleets/{fid}")
+def get_agent_fleet(ws: str,fid: str):
+    prepare_db()
+    with db() as c:
+        row=c.execute("SELECT * FROM agent_fleets WHERE id=? AND workspace_id=?",
+                      (fid,ws)).fetchone()
+        if not row:raise HTTPException(404,"Không tìm thấy chiến dịch Agent")
+        return _fleet_view(c,row)
