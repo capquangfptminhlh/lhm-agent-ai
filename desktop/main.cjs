@@ -66,6 +66,15 @@ function saveSettings(input) {
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
   }
+  const opencliEnabled=input.opencliEnabled===true;
+  const opencliProfile=String(input.opencliProfile||"").trim();
+  const opencliHosts=String(input.opencliHosts||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+  if(opencliEnabled && (!/^[a-zA-Z][a-zA-Z0-9_-]{1,38}$/.test(opencliProfile) || !opencliHosts.length)) {
+    throw new Error("OpenCLI cần tên Chrome profile riêng và danh sách website được phép.");
+  }
+  if(opencliHosts.some(x=>!allowedHosts.includes(x)) || opencliHosts.length>15) {
+    throw new Error("Host OpenCLI phải nằm trong danh sách HTTPS được phép ở Windows Controller.");
+  }
   const blocked=new Set(["cmd.exe","powershell.exe","pwsh.exe","wt.exe",
     "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe","wscript.exe",
     "cscript.exe","mshta.exe","rundll32.exe","python.exe","pythonw.exe","node.exe"]);
@@ -86,6 +95,7 @@ function saveSettings(input) {
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
     reachEnabled:input.reachEnabled===true,
+    opencliEnabled,opencliProfile,opencliHosts:[...new Set(opencliHosts)],
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
     deepseekKey:""
@@ -119,6 +129,9 @@ function settingsForUI() {
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
     reachEnabled:c.reachEnabled===true,
+    opencliEnabled:c.opencliEnabled===true,
+    opencliProfile:c.opencliProfile||"",
+    opencliHosts:Array.isArray(c.opencliHosts)?c.opencliHosts.join(","):"",
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
@@ -137,6 +150,9 @@ function envForRuntime() {
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
     LHM_WINDOWS_REACH_ENABLED:c.reachEnabled===true?"1":"0",
+    LHM_OPENCLI_ENABLED:c.opencliEnabled===true?"1":"0",
+    LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
+    LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
@@ -164,7 +180,8 @@ function nativeEnv(runtimeEnv) {
   for(const key of safeKeys) if(process.env[key]) env[key]=process.env[key];
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
-    "LHM_WINDOWS_REACH_ENABLED",
+    "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
+    "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
