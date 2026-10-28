@@ -53,6 +53,12 @@ class RepoAgentsTests(unittest.TestCase):
             self.assertFalse(agent["writes_enabled"])
         self.assertEqual(self.client.get("/repo-agents/bad/ci").status_code, 404)
 
+    def test_repo_agent_router_has_no_duplicate_api_routes(self):
+        paths=[(route.path,tuple(sorted(route.methods or [])))
+               for route in app.app.routes if route.path.startswith("/repo-agents")
+               or "/repo-agents/" in route.path]
+        self.assertEqual(len(paths),len(set(paths)))
+
     def test_live_check_uses_only_predefined_repo_read_only_and_returns_real_run(self):
         calls = []
         def handler(req):
