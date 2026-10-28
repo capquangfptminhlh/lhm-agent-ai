@@ -1,0 +1,183 @@
+"""Windows-only, owner-opted-in OpenCLI Browser Bridge integration.
+
+OpenCLI drives a *real connected Chrome profile*. This is not a sandbox:
+only a dedicated, explicitly selected profile, exact HTTPS host allowlists,
+scoped session names and supervised mutations are permitted. Never expose
+arbitrary OpenCLI CLI commands, adapters, eval, network, tabs or downloads.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
+
+from fastapi import HTTPException
+
+READ_ROLES=frozenset({"content","quality","sales","research","lead"})
+WRITE_ROLES=frozenset({"content"})
+READ_TOOLS=frozenset({"opencli_open","opencli_state"})
+WRITE_TOOLS=frozenset({"opencli_click","opencli_fill"})
+ALL_TOOLS=READ_TOOLS|WRITE_TOOLS
+_ID=re.compile(r"^[a-z][a-z0-9_-]{1,40}$")
+_PROFILE=re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,38}$")
+MAX_OUTPUT=40_000
+
+
+def _windows() -> bool:
+    return os.name=="nt"
+
+
+def allowed_url(url: str) -> bool:
+    if not isinstance(url,str) or len(url)>1500 or any(ord(c)<32 for c in url):
+        return False
+    try:
+        u=urlsplit(url)
+        host=(u.hostname or "").lower().rstrip(".")
+        global_hosts={h.strip().lower().rstrip(".") for h in
+                      os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if h.strip()}
+        tool_hosts={h.strip().lower().rstrip(".") for h in
+                    os.getenv("LHM_OPENCLI_ALLOWED_HOSTS","").split(",") if h.strip()}
+        return (u.scheme=="https" and host and host in global_hosts & tool_hosts
+                and u.port in (None,443) and not u.username and not u.password
+                and "\\" not in url and "#" not in url)
+    except (ValueError,TypeError):
+        return False
+
+
+def validate(role: str,tool: str,args: dict[str,Any]) -> None:
+    if role not in READ_ROLES or tool not in ALL_TOOLS:
+        raise HTTPException(403,"Agent không có quyền OpenCLI")
+    if tool in WRITE_TOOLS and role not in WRITE_ROLES:
+        raise HTTPException(403,"Chỉ Content Agent có quyền đề xuất thao tác OpenCLI")
+    if not isinstance(args,dict):
+        raise HTTPException(422,"Invalid tool args")
+    expected={"opencli_open":{"url"},"opencli_state":set(),
+              "opencli_click":{"ref"},"opencli_fill":{"ref","text"}}[tool]
+    if set(args)!=expected:
+        raise HTTPException(422,"OpenCLI tool arguments do not match the allowlist")
+    if tool=="opencli_open" and not allowed_url(args.get("url")):
+        raise HTTPException(403,"OpenCLI URL không thuộc danh sách HTTPS được cấp quyền")
+    if tool in WRITE_TOOLS:
+        n=args.get("ref")
+        if type(n) is not int or not 1<=n<=3000:
+            raise HTTPException(422,"OpenCLI requires a numeric ref from a recent state")
+    if tool=="opencli_fill":
+        value=args.get("text")
+        if (not isinstance(value,str) or not 1<=len(value)<=1200
+                or "\x00" in value or any(ord(c)<32 and c not in "\n\t" for c in value)):
+            raise HTTPException(422,"Invalid OpenCLI text")
+
+
+def _configuration() -> tuple[str,str,str]:
+    if not _windows() or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
+        raise HTTPException(503,"OpenCLI requires Windows Desktop Native Runner")
+    if os.getenv("LHM_OPENCLI_ENABLED")!="1":
+        raise HTTPException(403,"OpenCLI chưa bật trong Thiết lập Robot")
+    profile=os.getenv("LHM_OPENCLI_PROFILE","").strip()
+    if not _PROFILE.fullmatch(profile):
+        raise HTTPException(409,"Chọn Chrome profile riêng đã kết nối OpenCLI")
+    node=shutil.which("node.exe") or shutil.which("node")
+    appdata=os.environ.get("APPDATA","")
+    entry=Path(appdata)/"npm"/"node_modules"/"@jackwener"/"opencli"/"dist"/"src"/"main.js"
+    if not node or not appdata or not entry.is_file():
+        raise HTTPException(503,"Cài Node.js 20.18.1+ và npm install -g @jackwener/opencli trên Windows")
+    return node,str(entry),profile
+
+
+async def _invoke(node: str,entry: str,profile: str,session: str,
+                  action: str,*argv: str) -> dict[str,Any]:
+    # No .cmd/.bat launch or shell expansion; call npm package's JS directly.
+    # No LLM API keys, bearer token, GitHub credential variables are forwarded.
+    env={k:os.environ[k] for k in ("PATH","PATHEXT","SYSTEMROOT","WINDIR",
+         "APPDATA","LOCALAPPDATA","USERPROFILE","TEMP","TMP","COMSPEC")
+         if k in os.environ}
+    env["OPENCLI_PROFILE"]=profile
+    env["NO_COLOR"]="1"
+    cmd=[node,entry,"--profile",profile,"browser",action,*argv,
+         "--session",session]
+    try:
+        proc=await asyncio.create_subprocess_exec(
+            *cmd,env=env,stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
+        try:
+            out,_=await asyncio.wait_for(proc.communicate(),timeout=35)
+        except asyncio.TimeoutError as exc:
+            proc.kill()
+            await proc.communicate()
+            raise HTTPException(504,"OpenCLI timeout; inspect browser before retry") from exc
+    except OSError as exc:
+        raise HTTPException(503,"OpenCLI could not be started") from exc
+    if len(out)>MAX_OUTPUT:
+        raise HTTPException(502,"OpenCLI output too large")
+    try:
+        value=json.loads(out.decode("utf-8"))
+    except (UnicodeDecodeError,ValueError) as exc:
+        raise HTTPException(502,"OpenCLI returned invalid JSON") from exc
+    if not isinstance(value,dict) or value.get("ok") is not True or proc.returncode!=0:
+        raise HTTPException(502,"OpenCLI command failed; inspect Chrome Bridge/profile")
+    return value
+
+
+def _url_from_response(response: dict[str,Any]) -> str:
+    data=response.get("data")
+    return data.get("url","") if isinstance(data,dict) else ""
+
+
+def _state(response: dict[str,Any]) -> dict[str,Any]:
+    data=response.get("data")
+    url=_url_from_response(response)
+    if not allowed_url(url):
+        raise HTTPException(409,"OpenCLI page moved outside approved hosts; stop and inspect")
+    snapshot=data.get("snapshot") if isinstance(data,dict) else None
+    if not isinstance(snapshot,str):
+        raise HTTPException(502,"OpenCLI state missing a text snapshot")
+    return {"url":url,"snapshot":snapshot[:9000],
+            "truncated":len(snapshot)>9000,"verified_navigation":True}
+
+
+async def execute(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict[str,Any]:
+    validate(role,tool,args)
+    if not _ID.fullmatch(ws) or not _ID.fullmatch(role):
+        raise HTTPException(422,"Invalid workspace or role")
+    node,entry,profile=_configuration()
+    session="lhm_"+ws+"_"+role
+    async def call(action:str,*rest:str):
+        return await _invoke(node,entry,profile,session,action,*rest)
+    if tool=="opencli_open":
+        res=await call("open",args["url"])
+        if not allowed_url(_url_from_response(res)):
+            raise HTTPException(409,"OpenCLI navigation redirected outside approved hosts")
+        return {"url":_url_from_response(res),"opened":True,"provider":"OpenCLI",
+                "verified_navigation":True}
+    before=_state(await call("state"))
+    if tool=="opencli_state":
+        return {**before,"provider":"OpenCLI","read_only":True}
+    # Manual approval is separately enforced by Computer Agent for every
+    # click/fill. Preflight snapshot verifies both current URL and ref.
+    ref=args["ref"]
+    if f"[{ref}]" not in before["snapshot"]:
+        raise HTTPException(409,"OpenCLI element ref not present in current state; refresh")
+    if tool=="opencli_click":
+        result=await call("click",str(ref))
+        data=result.get("data")
+        if not isinstance(data,dict) or data.get("clicked") is not True:
+            raise HTTPException(409,"OpenCLI click not confirmed; do not auto retry")
+    else:
+        result=await call("fill",str(ref),args["text"])
+        data=result.get("data")
+        if not isinstance(data,dict) or data.get("filled") is not True or data.get("verified") is not True:
+            raise HTTPException(409,"OpenCLI fill not confirmed; do not auto retry")
+    # Postflight verifies current URL. This does not prove an external post,
+    # purchase, or CRM mutation took place.
+    after=_state(await call("state"))
+    return {"provider":"OpenCLI","action":tool,
+            "url_before":before["url"],"url_after":after["url"],
+            "confirmed_by_cli":True,"external_effect_verified":False,
+            "requires_owner_reconciliation":tool=="opencli_click"}
