@@ -391,3 +391,12 @@ Tài liệu nhà cung cấp: https://openrouter.ai/collections/free-models ,
 https://openrouter.ai/openrouter/free và https://openrouter.ai/pricing .
 Đây là adapter đã kiểm thử offline với phản hồi mô phỏng, **chưa gọi thử
 một tài khoản OpenRouter thật** và chưa chạy production tải lớn.
+
+### Windows — cấp quyền website theo từng nhân viên AI
+
+Trong **Thiết lập Robot → Windows Controller**, ngoài danh sách domain
+HTTPS tổng, cần nhập **Content Hosts, Sales Hosts, Quality Hosts**. Mỗi danh
+sách là tập con của domain tổng; không nhập = không được truy cập bằng
+Computer Pilot. Robot áp giới hạn này cho cả Microsoft Edge/Playwright
+và OpenCLI. Windows CI kiểm thử browser tool bằng Edge thật trên trang trống,
+không chứng minh kết nối website có đăng nhập.
