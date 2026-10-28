@@ -272,7 +272,7 @@ def pilot_metrics(workspace_id: str = "demo"):
     with db() as c:
         rows=c.execute("""SELECT id,role,task_id,qa_task_id FROM agent_work_orders
             WHERE workspace_id=? AND role IN ('content','sales','quality')
-            ORDER BY rowid DESC LIMIT 500""",(workspace_id,)).fetchall()
+            ORDER BY rowid DESC LIMIT 400""",(workspace_id,)).fetchall()
         task_ids=[task for row in rows for task in (row["task_id"],row["qa_task_id"]) if task]
         cost=0.0
         if task_ids:
@@ -294,6 +294,6 @@ def pilot_metrics(workspace_id: str = "demo"):
         "failed_orders":failures,
         "source_and_qa_upper_cost_usd":round(cost,7),
         "computer_model_cost_included":False,
-        "observation_limit":500,
+        "observation_limit":400,
         "note":"Only provider-verified publication counts as external completion. Computer token costs are not yet attributable per run."
     }
