@@ -316,6 +316,46 @@ async def perform(req: ToolRequest) -> dict:
         return await _browser(ws,role,tool,args)
     raise HTTPException(422,"Unsupported computer tool")
 
+async def _close_playwright_sessions() -> dict[str,int]:
+    """Release ONLY runner-owned Playwright/Edge contexts (not user Chrome).
+    
+    Called on authenticated owner shutdown and on ASGI graceful exit.
+    Do not run browser actions while closing: serialize with role locks.
+    """
+    global _PLAYWRIGHT
+    closed=0
+    for key,context in list(BROWSER_SESSIONS.items()):
+        lock=BROWSER_LOCKS.setdefault(key,asyncio.Lock())
+        async with lock:
+            try:
+                await asyncio.wait_for(context.close(),timeout=12)
+                closed+=1
+            except Exception:
+                # An unresponsive browser still requires us to stop Playwright.
+                pass
+            finally:
+                BROWSER_SESSIONS.pop(key,None)
+    if _PLAYWRIGHT is not None:
+        try:
+            await asyncio.wait_for(_PLAYWRIGHT.stop(),timeout=12)
+        except Exception:
+            pass
+        _PLAYWRIGHT=None
+    return {"contexts_closed":closed}
+
+
+@runner.post("/v1/browser/close")
+async def close_browser_sessions(authorization: str | None = Header(None)):
+    """Electron owner-only shutdown. Cannot close arbitrary external Chrome tabs."""
+    _auth(authorization)
+    return await _close_playwright_sessions()
+
+
+@runner.on_event("shutdown")
+async def close_browser_on_shutdown():
+    await _close_playwright_sessions()
+
+
 @runner.get("/health")
 async def health(authorization: str | None = Header(None)):
     _auth(authorization)
