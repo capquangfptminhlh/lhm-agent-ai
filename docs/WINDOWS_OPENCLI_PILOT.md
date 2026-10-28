@@ -70,3 +70,27 @@ network sniff, đọc cookie, chuyển tab người dùng, tải file, plugin in
 - OpenCLI là công cụ bên thứ ba; LHM **không tự cài, tự cập nhật hoặc bật
   extension**. Phiên bản API Browser Bridge có thể thay đổi. Test CI
   kiểm lệnh CLI và mã, chưa chứng minh profile đăng nhập thực tế hoạt động.
+
+## Nghiệm thu thực tế trên máy Windows
+
+1. Cài CLI và extension vào **profile riêng** như phần trên; Chrome phải đang mở
+   profile đó. Bật OpenCLI và nhập website rồi **Lưu, khởi động lại**.
+2. Trong **Thiết lập Robot**, bấm **Kiểm tra kết nối OpenCLI / Chrome**.
+   Chỉ xem là sẵn sàng khi bốn kiểm tra đều đạt: bật, đã cài đúng CLI,
+   Bridge đang chạy và **đúng profile** đang kết nối. Người dùng không cần
+   gửi ảnh chứa cookie/tokens để xử lý lỗi.
+3. Giao Content Agent đọc `opencli_state`, quan sát dòng phần tử
+   `[12] button Send` trên URL `https://example.com/form`.
+   Để đề xuất click, Agent phải cung cấp **đủ**:
+   `{"ref":12,"url":"https://example.com/form","label":"Send"}`.
+   Fill tương tự với `text`. Agent không được chỉ đoán số thứ tự.
+4. Nếu trang bị chuyển hướng hoặc phần tử thay tên trong thời gian
+   đợi duyệt, thao tác sẽ trả 409 và **không click/điền**.
+   Chủ máy xem lại trang và duyệt yêu cầu mới.
+5. Click được OpenCLI báo thành công **không chứng minh** bài đăng/đơn
+   hàng được nền tảng chấp nhận. Cần kiểm tra trạng thái trên website hoặc
+   biên nhận chính thức; không tự retry với yêu cầu có thể tạo bản ghi trùng.
+
+Các kiểm tra tự động trên GitHub không thể xác minh đăng nhập Chrome
+profile cá nhân ở máy của chủ sở hữu. Chúng chỉ xác minh mã, Windows EXE,
+CLI đã cài, giao diện và các hợp đồng giả lập.
