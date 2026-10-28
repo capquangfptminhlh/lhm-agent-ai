@@ -51,6 +51,7 @@ def main(argv=None):
         import computer_executor
         import agent_runtime_pilot
         import agent_reach_bridge
+        import opencli_windows_bridge
         import github_tool_stack
         import postiz_verifier
         import windows_native

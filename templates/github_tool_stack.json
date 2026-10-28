@@ -56,14 +56,14 @@
       "url": "https://github.com/jackwener/OpenCLI",
       "category": "Browser",
       "license_note": "Apache-2.0",
-      "status": "selected_not_connected",
-      "why": "Logged-in Chrome browser CLI. Requires extension, daemon, isolated profile and approval gate.",
+      "status": "pilot_adapter",
+      "why": "Windows opt-in OpenCLI Browser Bridge adapter: open/state plus owner-approved Content click/fill; requires separate Node/npm CLI, Chrome extension and dedicated profile; no live account verified.",
       "roles": [
         "content",
         "lead",
         "sales",
-        "support",
-        "research"
+        "research",
+        "quality"
       ]
     },
     {
