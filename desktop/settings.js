@@ -61,6 +61,13 @@ async function checkReadiness(){
  }finally{refresh.disabled=false}
 }
 $("refreshReadiness").onclick=checkReadiness;
+$("opencliExtension").onclick=async()=>{
+ const button=$("opencliExtension"),panel=$("opencliCheckResult");
+ button.disabled=true;
+ try {await window.lhmSettings.opencliExtension();panel.textContent="Đã mở Chrome Web Store. Cài extension trong Chrome profile riêng của LHM, sau đó quay lại kiểm tra kết nối.";}
+ catch(e){panel.textContent="Không mở được trang extension: "+(e.message||"lỗi hệ thống");}
+ finally {button.disabled=false;}
+};
 $("opencliCheck").onclick=async()=>{
  const button=$("opencliCheck"), panel=$("opencliCheckResult");
  button.disabled=true;panel.textContent="Đang kiểm tra Windows Controller và Chrome Bridge...";
