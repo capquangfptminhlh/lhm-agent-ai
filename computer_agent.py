@@ -290,7 +290,10 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
     token=os.environ.get("LHM_COMPUTER_RUNNER_TOKEN","").strip()
     if not token:
         raise HTTPException(503,"LHM_COMPUTER_RUNNER_TOKEN chưa được cấu hình")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(32,connect=5),trust_env=False) as client:
+    # OpenCLI runs state-before -> approved action -> state-after as separate
+    # Browser Bridge calls; default 32s would prematurely abandon real writes.
+    timeout=125 if tool.startswith("opencli_") else 32
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=5),trust_env=False) as client:
         response=await client.post(_runner_base()+"/v1/tool",
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],
