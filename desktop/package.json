@@ -65,6 +65,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
-    "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}"
+    "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}",
+    "afterPack": "scripts/ensure-opencli-bundle.cjs"
   }
 }
