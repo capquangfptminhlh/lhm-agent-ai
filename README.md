@@ -5,9 +5,9 @@ trang HTTPS được anh cấp quyền, xem các phần tử DOM, click và đi�
 bản theo tham chiếu số. **Mọi click/fill đều đợi anh duyệt từng bước.**
 QA/Sales chỉ đọc; Content mới có quyền đề xuất click/fill.
 
-Cài Node.js, cài OpenCLI `npm install -g @jackwener/opencli@2.0.2`, tự
-cài Browser Bridge extension vào **Chrome profile mới**, đặt tên profile
-và bật ở **Thiết lập Robot**. Phải thiết lập danh sách host riêng, không
+Bản Windows mới **đã đóng gói Node và OpenCLI 2.0.2**; anh không phải
+cài npm. Trong **Thiết lập Robot**, dùng nút mở Chrome Web Store để tự
+cài Browser Bridge vào **Chrome profile mới**, chọn profile và bật công cụ. Phải thiết lập danh sách host riêng, không
 tự truy cập Chrome cá nhân, không cần Linux/Docker. OpenCLI là bên thứ ba
 chạy bằng tài khoản Windows hiện tại; chưa có nghiệm thu phiên Chrome
 thật nếu chủ máy chưa thiết lập. Xem
