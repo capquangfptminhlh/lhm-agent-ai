@@ -127,6 +127,23 @@ class DiagnosticTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["daemon_started"])
         self.assertEqual([a[2:] for a in calls],[("profile","list")])
 
+    async def test_malformed_profile_reply_cannot_start_daemon(self):
+        calls=[]
+        class Fake:
+            returncode=0
+            async def communicate(self):
+                return json.dumps({"ok":True,"data":"unexpected"}).encode(),b""
+        async def spawn(*argv,**kw):
+            calls.append(argv)
+            return Fake()
+        with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1"}):
+            with patch.object(diag,"_windows",return_value=True):
+                with patch.object(diag,"_toolchain",return_value=("node.exe","main.js")):
+                    with patch.object(diag.asyncio,"create_subprocess_exec",side_effect=spawn):
+                        result=await diag.connected_profiles()
+        self.assertEqual(result["profiles"],[])
+        self.assertEqual([a[2:] for a in calls],[("profile","list")])
+
     async def test_disabled_never_launches_process(self):
         with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1","LHM_OPENCLI_ENABLED":"0"}):
             with patch.object(diag,"_windows",return_value=True):
