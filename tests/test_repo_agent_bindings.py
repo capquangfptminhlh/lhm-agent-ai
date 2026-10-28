@@ -178,6 +178,94 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertEqual(resp.json()["failed_jobs"],[])
         self.assertEqual(resp.json()["runs"][0]["conclusion"],"success")
 
+    def test_latest_green_run_does_not_hide_another_failed_main_workflow(self):
+        calls=[]
+        def handle(request):
+            calls.append(request.url.path)
+            if request.url.path.endswith("/actions/runs"):
+                return httpx.Response(200,json={"workflow_runs":[
+                    {"id":31,"name":"Deploy","status":"completed",
+                     "conclusion":"success","head_branch":"main"},
+                    {"id":30,"name":"Editorial Gate","status":"completed",
+                     "conclusion":"failure","head_branch":"main"},
+                    {"id":29,"name":"Deploy","status":"completed",
+                     "conclusion":"failure","head_branch":"main"}]})
+            if request.url.path.endswith("/actions/runs/31/jobs"):
+                return httpx.Response(200,json={"total_count":1,"jobs":[
+                    {"id":105,"name":"Deploy production","conclusion":"success","steps":[]}]})
+            if request.url.path.endswith("/actions/runs/30/jobs"):
+                return httpx.Response(200,json={"total_count":1,"jobs":[
+                    {"id":106,"name":"SEO preflight","conclusion":"failure","steps":[
+                        {"name":"Missing required URLs","conclusion":"failure"}]}]})
+            self.fail("Unexpected request "+request.url.path)
+        mock=httpx.MockTransport(handle)
+        client=httpx.AsyncClient
+        with patch.object(bindings.httpx,"AsyncClient",
+                          side_effect=lambda *a,**kw:client(*a,transport=mock,**kw)):
+            response=self.client.get("/repo-agents/agent-seo-crm/ci")
+        self.assertEqual(response.status_code,200,response.text)
+        data=response.json()
+        self.assertEqual(data["checked_run_id"],31)
+        self.assertEqual(data["overall_health"],"failure_observed")
+        self.assertEqual(data["distinct_workflows_observed"],2)
+        self.assertEqual(len(data["inspected_workflows"]),2)
+        self.assertTrue(all(x["job_details_complete"] for x in data["inspected_workflows"]))
+        self.assertEqual(len(data["failed_jobs"]),1)
+        self.assertEqual(data["failed_jobs"][0]["run_id"],30)
+        self.assertEqual(data["failed_jobs"][0]["failed_steps"],["Missing required URLs"])
+        self.assertEqual(data["failed_jobs"][0]["html_url"],
+                         "https://github.com/capquangfptminhlh/crmminh/actions/runs/30/job/106")
+        self.assertEqual(len(calls),3)
+        self.assertNotIn("/actions/runs/29/jobs",calls)
+
+    def test_overview_9_repositories_isolated_failures_and_unavailable(self):
+        async def fake(agent_id):
+            if agent_id=="agent-cnlg":
+                raise bindings.HTTPException(424,"private credentials unavailable")
+            agent=bindings.agent_profile(agent_id)
+            return {"repository":agent["repository"],
+                    "overall_health":"failure_observed" if agent_id=="agent-seo-crm" else "unverified",
+                    "runs":[{"id":7,"status":"completed","conclusion":"failure"}],
+                    "failed_jobs":[{"job":"SEO preflight"}],
+                    "inspected_workflows":[],"distinct_workflows_observed":1}
+        with patch.object(bindings,"check_ci",new=AsyncMock(side_effect=fake)) as reader:
+            response=self.client.get("/repo-agents/overview")
+        self.assertEqual(response.status_code,200,response.text)
+        out=response.json()
+        self.assertEqual(out["total"],9)
+        self.assertEqual(out["failed"],1)
+        self.assertEqual(out["unavailable"],1)
+        self.assertEqual(reader.await_count,9)
+        self.assertEqual({x["agent_id"] for x in out["repos"]},set(bindings.PROJECT_AGENTS))
+        self.assertFalse(next(x for x in out["repos"] if x["agent_id"]=="agent-cnlg")["verified"])
+
+    def test_batch_queues_only_four_failing_repos_and_deduplicates(self):
+        fail_ids=list(bindings.PROJECT_AGENTS)[:5]
+        async def fake(agent_id):
+            agent=bindings.agent_profile(agent_id)
+            failed=agent_id in fail_ids
+            return {"repository":agent["repository"],
+                    "job":agent["job"],"overall_health":"failure_observed" if failed else "unverified",
+                    "runs":[{"id":7100+list(bindings.PROJECT_AGENTS).index(agent_id),
+                             "name":"CI","status":"completed",
+                             "head_branch":"main","conclusion":"failure" if failed else "success",
+                             "head_sha":"a"*40,
+                             "html_url":"https://github.com/"+agent["repository"]+"/actions/runs/1"}],
+                    "failed_jobs":[],"inspected_workflows":[],
+                    "distinct_workflows_observed":1}
+        with patch.object(bindings,"check_ci",new=AsyncMock(side_effect=fake)):
+            first=self.client.post("/repo-agents/diagnose-failing",json={"workspace":"demo"})
+            again=self.client.post("/repo-agents/diagnose-failing",json={"workspace":"demo"})
+        self.assertEqual(first.status_code,201,first.text)
+        self.assertEqual(len(first.json()["queued"]),4)
+        self.assertEqual(first.json()["remaining_failed_repos"],1)
+        self.assertTrue(all(x["deduplicated"] for x in again.json()["queued"]))
+        with core.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM repo_agent_diagnoses").fetchone()[0],4)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],4)
+        missing=self.client.post("/repo-agents/diagnose-failing",json={"workspace":"not-found"})
+        self.assertEqual(missing.status_code,404)
+
     def test_real_worker_produces_retrievable_report_not_fake_code_changes(self):
         payload={
             "agent_id":"agent-autotax","repository":"capquangfptminhlh/autotax",
@@ -220,6 +308,10 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertIn('textContent',html)
         self.assertIn('Xem báo cáo',html)
         self.assertIn('function report(item,button)',html)
+        self.assertIn('id="allHealth"',html)
+        self.assertIn('id="allTriage"',html)
+        self.assertIn('function allHealth()',html)
+        self.assertIn('function allTriage()',html)
         node=shutil.which("node")
         if not node:
             self.skipTest("Node not installed")

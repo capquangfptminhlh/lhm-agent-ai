@@ -19,6 +19,8 @@ input{font:inherit;width:200px;padding:8px;border:1px solid #c2cede;border-radiu
 <h1>Mỗi Agent phụ trách một repository</h1>
 <p class="muted">Kiểm tra workflow và job/step lỗi từ GitHub thật. Mỗi Agent có đúng một repository và nhiệm vụ chẩn đoán CI cố định. Kết quả AI là <strong>bản nháp báo cáo</strong>, không phải bản sửa code, Pull Request hay xác nhận đã triển khai. Báo cáo lưu trong hệ thống và có thể xem lại.</p>
 <p><label for="workspace">Workspace: </label><input id="workspace" value="demo" maxlength="49"></p>
+<p><button id="allHealth" type="button">Kiểm tra CI cả 9 repository</button>
+<button id="allTriage" class="secondary" type="button">Giao AI chẩn đoán repo đang lỗi (tối đa 4)</button></p>
 <section class="grid" id="agents" aria-label="Các repository được phân công"></section>
 <div class="notice" id="result" role="status" aria-live="polite">Chọn một repository để kiểm tra trạng thái GitHub Actions.</div>
 </main>
@@ -40,8 +42,15 @@ async function probe(item,button){
   const data=await request(item.live_check_url);
   if(!data.runs.length){show("Đã đọc GitHub nhưng repository chưa có Actions run. Không giả định đã kiểm thử.", "error");return;}
   const lines=data.runs.map(x=>x.name+" · "+(x.head_branch||"branch chưa rõ")+" · "+x.status+" / "+x.conclusion+" · "+x.html_url);
-  const failed=data.job_details_verified ? (data.failed_jobs||[]).map(x=>"- "+x.job+" ("+x.conclusion+") : "+(x.failed_steps||[]).join("; ")).join("\n") : "Không đọc được job/step, KHÔNG coi là PASS.";
-  show("Agent: "+item.id+"\nRepository: "+item.repository+"\nĐã kiểm tra GitHub API (CHỈ ĐỌC)\n"+lines.join("\n")+"\n\nJob/step kiểm tra trên run mới nhất: "+(failed||"Không thấy job lỗi trong dữ liệu đã đọc."));
+  const failed=(data.failed_jobs||[]).map(x=>"- "+x.workflow+" #"+x.run_id+" / "+x.job+" ("+x.conclusion+") : "+(x.failed_steps||[]).join("; ")).join("\n");
+  const verified=(data.inspected_workflows||[]).map(x=>x.workflow+" #"+x.run_id+
+    " · job API: "+(x.job_details_verified?"đã đọc":"chưa xác minh")+
+    " · đủ job: "+(x.job_details_complete?"có":"chưa đủ")).join("\n");
+  show("Agent: "+item.id+"\nRepository: "+item.repository+
+    "\nSức khỏe các workflow đã quan sát: "+data.overall_health+
+    "\nĐã kiểm tra GitHub API (CHỈ ĐỌC)\n"+lines.join("\n")+
+    "\n\nĐộ bao phủ: "+(verified||"Chưa có job nào được đọc")+
+    "\n\nJob/step lỗi: "+(failed||"Không phát hiện lỗi trong các job đã đọc; không có nghĩa toàn bộ CI PASS."));
  }catch(e){show("KHÔNG XÁC MINH ĐƯỢC: "+e.message+"\nRepo private cần LHM_GITHUB_READ_TOKEN chỉ đọc ở backend. Không dán token vào giao diện.","error")}
  finally{button.disabled=false}
 }
@@ -83,6 +92,43 @@ async function report(item,button){
  }catch(e){show("Không đọc được báo cáo: "+e.message,"error")}
  finally{button.disabled=false}
 }
+async function allHealth(){
+ const btn=document.getElementById("allHealth");btn.disabled=true;
+ show("Đang đọc workflow trên nhánh main của 9 repository (giới hạn 3 repo đồng thời)...");
+ try{
+  const d=await request("/repo-agents/overview");
+  const rows=d.repos.map(x=>x.repository+": "+x.overall_health+
+   (x.verified?"":" — "+(x.error||"Chưa có dữ liệu"))+
+   " · "+(x.failed_jobs||[]).length+" job lỗi đã đọc");
+  show("ĐÃ KIỂM TRA "+d.total+" REPO — LỖI QUAN SÁT: "+d.failed+
+   " — KHÔNG TRUY CẬP: "+d.unavailable+
+   "\n"+rows.join("\n")+
+   "\n\nLưu ý: chỉ kiểm tra các workflow main gần nhất, không tự sửa code hoặc tạo PR.");
+ }catch(e){show("Không thể kiểm tra đầy đủ: "+e.message,"error")}
+ finally{btn.disabled=false}
+}
+async function allTriage(){
+ if(!confirm("Đọc CI của cả 9 repo rồi giao tối đa 4 tác vụ AI viết báo cáo cho repo có lỗi đã quan sát? Có thể tiêu hao quota OpenRouter. KHÔNG tự sửa code/tạo PR."))return;
+ const btn=document.getElementById("allTriage");btn.disabled=true;
+ show("Đang đọc GitHub CI và giao việc cho các repo lỗi...");
+ try{
+  const ws=document.getElementById("workspace").value.trim();
+  const d=await request("/repo-agents/diagnose-failing",{
+   method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({workspace:ws})
+  });
+  const lines=d.queued.map(x=>x.repository+": "+x.status+" · "+x.diagnosis_id+
+    (x.deduplicated?" (đã có, không tạo trùng)":""));
+  show("Giao báo cáo: "+d.queued.length+
+    "\nRepo lỗi còn lại chưa giao: "+d.remaining_failed_repos+
+    "\nRepo chưa truy cập: "+d.unavailable_repos+
+    (lines.length?"\n"+lines.join("\n"):"\nChưa có repo lỗi nào đủ bằng chứng để giao.")+
+    (d.errors.length?"\nLỗi giao việc: "+d.errors.map(x=>x.agent_id+": "+x.reason).join("; "):"")+
+    "\nKhông có thay đổi code / Pull Request. Xem chi tiết tại nút Xem báo cáo của từng repo.");
+ }catch(e){show("Chưa xác minh được tác vụ: "+e.message,"error")}
+ finally{btn.disabled=false}
+}
+document.getElementById("allHealth").onclick=allHealth;
+document.getElementById("allTriage").onclick=allTriage;
 async function init(){
  try{
   const d=await request("/repo-agents");

@@ -6,6 +6,7 @@ A GitHub link or successful AI draft is not an authenticated GitHub write.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -149,14 +150,30 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
                     "head_branch":str(branch)[:120] if isinstance(branch,str) else None,
                     "head_sha":str(run.get("head_sha") or "")[:40],
                     "html_url":"https://github.com/"+repo+"/actions/runs/"+str(run["id"])})
-            # Job summaries are a distinct GitHub API read. Failure to fetch
-            # them is surfaced as unavailable, not passed or empty evidence.
+            # Inspect the newest DISTINCT workflow runs on main. A green
+            # deploy workflow must never hide a red editorial or QA workflow.
+            distinct=[]
+            seen=set()
+            for run in results:
+                name=run["name"]
+                if name in seen:
+                    continue
+                distinct.append(run)
+                seen.add(name)
+            # Max four job-detail requests. Prioritize failing runs, then the
+            # newest otherwise, and publish the bounded coverage explicitly.
+            candidates=sorted(distinct,key=lambda r:(
+                0 if r["conclusion"] in ("failure","timed_out","action_required",
+                                        "startup_failure") else 1,
+                results.index(r)))[:4]
             failures=[]
-            details_verified=False
-            details_complete=False
-            checked_run=results[0] if results else None
-            if checked_run:
-                jobs_url=url+"/"+str(checked_run["id"])+"/jobs"
+            details=[]
+            for selected in candidates:
+                detail={"run_id":selected["id"],"workflow":selected["name"],
+                        "conclusion":selected["conclusion"],
+                        "job_details_verified":False,"job_details_complete":False,
+                        "failed_jobs":[]}
+                jobs_url=url+"/"+str(selected["id"])+"/jobs"
                 try:
                     jobs_reply=await client.get(jobs_url,params={"per_page":100},
                                                 headers=_github_headers())
@@ -165,34 +182,61 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
                         jobs=jobs_payload["jobs"]
                         if not isinstance(jobs,list):
                             raise ValueError("jobs invalid")
-                        details_verified=True
+                        detail["job_details_verified"]=True
                         total=jobs_payload.get("total_count")
-                        details_complete=(len(jobs)<100 and
-                                          (type(total) is not int or total<=len(jobs)))
+                        detail["job_details_complete"]=(
+                            type(total) is int and total<=len(jobs) and len(jobs)<=100)
                         for job in jobs[:100]:
-                            if not isinstance(job,dict):
-                                continue
-                            if job.get("conclusion") not in ("failure","timed_out",
-                                                               "action_required","startup_failure"):
+                            if (not isinstance(job,dict) or
+                                job.get("conclusion") not in (
+                                    "failure","timed_out","action_required",
+                                    "startup_failure")):
                                 continue
                             steps=job.get("steps")
                             bad_steps=[str(step.get("name") or "")[:150]
                                        for step in (steps if isinstance(steps,list) else [])[:100]
-                                       if isinstance(step,dict)
-                                       and step.get("conclusion") in ("failure","timed_out")]
+                                       if isinstance(step,dict) and
+                                       step.get("conclusion") in ("failure","timed_out")]
                             job_id=job.get("id")
-                            failures.append({
+                            failure={
+                                "run_id":selected["id"],
+                                "workflow":selected["name"],
                                 "job":str(job.get("name") or "")[:150],
                                 "conclusion":job["conclusion"],
                                 "failed_steps":bad_steps[:8],
                                 "html_url":("https://github.com/"+repo+
-                                            "/actions/runs/"+str(checked_run["id"])+
+                                            "/actions/runs/"+str(selected["id"])+
                                             "/job/"+str(job_id))
-                                            if type(job_id) is int and job_id>0 else None})
+                                            if type(job_id) is int and job_id>0 else None}
+                            detail["failed_jobs"].append(failure)
+                            failures.append(failure)
                 except (httpx.HTTPError,ValueError,TypeError,KeyError):
-                    details_verified=False
-                    details_complete=False
-                    failures=[]
+                    # Partial evidence remains explicitly unverified.
+                    detail["job_details_verified"]=False
+                    detail["job_details_complete"]=False
+                    detail["failed_jobs"]=[]
+                details.append(detail)
+            checked_run=results[0] if results else None
+            latest=next((d for d in details if checked_run and
+                         d["run_id"]==checked_run["id"]),None)
+            details_verified=bool(latest and latest["job_details_verified"])
+            details_complete=bool(latest and latest["job_details_complete"])
+            observed_failures=any(r["conclusion"] in (
+                "failure","timed_out","action_required","startup_failure")
+                for r in distinct)
+            observed_pending=any(r["status"]!="completed" for r in distinct)
+            observed_successes=bool(distinct) and all(
+                r["conclusion"]=="success" for r in distinct)
+            coverage_complete=(bool(distinct) and len(distinct)<=4
+                               and all(d["job_details_complete"] for d in details))
+            if observed_failures:
+                overall_health="failure_observed"
+            elif observed_pending:
+                overall_health="running_or_queued"
+            elif observed_successes and coverage_complete:
+                overall_health="sampled_workflows_green"
+            else:
+                overall_health="unverified"
     except httpx.HTTPError:
         raise HTTPException(503,"Không kết nối được GitHub API; không thể xác minh CI")
     return {
@@ -200,10 +244,86 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
         "connection_verified":True,"read_only":True,"branch_scope":"main","runs":results,
         "job_details_verified":details_verified,
         "job_details_complete":details_complete,
+        "workflow_coverage":"newest_distinct_workflows_up_to_4_from_latest_10_main_runs",
+        "inspected_workflows":details,
+        "distinct_workflows_observed":len(distinct),
+        "overall_health":overall_health,
         "failed_jobs":failures[:25],"checked_run_id":checked_run["id"] if checked_run else None,
         "can_create_pr":False,"code_changed":False,
         "next_step":"Chẩn đoán từ nguồn CI đã đọc; không coi đây là PR hay bản sửa code.",
     }
+
+
+async def _all_ci_snapshots() -> list[dict[str,Any]]:
+    """Nine fixed repositories; bounded parallel reads, no caller-supplied URLs."""
+    semaphore=asyncio.Semaphore(3)
+
+    async def inspect_one(agent_id: str) -> dict[str,Any]:
+        async with semaphore:
+            agent=agent_profile(agent_id)
+            try:
+                result=await check_ci(agent_id)
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":True,"overall_health":result["overall_health"],
+                        "runs":result["runs"][:4],
+                        "failed_jobs":result["failed_jobs"][:8],
+                        "inspected_workflows":result["inspected_workflows"],
+                        "distinct_workflows_observed":result["distinct_workflows_observed"]}
+            except HTTPException as error:
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":False,"overall_health":"unavailable",
+                        "error":str(error.detail)[:240],"runs":[],"failed_jobs":[]}
+            except Exception:
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":False,"overall_health":"unavailable",
+                        "error":"Lỗi kiểm tra CI; không đủ bằng chứng","runs":[],"failed_jobs":[]}
+    return await asyncio.gather(*(inspect_one(agent_id) for agent_id in PROJECT_AGENTS))
+
+
+@router.get("/repo-agents/overview")
+async def repository_agents_overview():
+    data=await _all_ci_snapshots()
+    return {"repos":data,"total":len(data),
+            "failed":sum(x["overall_health"]=="failure_observed" for x in data),
+            "unavailable":sum(not x["verified"] for x in data),
+            "notice":"Snapshot bounded to recent main runs; no code writes, no full job logs."}
+
+
+class RepoBatchDiagnosisIn(BaseModel):
+    workspace: str = "demo"
+
+
+@router.post("/repo-agents/diagnose-failing",status_code=201)
+async def diagnose_failing_repositories(inp: RepoBatchDiagnosisIn):
+    """Owner-initiated, max four confirmed-failing repos per click.
+
+    No arbitrary git writes and no assumption that a failed CI job implies
+    an autonomous patch. Each report stays bound to one repository/run.
+    """
+    prepare_db()
+    with db() as c:
+        if not workspace(c,inp.workspace):
+            raise HTTPException(404,"Workspace không tồn tại")
+    snapshots=await _all_ci_snapshots()
+    failed=[r for r in snapshots if r["verified"] and
+            r["overall_health"]=="failure_observed"]
+    queued=[]
+    errors=[]
+    for item in failed[:4]:
+        try:
+            result=await create_repository_diagnosis(
+                item["agent_id"],RepoDiagnosisIn(workspace=inp.workspace))
+            queued.append({"agent_id":item["agent_id"],"repository":item["repository"],
+                           "diagnosis_id":result["id"],"task_id":result["task_id"],
+                           "status":result["task_status"],
+                           "deduplicated":result.get("deduplicated",False)})
+        except HTTPException as error:
+            errors.append({"agent_id":item["agent_id"],
+                           "reason":str(error.detail)[:240]})
+    return {"queued":queued,"errors":errors,
+            "remaining_failed_repos":max(0,len(failed)-4),
+            "unavailable_repos":sum(not x["verified"] for x in snapshots),
+            "notice":"Only CI diagnosis drafts were queued; no GitHub code changes or PRs."}
 
 
 @router.get("/repo-agents/{agent_id}/ci")
@@ -292,12 +412,16 @@ async def create_repository_diagnosis(agent_id: str,inp: RepoDiagnosisIn):
         "\nCI conclusion: "+recent["conclusion"]+
         "\nCommit SHA: "+recent["head_sha"]+
         "\nURL: "+recent["html_url"]+
-        "\nJob details verified: "+str(ci.get("job_details_verified") is True)+
-        "\nJob details complete: "+str(ci.get("job_details_complete") is True)+
-        "\nFailing jobs/steps (if independently verified): "+
-            json.dumps(ci.get("failed_jobs",[]),ensure_ascii=False)[:1600]+
-        "\nIMPORTANT: absence of job details is NOT successful testing; "
-        "no full logs were fetched. No code or pull requests were changed."
+        "\nObserved health (sampled main workflows): "+ci.get("overall_health","unverified")+
+        "\nDistinct workflow count in sample: "+str(ci.get("distinct_workflows_observed","unknown"))+
+        "\nJob details verified (latest run): "+str(ci.get("job_details_verified") is True)+
+        "\nJob details complete (latest run): "+str(ci.get("job_details_complete") is True)+
+        "\nMain workflow run snapshot (latest 6): "+
+            json.dumps(ci["runs"][:6],ensure_ascii=False)[:1000]+
+        "\nVerified failing jobs/steps across distinct workflows: "+
+            json.dumps(ci.get("failed_jobs",[]),ensure_ascii=False)[:1200]+
+        "\nIMPORTANT: CI snapshot is bounded; no full job logs were fetched. "
+        "Never call healthy while job details are incomplete. No code/PR was changed."
     )[:2900]
     instruction=(
         "BẠN LÀ AGENT CHẨN ĐOÁN CI CỐ ĐỊNH của duy nhất repo "+
