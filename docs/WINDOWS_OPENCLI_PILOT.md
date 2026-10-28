@@ -90,3 +90,24 @@ network sniff, đọc cookie, chuyển tab người dùng, tải file, plugin in
 Các kiểm tra tự động trên GitHub không thể xác minh đăng nhập Chrome
 profile cá nhân ở máy của chủ sở hữu. Chúng chỉ xác minh mã, Windows EXE,
 CLI đã cài, giao diện và các hợp đồng giả lập.
+
+## Kiểm tra hợp đồng CLI (bản sửa Windows)
+
+OpenCLI v2.0.2 khai báo `--profile` và `--session` trực tiếp
+ở **lệnh con trình duyệt**. LHM gọi CLI theo thứ tự:
+
+```text
+node.exe <installed-opencli-main.js> browser state --profile <approved-profile> --session <run-session>
+node.exe <installed-opencli-main.js> browser open https://example.com --profile <approved-profile> --session <run-session>
+```
+
+LHM không chạy shell; các tham số được truyền dưới dạng argv cố định.
+GitHub Windows CI kiểm tra rằng các option này được bản Node/OpenCLI **trong
+bộ cài** nhận dạng, chứ không chỉ kiểm tra lệnh `--help` chung.
+
+Mỗi Computer Run được gắn **một session Chrome riêng theo UUID chạy việc**,
+tránh trường hợp hai Work Order cùng Content Agent dùng nhầm tab lẫn nhau.
+Tuy nhiên các session vẫn hoạt động trong Chrome profile chuyên dụng do
+chủ máy chọn: chúng không phải các máy ảo tách biệt, và vẫn có thể chia sẻ
+cookie/tài khoản đăng nhập bên trong cùng profile. Mọi click/fill tiếp tục
+chờ phê duyệt và kiểm lại URL/nhãn phần tử.
