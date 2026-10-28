@@ -16,7 +16,7 @@ async def inspect() -> dict[str,Any]:
     state={"enabled":os.environ.get("LHM_OPENCLI_ENABLED")=="1",
            "cli_installed":False,"bridge_running":False,
            "profile_connected":False,"ready":False,
-           "profile_alias":os.environ.get("LHM_OPENCLI_PROFILE","")[:38],
+           "profile_alias":os.environ.get("LHM_OPENCLI_PROFILE","")[:80],
            "detail":""}
     if not _windows() or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
         return {**state,"detail":"Requires local Windows Desktop"}
@@ -86,7 +86,8 @@ async def connected_profiles() -> dict[str,Any]:
         if proc.returncode!=0 or len(data)>MAX_OUTPUT:
             return {"cli_installed":True,"profiles":[],"detail":"Chrome Bridge not available"}
         envelope=json.loads(data.decode("utf-8"))
-        records=(envelope.get("data") or {}).get("profiles",[]) if envelope.get("ok") is True else []
+        payload=envelope.get("data") if isinstance(envelope,dict) and envelope.get("ok") is True else None
+        records=payload.get("profiles",[]) if isinstance(payload,dict) else []
         identities=[]
         if isinstance(records,list):
             for p in records[:30]:
