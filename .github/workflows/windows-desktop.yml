@@ -55,6 +55,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install "pyinstaller>=6.10,<7" "pillow>=11,<13" "psutil>=6,<9" "pywinauto>=0.6.9,<1" "playwright==1.58.0"
 
+      - name: Install SHA256-verified Agent-Reach from original GitHub release
+        run: python scripts/install_agent_reach_windows.py
+
       - name: Test Win32 controller safety defaults (without OS clicks)
         env:
           LHM_DB_PATH: lhm-ci-native-unit.sqlite3
@@ -83,7 +86,16 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --collect-all agent_reach --collect-submodules pywinauto desktop/runtime.py
+
+      - name: Verify Windows Agent-Reach real public GitHub search using source runtime
+        shell: pwsh
+        run: |
+          $output = python desktop/runtime.py reach-worker github "agent tools"
+          if ($LASTEXITCODE -ne 0) { throw "Windows Agent-Reach public search failed" }
+          $response = ($output | Out-String) | ConvertFrom-Json
+          if ($response.ok -ne $true -or $response.channel -ne "github" -or $response.action -ne "search") { throw "Native Windows search result schema mismatch" }
+          Write-Host "Windows source Agent-Reach public search PASS"
 
       - name: Smoke test actual bundled runtime EXE
         shell: pwsh
@@ -91,6 +103,11 @@ jobs:
           LHM_DB_PATH: lhm-ci-native-executable.sqlite3
         run: |
           & .\dist\lhm-runtime\lhm-runtime.exe self-test
+          $reachOutput = & .\dist\lhm-runtime\lhm-runtime.exe reach-worker github "agent tools"
+          if ($LASTEXITCODE -ne 0) { throw "Frozen Agent-Reach worker failed" }
+          $data = ($reachOutput | Out-String) | ConvertFrom-Json
+          if ($data.ok -ne $true -or $data.channel -ne "github" -or $data.action -ne "search") { throw "Frozen Agent-Reach search schema invalid" }
+          Write-Host "Frozen Agent-Reach public search PASS"
           if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime failed" }
 
       - name: Real packaged Windows runtime acceptance (HTTP and native auth)
