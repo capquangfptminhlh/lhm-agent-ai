@@ -11,6 +11,8 @@ import json
 import os
 import re
 import shutil
+import sys
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -43,15 +45,32 @@ def validate(role: str, args: dict[str,Any]) -> tuple[str,str]:
     return channel,query
 
 
+def _on_windows() -> bool:
+    return os.name=="nt"
+
+
 async def search(ws: str,role: str,args: dict[str,Any], home: Path) -> dict[str,Any]:
     channel,query=validate(role,args)
-    if os.name=="nt":
-        # Never spawn third-party CLIs with access to the owner's logged-in
-        # Windows session. Use a dedicated container/VM runner for this tool.
-        raise HTTPException(503,"Agent-Reach chỉ chạy trong Linux Computer Runner riêng")
-    exe=shutil.which("agent-reach")
-    if not exe:
-        raise HTTPException(503,"Agent-Reach CLI chưa được cài trong Computer Runner")
+    windows=_on_windows()
+    if windows:
+        # Explicit opt-in: separate subprocess uses the *same Windows user*,
+        # so this is NOT a sandbox; restrict to public backends only.
+        if os.environ.get("LHM_WINDOWS_REACH_ENABLED")!="1":
+            raise HTTPException(403,"Bật Agent-Reach trong Thiết lập Robot trước khi sử dụng")
+        if channel not in {"github","youtube"}:
+            raise HTTPException(403,"Windows chỉ hỗ trợ GitHub và YouTube tìm kiếm công khai")
+        if getattr(sys,"frozen",False):
+            cmd=(sys.executable,"reach-worker",channel,query)
+        else:
+            runtime=Path(__file__).resolve().parent/"desktop"/"runtime.py"
+            if not runtime.is_file():
+                raise HTTPException(503,"Không tìm thấy Windows Agent-Reach worker")
+            cmd=(sys.executable,str(runtime),"reach-worker",channel,query)
+    else:
+        exe=shutil.which("agent-reach")
+        if not exe:
+            raise HTTPException(503,"Agent-Reach CLI chưa được cài trong Computer Runner")
+        cmd=(exe,channel,"search",query)
     # An isolated home for each workspace/role. Operator installs and tests
     # the read-only CLI itself; the backend never runs setup/install/update.
     base=(home/"reach-home").resolve()
@@ -67,20 +86,43 @@ async def search(ws: str,role: str,args: dict[str,Any], home: Path) -> dict[str,
         "PYTHONIOENCODING":"utf-8","PYTHONDONTWRITEBYTECODE":"1",
         "LANG":"C.UTF-8","NO_COLOR":"1",
     }
-    # One immutable provider command; shell=False, no user-provided flags.
-    process=await asyncio.create_subprocess_exec(
-        exe,channel,"search",query,
-        cwd=str(base),env=safe_env,
-        stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,
-        start_new_session=True)
+    # Keep the third-party read-only CLI out of the user's normal profile
+    # directories. Windows processes are still same-user, NOT VM isolated.
+    if windows:
+        roaming=base/"AppData"/"Roaming"
+        local=base/"AppData"/"Local"
+        roaming.mkdir(parents=True,exist_ok=True)
+        local.mkdir(parents=True,exist_ok=True)
+        safe_env.update({
+            "USERPROFILE":str(base),"APPDATA":str(roaming),
+            "LOCALAPPDATA":str(local),"TEMP":str(local),"TMP":str(local),
+            "SYSTEMROOT":os.environ.get("SystemRoot",r"C:\\Windows"),
+            "WINDIR":os.environ.get("WINDIR",r"C:\\Windows"),
+            "PATHEXT":os.environ.get("PATHEXT",".COM;.EXE;.BAT;.CMD"),
+            "COMSPEC":os.environ.get("ComSpec",r"C:\\Windows\\System32\\cmd.exe"),
+        })
+    # The model never chooses any subprocess binary or flags. No shell.
+    # On Windows invoke only our signed/packaged Python runtime, which calls
+    # an allowlisted Agent-Reach action with a specific public API backend.
+    kwargs={"cwd":str(base),"env":safe_env,
+            "stdout":asyncio.subprocess.PIPE,
+            "stderr":asyncio.subprocess.PIPE}
+    if windows:
+        kwargs["creationflags"]=getattr(subprocess,"CREATE_NO_WINDOW",0)
+    else:
+        kwargs["start_new_session"]=True
+    process=await asyncio.create_subprocess_exec(*cmd,**kwargs)
     try:
         stdout,stderr=await asyncio.wait_for(process.communicate(),timeout=25)
     except asyncio.TimeoutError as ex:
-        import signal
-        try:
-            os.killpg(process.pid,signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        if windows:
+            process.kill()
+        else:
+            import signal
+            try:
+                os.killpg(process.pid,signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         await process.communicate()
         raise HTTPException(504,"Agent-Reach tìm kiếm quá thời gian cho phép") from ex
     if len(stdout)>MAX_JSON:

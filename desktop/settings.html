@@ -51,6 +51,8 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <p>Mặc định TẮT. Dù bật, mỗi ảnh toàn desktop vẫn cần anh duyệt từng bước trong Computer Console. Ảnh có thể chứa dữ liệu cá nhân từ ứng dụng khác; không lưu ảnh vào nhật ký.</p></div>
 <div class="card"><h2>5. Sandbox code cục bộ</h2>
 <label class="check"><input type="checkbox" id="sandboxEnabled"> Cho phép Robot dùng Docker sandbox để chạy Python/kiểm thử (luôn phải duyệt từng lần)</label>
+<label class="check"><input type="checkbox" id="reachEnabled"> Bật Agent-Reach tìm kiếm GitHub/YouTube công khai ngay trên Windows (không yêu cầu Docker)</label>
+<p class="notice">Agent-Reach chạy bằng tiến trình riêng với thư mục cấu hình tách biệt nhưng vẫn dùng quyền tài khoản Windows hiện tại. Chỉ bật nếu anh đồng ý; không tự đọc cookie, không đăng bài, không truyền API key. Cần khởi động lại ứng dụng sau khi bật.</p>
 <p>Không bắt buộc nếu chỉ muốn điều khiển ứng dụng Windows. Chức năng này yêu cầu Docker Desktop đã cài và image <code>python:3.12-slim</code> được tải sẵn. Sandbox không có mạng, không nhận API key, chỉ mount thư mục file riêng của Agent. Không bao giờ chạy Python do AI sinh trực tiếp trên Windows.</p>
 </div>
 <div class="card"><h2>6. Windows Controller</h2>

@@ -20,8 +20,30 @@ if not getattr(sys,"frozen",False):
 
 def main(argv=None):
     cli=argparse.ArgumentParser(description="LHM Robot Desktop trusted local runtime")
-    cli.add_argument("mode",choices=["api","worker","native","self-test"])
-    mode=cli.parse_args(argv).mode
+    cli.add_argument("mode",choices=["api","worker","native","self-test","reach-worker"])
+    mode, rest = cli.parse_known_args(argv)
+    mode=mode.mode
+    if mode=="reach-worker":
+        # Invoked only by the local native computer runner. The model cannot
+        # select an arbitrary command/URL/backend, and no user Chrome profile
+        # is imported. Child env is scrubbed by agent_reach_bridge.
+        if len(rest)!=2:
+            raise SystemExit("Expected channel and query")
+        channel,query=rest
+        from agent_reach_bridge import validate
+        from agent_reach.runtime.cli import main as reach_main
+        validate("research",{"channel":channel,"query":query})
+        if channel not in {"github","youtube"}:
+            raise SystemExit("Windows public-search channel is not enabled")
+        if channel=="youtube":
+            import json
+            from windows_public_video import search as public_video_search
+            response=public_video_search(query)
+            print(json.dumps(response,ensure_ascii=False),flush=True)
+            raise SystemExit(0 if response["ok"] else 1)
+        raise SystemExit(reach_main([channel,"search",query,"--backend","github-api"]))
+    if rest:
+        raise SystemExit("Unexpected runtime arguments")
     if mode=="self-test":
         import app
         import team_collaboration

@@ -1,3 +1,32 @@
+## Windows: Agent-Reach tìm kiếm ngay trong LHM Robot Desktop (không cần Linux)
+
+Bản Windows đóng gói có Agent-Reach v1.6.0 từ **wheel GitHub chính thức**,
+kiểm tra SHA-256 trước khi đưa vào EXE. Vào **LHM Robot → Thiết lập Robot**,
+tích **Bật Agent-Reach tìm kiếm GitHub/YouTube công khai ngay trên Windows**,
+lưu rồi khởi động lại. Agent Content, Quality, Research và các vai trò có
+quyền được gọi `agent_reach_search` khi làm Work Order qua Computer Agent.
+
+- **Không cần Docker / Linux** cho tìm kiếm GitHub và YouTube dạng công khai.
+  Các tính năng yêu cầu sandbox chạy mã vẫn có thể cần Docker riêng.
+- Không nhập tài khoản hay mật khẩu GitHub/YouTube; phiên Chrome cá nhân không
+  tự động được sao chép. Mọi kết quả tìm kiếm chỉ là dữ liệu từ nguồn ngoài,
+  phải kiểm chứng trước khi sử dụng.
+- Công cụ là một **tiến trình phụ** dưới tài khoản Windows hiện tại, có HOME,
+  APPDATA, LOCALAPPDATA riêng và không nhận OpenRouter key/runner token, nhưng
+  **không phải VM/security isolation**. Chỉ bật trên máy anh tin cậy; tắt
+  tùy chọn nếu không sử dụng.
+- Không có quyền đăng Facebook/TikTok/Zalo, không click Chrome hay gọi lệnh
+  shell qua công cụ này. Các thao tác khác của Robot giữ phê duyệt hiện tại.
+- Bản Windows thử nghiệm chỉ hỗ trợ **GitHub và YouTube** với backend công
+  khai xác định; Bilibili và social đăng nhập không được kích hoạt Windows.
+- Mã nguồn chạy trên Windows trước khi đóng gói có thể cài Agent-Reach bằng
+  `python scripts/install_agent_reach_windows.py` (người vận hành chạy
+  một lần; không cho AI tự cài).
+
+Xem `docs/WINDOWS_AGENT_REACH.md` để kiểm tra EXE, nguồn tải và giới hạn.
+
+---
+
 ## OpenRouter Free — kiểm tra API ngay trên Electron và GitHub
 
 Trong **LHM Robot Desktop → LHM Robot → Thiết lập Robot** anh lưu
