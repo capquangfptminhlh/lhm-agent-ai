@@ -26,6 +26,10 @@ from openrouter_provider import call_free_model, is_free_model, local_free_quota
 
 router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
+  "opencli_open":"Open a HTTPS URL in owner-approved dedicated Chrome profile; {url: https://allowed.host/path}",
+  "opencli_state":"Read the current allowlisted browser URL and numbered DOM elements; {}",
+  "opencli_click":"Click one numeric [ref] from current OpenCLI state; {ref: integer}; always requires owner approval",
+  "opencli_fill":"Fill one numeric [ref] from current OpenCLI state; {ref: integer, text: string}; always requires owner approval",
   "agent_reach_search":"Read-only cross-platform search via separately installed Agent-Reach; {channel: github|youtube|bilibili, query: text}; no login or posting.",
   "list_files":"List files under this Agent's sandbox directory; {path?: relative dir}",
   "read_file":"Read UTF-8 file inside sandbox; {path: relative file}",
@@ -56,7 +60,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -67,7 +71,7 @@ SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","win
 # post content and a fill can place data into an external form — the
 # decision's "send/post data out" category — and the two cannot be told
 # apart from routine clicks in advance, so the whole surface stays gated.
-ALWAYS_APPROVAL_TOOLS={"run_command","sandbox_run","vision_observe","vision_locate",
+ALWAYS_APPROVAL_TOOLS={"opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
                        "browser_click","browser_fill"}
@@ -563,6 +567,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
             from agent_runtime_pilot import assert_pilot_action
             assert_pilot_action(run,tool,args,steps)
+            if tool.startswith("opencli_"):
+                from opencli_windows_bridge import validate as validate_opencli
+                validate_opencli(run["role"],tool,args)
             if tool=="agent_reach_search":
                 from agent_reach_bridge import validate as validate_reach
                 validate_reach(run["role"],args)
@@ -589,6 +596,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # Bound pilot policy is enforced again for previously-approved steps.
         from agent_runtime_pilot import assert_pilot_action
         assert_pilot_action(run,tool,args)
+        if tool.startswith("opencli_"):
+            from opencli_windows_bridge import validate as validate_opencli
+            validate_opencli(run["role"],tool,args)
         if tool=="agent_reach_search":
             from agent_reach_bridge import validate as validate_reach
             validate_reach(run["role"],args)
