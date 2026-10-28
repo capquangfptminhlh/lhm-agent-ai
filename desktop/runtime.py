@@ -35,8 +35,13 @@ def main(argv=None):
         validate("research",{"channel":channel,"query":query})
         if channel not in {"github","youtube"}:
             raise SystemExit("Windows public-search channel is not enabled")
-        backend={"github":"github-api","youtube":"yt-dlp"}[channel]
-        raise SystemExit(reach_main([channel,"search",query,"--backend",backend]))
+        if channel=="youtube":
+            import json
+            from windows_public_video import search as public_video_search
+            response=public_video_search(query)
+            print(json.dumps(response,ensure_ascii=False),flush=True)
+            raise SystemExit(0 if response["ok"] else 1)
+        raise SystemExit(reach_main([channel,"search",query,"--backend","github-api"]))
     if rest:
         raise SystemExit("Unexpected runtime arguments")
     if mode=="self-test":
