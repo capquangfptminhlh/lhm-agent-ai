@@ -29,6 +29,8 @@ và repository. Sau khi Agent có **báo cáo CI đã hoàn tất**, chủ máy:
   đúng repository cần sửa. Không nhập token vào textbox của UI.
 - Token đọc `LHM_GITHUB_READ_TOKEN` **không đủ** cấp quyền ghi.
 - Token chưa có → HTTP 424, đề xuất giữ nguyên trạng thái chờ duyệt.
+- Phải đặt `LHM_ADMIN_TOKEN` và dùng Basic/Bearer auth trên local backend;
+  khi admin token chưa cấu hình, thao tác **ghi** GitHub bị chặn HTTP 403.
 - Chặn đường dẫn chứa `..`, `.github/`, dữ liệu có tên nhạy cảm và các
   loại file ngoài whitelist; chặn binary/file lớn.
 - API dùng cùng bảo vệ localhost/admin token của FastAPI hiện tại.
