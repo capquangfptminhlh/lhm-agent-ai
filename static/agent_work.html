@@ -34,6 +34,12 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 </section>
 <section class="panel"><h2>Danh sách nghề và công cụ</h2><div id="roles"></div></section>
 </div>
+<section class="panel"><h2>Giao việc đồng loạt 16 Agent</h2>
+<p class="muted">Dùng mục tiêu và dữ liệu đầu vào ở ô bên trên. Một lần bấm tạo đủ 16 nhiệm vụ cố định vào hàng đợi Worker; không tự gửi bài, giao dịch hoặc tiêu tiền. OpenRouter Free có quota, công việc sẽ được xử lý theo giới hạn Worker.</p>
+<button id="fleetStart" type="button">Giao cả 16 Agent</button>
+<button id="fleetRefresh" style="background:#637b93" type="button">Xem tiến độ 16 Agent</button>
+<div id="fleetStatus" class="notice" role="status" aria-live="polite">Chưa giao chiến dịch 16 Agent.</div>
+</section>
 <section class="panel"><h2>Agent chuyên trách 9 dự án GitHub của anh</h2>
 <p class="muted">Mỗi Agent dự án chỉ đọc GitHub Actions của một repo đã gán cố định. Bấm kiểm tra để lấy trạng thái CI thật, rồi có thể giao Worker viết bản chẩn đoán. Không tự sửa mã/PR. Repo riêng tư cần quyền GitHub đọc qua cấu hình cục bộ, không nhập token lên bảng này.</p>
 <div id="projectAgents" class="layout"></div>
@@ -42,7 +48,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 </main>
 <script>
 "use strict";
-const $=id=>document.getElementById(id);let agents=[],selectedOrder=null,selectedRecord=null;
+const $=id=>document.getElementById(id);let agents=[],selectedOrder=null,selectedRecord=null,selectedFleet=null;
 const req=async(url,options)=>{
   const response=await fetch(url,{...options,cache:"no-store"});
   let data=await response.json().catch(()=>({detail:"Lỗi không đọc được dữ liệu từ backend"}));
@@ -143,6 +149,44 @@ $("submit").onclick=async()=>{
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
  finally{button.disabled=false;}
 };
+const wsRoot=()=>"/workspaces/"+encodeURIComponent($("ws").value.trim());
+async function loadFleet(){
+ try{
+  const data=selectedFleet
+   ? await req(wsRoot()+"/agent-fleets/"+encodeURIComponent(selectedFleet))
+   : await req(wsRoot()+"/agent-fleets");
+  const fleet=selectedFleet?data:(data.fleets||[])[0];
+  if(!fleet){$("fleetStatus").textContent="Chưa có chiến dịch 16 Agent.";return;}
+  selectedFleet=fleet.id;
+  const rows=(fleet.orders||[]).map(x=>x.role+": "+x.task_status+
+      (x.error?" ("+x.error+")":"")).join("\n");
+  $("fleetStatus").textContent="Mã chiến dịch: "+fleet.id+
+    "\nTiến độ: "+fleet.status+" — "+fleet.drafts_ready+"/"+fleet.role_count+" bản nháp"+
+    "\nĐang chạy: "+fleet.working+" · Đang chờ: "+fleet.queued+
+    " · Cần xử lý: "+fleet.needs_review+
+    "\nWorker heartbeat: "+(fleet.readiness.worker_recent_heartbeat?"Có":"Chưa có")+
+    "\nAPI key model: "+(fleet.readiness.api_key_configured?"Có":"Chưa có")+
+    "\nTác động bên ngoài: CHƯA XÁC MINH\n"+rows;
+ }catch(e){$("fleetStatus").textContent="Lỗi đọc chiến dịch: "+e.message}
+}
+$("fleetStart").onclick=async()=>{
+ const mission=$("objective").value.trim(),context=$("context").value.trim();
+ if(mission.length<10){$("fleetStatus").textContent="Nhập mục tiêu ít nhất 10 ký tự vào ô Mục tiêu cụ thể.";return;}
+ if(!confirm("Tạo 16 nhiệm vụ AI thật cho 16 vai trò cố định? Có thể sử dụng quota OpenRouter theo lượt. KHÔNG tự đăng/gửi/chi tiền."))return;
+ const btn=$("fleetStart");btn.disabled=true;
+ const idem="fleet-"+(globalThis.crypto?.randomUUID?.()||String(Date.now())+"-"+Math.random().toString(36).slice(2));
+ try{
+  const fleet=await req(wsRoot()+"/agent-fleets",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({mission,context,idempotency_key:idem})
+  });
+  selectedFleet=fleet.id;await loadFleet();
+ }catch(e){
+  $("fleetStatus").textContent="Chưa xác nhận giao thành công: "+e.message+
+    "\nNếu timeout, bấm Xem tiến độ để đối chiếu trước khi giao lại, tránh trùng việc.";
+ }finally{btn.disabled=false}
+};
+$("fleetRefresh").onclick=loadFleet;
 async function loadProjects(){
  const el=$("projectAgents"),status=$("projectStatus");
  try{
@@ -173,17 +217,31 @@ async function loadProjects(){
      const r=await req("/repo-agents/"+encodeURIComponent(a.id)+"/diagnose",{
       method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({workspace:$("ws").value.trim()})});
-     selectedOrder=r.id;
      status.textContent="Đã giao Worker chẩn đoán CI thật của "+r.repository+
-       "\nTask: "+r.task_id+"\nChưa sửa code / chưa tạo PR.";
-     await loadResult();
+       "\nTask: "+r.task_id+"\nBáo cáo: "+r.id+
+       "\nTrạng thái: "+r.task_status+
+       "\nChưa sửa code / chưa tạo PR. Bấm Xem báo cáo Repo để cập nhật.";
+
     }catch(e){status.textContent="Chưa giao được: "+e.message}
     finally{diagnose.disabled=false}
    };
-   item.append(label,repo,check,diagnose);el.appendChild(item);
+   const view=document.createElement("button");view.textContent="Xem báo cáo Repo";
+   view.onclick=async()=>{
+    view.disabled=true;
+    try{
+     const list=await req(wsRoot()+"/repo-agents/"+encodeURIComponent(a.id)+"/diagnoses");
+     const d=(list.diagnoses||[])[0];
+     status.textContent=d?("Repo: "+d.repository+"\nTask: "+d.task_id+
+       "\nTrạng thái: "+d.task_status+
+       "\nBáo cáo:\n"+(d.report||"Chưa có kết quả từ Worker")+
+       "\nĐã tạo PR: KHÔNG"):"Repo này chưa có bản chẩn đoán.";
+    }catch(e){status.textContent="Không đọc được báo cáo: "+e.message}
+    finally{view.disabled=false}
+   };
+   item.append(label,repo,check,diagnose,view);el.appendChild(item);
   }
   status.textContent="Đã nạp "+d.agents.length+" Agent dự án. Kiểm tra từng repo để lấy dữ liệu CI thật.";
  }catch(e){status.textContent="Không tải được Agent dự án: "+e.message}
 }
-init();loadProjects();
+init();loadProjects();loadFleet();
 </script></body></html>
