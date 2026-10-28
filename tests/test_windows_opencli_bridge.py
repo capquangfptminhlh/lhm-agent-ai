@@ -66,6 +66,29 @@ class OpenCLIPolicyTests(unittest.TestCase):
         self.assertNotIn("opencli_open",computer_agent._system_prompt("finance"))
         self.assertIn("opencli_open",computer_agent._system_prompt("content"))
 
+    def test_detects_global_node_prefix_without_appdata_install(self):
+        with tempfile.TemporaryDirectory(prefix="node-global-") as tmp:
+            node=Path(tmp)/"node.exe"
+            node.write_bytes(b"")
+            pkg=Path(tmp)/"node_modules"/"@jackwener"/"opencli"
+            entry=pkg/"dist"/"src"/"main.js"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("console.log('test')",encoding="utf-8")
+            (pkg/"package.json").write_text(json.dumps({
+                "name":"@jackwener/opencli","version":"2.0.2"}),encoding="utf-8")
+            with patch.object(bridge,"_windows",return_value=True):
+                with patch.object(bridge.shutil,"which",return_value=str(node)):
+                    with patch.dict(os.environ,{"APPDATA":str(Path(tmp)/"elsewhere")}):
+                        result=bridge._configuration()
+            self.assertEqual(result,(str(node),str(entry),"lhm-work"))
+            (pkg/"package.json").write_text(json.dumps({
+                "name":"attacker/fake-cli","version":"2.0.2"}),encoding="utf-8")
+            with patch.object(bridge,"_windows",return_value=True):
+                with patch.object(bridge.shutil,"which",return_value=str(node)):
+                    with patch.dict(os.environ,{"APPDATA":str(Path(tmp)/"elsewhere")}):
+                        with self.assertRaises(HTTPException):
+                            bridge._configuration()
+
     def test_no_implicit_profile_or_missing_cli(self):
         with patch.object(bridge,"_windows",return_value=True):
             with patch.dict(os.environ,{"LHM_OPENCLI_PROFILE":""}):
