@@ -47,6 +47,7 @@ _PLAYWRIGHT = None
 
 class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
+    run_id: str | None = Field(default=None,pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
     tool: Literal["opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
@@ -251,7 +252,7 @@ async def perform(req: ToolRequest) -> dict:
     _home(ws,role)
     if tool.startswith("opencli_"):
         from opencli_windows_bridge import execute as opencli_execute
-        return await opencli_execute(ws,role,tool,args)
+        return await opencli_execute(ws,role,tool,args,run_id=req.run_id)
     if tool=="agent_reach_search":
         from agent_reach_bridge import search as agent_reach_search
         return await agent_reach_search(ws,role,args,_home(ws,role))
