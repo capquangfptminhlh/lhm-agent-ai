@@ -204,6 +204,42 @@ class SharedAgentPilotTests(unittest.TestCase):
         v=asyncio.run(postiz_verifier.verify_postiz_receipt(data,spoofed))
         self.assertFalse(v["verified"])
 
+    def test_no_sales_or_unlisted_channel_can_publish_via_generic_toolhub_api(self):
+        sales=self.create_order("sales")
+        self.finish_and_pass_qa(sales)
+        direct=self.client.post("/workspaces/demo/tool-jobs",json={
+            "action":"postiz.create_post",
+            "payload":{"mode":"draft","content":"Nội dung demo chính xác, đang chờ kiểm tra thật.",
+                       "channel_ids":["channel-1"],"source_task_id":sales["task_id"]},
+            "idempotency_key":"impersonated-sales-postiz"})
+        self.assertEqual(direct.status_code,403,direct.text)
+        content=self.create_order("content")
+        self.finish_and_pass_qa(content)
+        other=self.client.post("/workspaces/demo/tool-jobs",json={
+            "action":"postiz.create_post",
+            "payload":{"mode":"draft","content":"Nội dung demo chính xác, đang chờ kiểm tra thật.",
+                       "channel_ids":["unlisted-chan"],"source_task_id":content["task_id"]},
+            "idempotency_key":"content-wrong-channel"})
+        self.assertEqual(other.status_code,403,other.text)
+
+    def test_retry_budget_and_work_order_observability(self):
+        order=self.create_order("content")
+        start=self.client.post("/workspaces/demo/agent-work-orders/"+order["id"]+
+                               "/computer-pilot",json={"max_steps":5}).json()
+        repeated=[{"tool":"list_files","args":{"path":"."},"status":"failed"}]*2
+        with self.assertRaises(Exception):
+            pilot.assert_pilot_action(start,"list_files",{"path":"."},repeated)
+        with self.assertRaises(Exception):
+            pilot.assert_pilot_action(start,"browser_fill",{"selector":"#post","text":"abc"},
+                [{"tool":"browser_fill","args":{"selector":"#post","text":"abc"},
+                  "status":"completed"}])
+        metrics=self.client.get("/agents/runtime-pilot/metrics?workspace_id=demo")
+        self.assertEqual(metrics.status_code,200,metrics.text)
+        values=metrics.json()
+        self.assertEqual(values["sample_size"],1)
+        self.assertEqual(values["external_verified_orders"],0)
+        self.assertFalse(values["computer_model_cost_included"])
+
     def test_ui_markup_and_javascript(self):
         r=self.client.get("/agents/runtime-pilot/ui")
         self.assertEqual(r.status_code,200,r.text)
