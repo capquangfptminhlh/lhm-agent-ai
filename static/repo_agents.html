@@ -11,6 +11,11 @@ p{margin:8px 0}.muted{color:#52687d}.grid{display:grid;grid-template-columns:rep
 button{font:inherit;color:#fff;background:#166ac4;border:0;border-radius:8px;padding:9px 12px;cursor:pointer;margin:12px 7px 2px 0}
 button:disabled{opacity:.45;cursor:wait}.secondary{background:#435e7a}
 input{font:inherit;width:200px;padding:8px;border:1px solid #c2cede;border-radius:7px}
+textarea{font:inherit;display:block;width:100%;margin:8px 0 12px;padding:10px;border:1px solid #c2cede;border-radius:7px;white-space:pre;tab-size:2}
+#sourceEditor{min-height:180px;max-height:400px;font-family:ui-monospace,Consolas,monospace;font-size:12px}
+#patchNote{min-height:65px}
+#patchDiff{max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f7fb;padding:12px;border-radius:8px}
+#repairBox[hidden]{display:none}
 .notice{background:#fff;border:1px solid #d5dfeb;padding:16px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 #result a{color:#1767b4}.error{color:#a02e31}.ok{color:#186e45}
 </style></head><body>
@@ -23,10 +28,54 @@ input{font:inherit;width:200px;padding:8px;border:1px solid #c2cede;border-radiu
 <button id="allTriage" class="secondary" type="button">Giao AI chẩn đoán repo đang lỗi (tối đa 4)</button></p>
 <section class="grid" id="agents" aria-label="Các repository được phân công"></section>
 <div class="notice" id="result" role="status" aria-live="polite">Chọn một repository để kiểm tra trạng thái GitHub Actions.</div>
+<section class="card" id="repairBox" hidden>
+<h2>Đề xuất bản vá GitHub — cần chủ duyệt</h2>
+<p id="repairRepo" class="muted"></p>
+<p class="muted">Chỉ thay nội dung <strong>một file hiện có</strong> trên branch mới.
+Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và phải duyệt diff trước khi ghi GitHub.</p>
+<label>Đường dẫn file trong repo (ví dụ: src/app.py)
+<input id="repairPath" style="width:100%" placeholder="src/app.py" maxlength="230"></label>
+<button id="repairSource" type="button">Đọc file main để chỉnh sửa</button>
+<label>Nội dung file mới (thay thế toàn bộ)
+<textarea id="sourceEditor" placeholder="Đọc file trước, rồi chỉnh sửa chính xác phần cần thay đổi..." spellcheck="false" maxlength="24000"></textarea></label>
+<label>Lý do sửa và cách kiểm tra
+<textarea id="patchNote" maxlength="800" placeholder="Vì sao sửa, test/CI cần nghiệm thu"></textarea></label>
+<button id="repairStage" type="button">Lưu đề xuất & xem diff</button>
+<button id="repairLatest" type="button" class="secondary">Xem bản vá gần nhất</button>
+<div id="repairStatus" class="notice" role="status" aria-live="polite">Chưa có đề xuất.</div>
+<pre id="patchDiff" hidden></pre>
+<button id="repairApprove" type="button" hidden>Duyệt tạo Pull Request nháp</button>
+<button id="repairReject" type="button" class="secondary" hidden>Hủy đề xuất</button>
+</section>
 </main>
 <script>
 "use strict";
 const agents=document.getElementById("agents"),result=document.getElementById("result");
+let selectedRepairAgent=null,selectedRepair=null,pendingKey=null;
+const el=id=>document.getElementById(id);
+const repairUrl=()=>"/workspaces/"+encodeURIComponent(el("workspace").value.trim())+
+  "/repo-agents/"+encodeURIComponent(selectedRepairAgent.id)+"/repairs";
+function repairMessage(text){el("repairStatus").textContent=text}
+function displayRepair(d){
+ selectedRepair=d;
+ el("repairBox").hidden=false;
+ el("repairStatus").textContent="Repository: "+d.repository+"\nFile: "+d.path+
+  "\nTrạng thái: "+d.status+"\nĐã duyệt: "+(d.status!=="awaiting_approval"?"đã quyết định":"CHƯA")+
+  "\nPull Request: "+(d.pull_request_url||"chưa có")+
+  (d.error?"\nCẦN KIỂM TRA: "+d.error:"")+
+  "\nKhông tự merge hoặc triển khai.";
+ el("patchDiff").hidden=false;el("patchDiff").textContent=d.diff_preview;
+ el("repairApprove").hidden=d.status!=="awaiting_approval";
+ el("repairReject").hidden=d.status!=="awaiting_approval";
+}
+function chooseRepair(item){
+ selectedRepairAgent=item;selectedRepair=null;pendingKey=null;
+ el("repairBox").hidden=false;
+ el("repairRepo").textContent=item.repository+" / "+item.id;
+ el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
+ repairMessage("Đọc file chính xác từ nhánh main, sửa nội dung, rồi tạo đề xuất. Chỉ khi bấm duyệt mới gửi GitHub.");
+ el("repairBox").scrollIntoView({behavior:"smooth",block:"start"});
+}
 async function request(url,opt){
  const r=await fetch(url,{cache:"no-store",...opt});
  let d;try{d=await r.json()}catch{throw Error("Backend không trả JSON hợp lệ")}
@@ -129,6 +178,87 @@ async function allTriage(){
 }
 document.getElementById("allHealth").onclick=allHealth;
 document.getElementById("allTriage").onclick=allTriage;
+async function latestCompletedDiagnosis(){
+ const ws=el("workspace").value.trim();
+ const path="/workspaces/"+encodeURIComponent(ws)+"/repo-agents/"+
+            encodeURIComponent(selectedRepairAgent.id)+"/diagnoses";
+ const list=await request(path);
+ const found=(list.diagnoses||[]).find(x=>x.task_status==="completed"&&x.report);
+ if(!found)throw Error("Repo chưa có báo cáo AI đã hoàn tất; bấm Chẩn đoán bằng AI rồi chờ Worker xử lý.");
+ return found;
+}
+el("repairSource").onclick=async()=>{
+ if(!selectedRepairAgent)return;
+ const btn=el("repairSource");btn.disabled=true;
+ try{
+  const p=el("repairPath").value.trim();
+  const d=await request("/repo-agents/"+encodeURIComponent(selectedRepairAgent.id)+
+          "/repair-source?path="+encodeURIComponent(p));
+  el("sourceEditor").value=d.content;
+  pendingKey=null;
+  repairMessage("Đã tải file từ main: "+d.path+" · commit "+d.head_sha.slice(0,10)+
+                "\nĐang chỉnh sửa tại máy; CHƯA có ghi GitHub.");
+ }catch(e){repairMessage("Không đọc được file: "+e.message)}
+ finally{btn.disabled=false}
+};
+el("repairStage").onclick=async()=>{
+ if(!selectedRepairAgent)return;
+ const btn=el("repairStage");btn.disabled=true;
+ try{
+  const diagnosis=await latestCompletedDiagnosis();
+  if(!pendingKey)pendingKey="owner-"+(globalThis.crypto?.randomUUID?.()||
+    String(Date.now())+"-"+Math.random().toString(36).slice(2));
+  const d=await request(repairUrl(),{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    workspace:el("workspace").value.trim(),
+    diagnosis_id:diagnosis.id,path:el("repairPath").value.trim(),
+    new_content:el("sourceEditor").value,
+    explanation:el("patchNote").value.trim(),
+    idempotency_key:pendingKey})
+  });
+  displayRepair(d);
+ }catch(e){repairMessage("Chưa lưu được đề xuất: "+e.message+
+  "\nCó thể sửa thông tin rồi thử lại; nếu đã lưu hãy dùng Xem bản vá gần nhất.")}
+ finally{btn.disabled=false}
+};
+el("repairLatest").onclick=async()=>{
+ if(!selectedRepairAgent)return;
+ const btn=el("repairLatest");btn.disabled=true;
+ try{
+  const d=await request(repairUrl());
+  if(!d.repairs.length){repairMessage("Chưa có bản vá cho repo.");return;}
+  displayRepair(d.repairs[0]);
+ }catch(e){repairMessage("Không xem được bản vá: "+e.message)}
+ finally{btn.disabled=false}
+};
+el("repairApprove").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="awaiting_approval")return;
+ if(!confirm("BẠN ĐÃ ĐỌC diff và đồng ý ghi file lên branch mới, tạo PR NHÁP trên GitHub?\nKhông tự merge. Nếu mạng lỗi giữa chừng, PHẢI đối soát GitHub trước khi thử lại."))return;
+ const btn=el("repairApprove");btn.disabled=true;
+ try{
+  const d=await request(repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/approve",
+                        {method:"POST"});
+  displayRepair(d);
+  if(d.pull_request_url)repairMessage(el("repairStatus").textContent+
+      "\nMở PR: "+d.pull_request_url);
+ }catch(e){
+  repairMessage("Không thể xác nhận PR: "+e.message+
+   "\nĐọc lại bản vá, kiểm tra branch và PR trên GitHub. KHÔNG thử tạo lại mù quáng.");
+  el("repairApprove").hidden=true;
+ }finally{btn.disabled=false}
+};
+el("repairReject").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="awaiting_approval")return;
+ if(!confirm("Hủy đề xuất này? Chưa có thao tác GitHub."))return;
+ const btn=el("repairReject");btn.disabled=true;
+ try{
+  const d=await request(repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/reject",
+                        {method:"POST"});
+  displayRepair(d);
+ }catch(e){repairMessage("Không hủy được: "+e.message)}
+ finally{btn.disabled=false}
+};
 async function init(){
  try{
   const d=await request("/repo-agents");
@@ -146,7 +276,9 @@ async function init(){
    ai.onclick=()=>diagnose(item,ai);
    const view=document.createElement("button");view.textContent="Xem báo cáo";view.className="secondary";
    view.onclick=()=>report(item,view);
-   card.append(h,description,p,check,ai,view);agents.append(card);
+   const repair=document.createElement("button");repair.textContent="Bản vá & PR nháp";
+   repair.onclick=()=>chooseRepair(item);
+   card.append(h,description,p,check,ai,view,repair);agents.append(card);
   }
  }catch(e){show("Không tải được Agent dự án: "+e.message,"error")}
 }
