@@ -78,6 +78,9 @@ def main():
             "LHM_OPENROUTER_FREE_ONLY": "1",
             "LHM_OPENROUTER_FREE_AUTO_SELECT": "1",
             "LHM_DESKTOP_NATIVE": "1",
+            "LHM_COMPUTER_BROWSER_CHANNEL": "msedge",
+            "LHM_COMPUTER_ALLOWED_HOSTS": "example.com",
+            "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS": "example.com",
             "OPENROUTER_API_KEY": "",
             "DEEPSEEK_API_KEY": "",
             "LHM_ALLOW_PRO": "0",
@@ -116,6 +119,19 @@ def main():
             assert info["no_paid_fallback"] is True, info
             status, body = request("http://127.0.0.1:7782/health")
             assert status in (401, 403), "Native health exposed without token"
+            # Open the *actual installed Microsoft Edge* from the frozen
+            # Windows native runner (not a Playwright/Chrome mock). A blank
+            # page needs no external network and sends no real account data.
+            status, body = request("http://127.0.0.1:7782/v1/tool",
+                "e2e-runner-token", "POST", {
+                    "workspace_id":"e2e","role":"quality",
+                    "tool":"browser_snapshot","args":{}}, timeout=35)
+            assert status == 200, f"Packaged Windows Edge browser failed: {status} {body[:250]}"
+            page = json.loads(body)
+            assert page.get("url") in ("about:blank","about:blank#"), (
+                "Unexpected Edge page loaded during no-network smoke")
+            assert isinstance(page.get("controls"),list), page
+            print("PACKAGED WINDOWS EDGE PASS: real msedge headless, no login/network",flush=True)
             status, body = request("http://127.0.0.1:7782/v1/pause",
                                    "e2e-runner-token", "POST", {"paused": True})
             assert status == 200 and json.loads(body).get("paused") is True, body
