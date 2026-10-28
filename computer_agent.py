@@ -558,7 +558,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                           "AI self-reported completion; human should verify the tool evidence",rid)
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
             from agent_runtime_pilot import assert_pilot_action
-            assert_pilot_action(run,tool,args)
+            assert_pilot_action(run,tool,args,steps)
             approval_needed=await _approval_for_action(tool,args,run)
             sid=new_id()
             with db() as c:
