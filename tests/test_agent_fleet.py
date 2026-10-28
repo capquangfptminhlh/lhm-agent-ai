@@ -21,6 +21,7 @@ import app
 import core
 import agent_work_orders as work
 import worker
+import tool_hub
 
 
 class SpecialistFleetTests(unittest.TestCase):
@@ -32,6 +33,7 @@ class SpecialistFleetTests(unittest.TestCase):
         self.addCleanup(setattr,core,"DATABASE",previous)
         core.setup()
         work.prepare_db()
+        tool_hub.prepare_db()
         env=patch.dict(os.environ,{
             "LHM_ADMIN_TOKEN":"",
             "LHM_OPENROUTER_FREE_ONLY":"1",
