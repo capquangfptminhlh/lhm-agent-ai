@@ -30,6 +30,9 @@ $("save").onclick=async()=>{
    await window.lhmSettings.save({
     provider:$("provider").value,allowedApps:$("allowedApps").value,
     allowedHosts:$("allowedHosts").value,
+    contentHosts:$("contentHosts").value,
+    salesHosts:$("salesHosts").value,
+    qualityHosts:$("qualityHosts").value,
     visionEnabled:$("visionEnabled").checked,
     trustedEnabled:$("trustedEnabled").checked,
     fullScreenEnabled:$("fullScreenEnabled").checked,
