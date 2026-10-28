@@ -20,6 +20,8 @@ test("Electron uses hardened renderer and does not expose Node to web pages",()=
 test("OpenCLI Node and package are embedded in Windows installer; fixed extension shortcut",()=>{
  const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
  assert.equal(pkg.build.extraResources[1].to,"opencli-runtime");
+ assert.equal(pkg.build.afterPack,"scripts/ensure-opencli-bundle.cjs");
+ assert.ok(fs.existsSync(path.join(root,"scripts","ensure-opencli-bundle.cjs")));
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const settings=fs.readFileSync(path.join(root,"settings.html"),"utf8");
  const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
