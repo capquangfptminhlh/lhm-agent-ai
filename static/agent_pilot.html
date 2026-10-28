@@ -96,7 +96,7 @@ $("handoff").onclick=()=>doIt(async()=>{
 function jobUrl(){const id=$("jobid").value.trim();if(!id)throw Error("Chưa có Tool Job ID");return "/tool-jobs/"+encodeURIComponent(id)}
 $("approve").onclick=()=>doIt(async()=>{
  if(!confirm("Anh xác nhận duyệt đúng nội dung và kênh đã chọn?"))return;
- const s=await call(jobUrl()+"/approve",{method:"POST"});show("Đã duyệt; vẫn CHƯA đăng.",s);
+ const s=await call(jobUrl()+"/approve",{method:"POST"});show("Đã duyệt. Worker có thể tự gửi ngay; kiểm tra trạng thái trước khi thao tác thêm.",s);
 });
 $("execute").onclick=()=>doIt(async()=>{
  if(!confirm("GỬI YÊU CẦU THẬT tới Postiz? Nếu timeout không được bấm lại để tránh trùng bài."))return;
