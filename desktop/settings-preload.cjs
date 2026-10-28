@@ -5,5 +5,6 @@ contextBridge.exposeInMainWorld("lhmSettings", Object.freeze({
   load:()=>ipcRenderer.invoke("settings:load"),
   readiness:()=>ipcRenderer.invoke("settings:readiness"),
   save:data=>ipcRenderer.invoke("settings:save",data),
-  testOpenRouter:()=>ipcRenderer.invoke("settings:test-openrouter")
+  testOpenRouter:()=>ipcRenderer.invoke("settings:test-openrouter"),
+  opencliStatus:()=>ipcRenderer.invoke("settings:opencli-status")
 }));
