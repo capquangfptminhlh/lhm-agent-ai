@@ -200,7 +200,7 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | 
     node,entry,profile=_configuration()
     # A distinct Computer Run must not reuse another run\'s active tab.
     # Direct/manual tool calls without run_id preserve legacy role scope.
-    if run_id is not None and not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{27,36}",run_id):
+    if run_id is not None and not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",run_id):
         raise HTTPException(422,"Invalid OpenCLI run identifier")
     session=("lhm_"+run_id.replace("-","") if run_id else "lhm_"+ws+"_"+role)
     async def call(action:str,*rest:str):
