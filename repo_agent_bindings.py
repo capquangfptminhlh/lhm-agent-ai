@@ -123,7 +123,7 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
     try:
         async with httpx.AsyncClient(timeout=12.0,follow_redirects=False,
                                      trust_env=False) as client:
-            response=await client.get(url,params={"per_page":10},
+            response=await client.get(url,params={"per_page":10,"branch":"main"},
                                       headers=_github_headers())
             if response.status_code in (401,403,404):
                 raise HTTPException(424,"Không đọc được CI: cần GitHub token read-only hoặc đã bị giới hạn API")
@@ -197,7 +197,7 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
         raise HTTPException(503,"Không kết nối được GitHub API; không thể xác minh CI")
     return {
         "agent_id":agent_id,"repository":repo,"job":agent["job"],
-        "connection_verified":True,"read_only":True,"runs":results,
+        "connection_verified":True,"read_only":True,"branch_scope":"main","runs":results,
         "job_details_verified":details_verified,
         "job_details_complete":details_complete,
         "failed_jobs":failures[:25],"checked_run_id":checked_run["id"] if checked_run else None,
@@ -286,6 +286,7 @@ async def create_repository_diagnosis(agent_id: str,inp: RepoDiagnosisIn):
         "Repo (read-only): "+ci["repository"]+
         "\nWorkflow run ID: "+str(recent["id"])+
         "\nWorkflow: "+recent["name"]+
+        "\nRequested branch scope: main"+
         "\nBranch: "+str(recent.get("head_branch") or "unknown")+
         "\nCI status: "+recent["status"]+
         "\nCI conclusion: "+recent["conclusion"]+
