@@ -25,6 +25,11 @@ class GithubStackTests(unittest.TestCase):
     def setUp(self):
         self.client=TestClient(app.app)
         self.runner=TestClient(executor.runner)
+        self.temp=tempfile.TemporaryDirectory(prefix="reach_runner_test_")
+        self.addCleanup(self.temp.cleanup)
+        original=executor.ROOT
+        executor.ROOT=Path(self.temp.name)/"sandbox"
+        self.addCleanup(setattr,executor,"ROOT",original)
 
     def test_19_real_repo_entries_and_all_16_roles(self):
         data=self.client.get("/agents/github-stack").json()
