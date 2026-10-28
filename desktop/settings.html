@@ -62,9 +62,12 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <p>Để trống = robot không được mở website ngoài. Không sử dụng IP, wildcard hoặc localhost.</p>
 <div class="card"><h2>OpenCLI · Chrome profile riêng (tùy chọn)</h2>
 <label class="check"><input type="checkbox" id="opencliEnabled"> Cho Agent điều khiển profile Chrome được chọn qua OpenCLI (Windows)</label>
-<button id="opencliCheck" type="button" style="background:#566a7e">Kiểm tra kết nối OpenCLI / Chrome</button>
+<button id="opencliExtension" type="button" style="background:#566a7e">1. Cài tiện ích OpenCLI vào Chrome riêng</button>
+<button id="opencliCheck" type="button" style="background:#566a7e">2. Kiểm tra kết nối OpenCLI / Chrome</button>
 <p id="opencliCheckResult" role="status" aria-live="polite" style="white-space:pre-line"></p>
-<label>Tên profile OpenCLI đã kết nối<input id="opencliProfile" placeholder="lhm-work" autocomplete="off" maxlength="38"></label>
+<button id="opencliFindProfiles" type="button" style="background:#566a7e">Tìm Chrome profile đang kết nối</button>
+<select id="opencliProfileSelect" aria-label="Chọn Chrome profile của LHM"><option value="">Chọn Chrome profile riêng…</option></select>
+<label>Profile OpenCLI đã chọn<input id="opencliProfile" placeholder="Chọn từ danh sách bên trên" autocomplete="off" maxlength="80"></label>
 <label>Website OpenCLI được phép (phải có trong danh sách HTTPS bên trên)<input id="opencliHosts" placeholder="example.com, docs.example.com" autocomplete="off"></label>
 <p>Không tự sao chép Chrome cá nhân. Cài OpenCLI CLI và Browser Bridge extension trong Chrome profile riêng, đăng nhập nền tảng bằng tay. Robot chỉ mở/đọc trang được phép; Content Agent muốn click/điền phải được anh duyệt từng lần. Không có quyền chạy JavaScript, API ẩn, plugin hoặc gửi bài hàng loạt. Thiết lập yêu cầu khởi động lại.</p></div>
 </div>

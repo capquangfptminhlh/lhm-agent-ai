@@ -4,36 +4,34 @@
 Chrome profile thật kết nối và Agent thao tác website thật vẫn cần người
 quản trị cấp quyền, thử trên máy Windows và kiểm chứng kết quả.
 
-## Cách thiết lập (không cần Linux, Docker)
+## Cách thiết lập trên Windows (không cần Linux, Docker, Node.js hay npm)
 
-1. Cài **Node.js >= 20.18.1** từ nhà cung cấp Node.js chính thức.
-   Trong PowerShell do anh mở (không phải lệnh AI), chạy:
-   `node --version` rồi `npm install -g @jackwener/opencli@2.0.2`.
-   Đường npm global Windows thông thường phải có
-   `%APPDATA%\\npm\\node_modules\\@jackwener\\opencli\\dist\\src\\main.js`.
-   LHM gọi trực tiếp Node + file JS đó, không chạy `.cmd`, shell hay
-   bất kỳ plugin/adapter bên ngoài nào.
-2. Tạo **Chrome profile mới, riêng cho LHM**, không dùng tài khoản
-   Chrome cá nhân mặc định. Chỉ đăng nhập trang web anh muốn LHM thao tác.
-3. Trong Chrome profile này, cài **OpenCLI Browser Bridge** từ
-   [Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk).
-   Chính anh tự quyết định quyền mà extension yêu cầu. OpenCLI daemon
-   dùng cổng localhost 19825 và có thể chạy lâu dài.
-4. Trong PowerShell: `opencli doctor`, `opencli profile list`.
-   Gán tên profile mới: `opencli profile rename <contextId> lhm-work`
-   (thay `<contextId>` bằng đúng ID được liệt kê).
-   Kiểm tra `opencli --profile lhm-work browser state --session lhm-manual-test`
-   sau khi mở một tab thử. Không tự lấy cookies/profile mặc định.
-5. Mở **LHM Robot → Thiết lập Robot**:
-   - Điền danh sách `Website HTTPS được phép mở` (ví dụ `example.com`).
-   - Bật **OpenCLI**, nhập `lhm-work` và danh sách website OpenCLI,
-     là tập con của danh sách HTTPS bên trên.
-   - Lưu và **khởi động lại LHM Robot**.
-6. Tạo Computer Pilot/Work Order Content hoặc Quality. AI có thể mở
-   trang và đọc state với tham chiếu `[1]`, `[2]` v.v. Content có
-   thể đề xuất `opencli_click` và `opencli_fill` theo tham chiếu
-   đó; **phải có phê duyệt từng bước**, kể cả Trusted mode.
-   QA và Sales chỉ có quyền mở/đọc, không có quyền click/điền.
+**Bộ cài LHM Robot bản mới đã kèm Node 24 và OpenCLI 2.0.2.**
+Không cần mở PowerShell hoặc chạy lệnh npm để cài công cụ này.
+Bản OpenCLI đi cùng ứng dụng không tự tải plugin hoặc cập nhật từ Internet.
+Bộ cài vẫn là bản pilot không ký số; nên tải từ GitHub Actions của
+chính repository và kiểm SHA-256 khi cần.
+
+1. Tải installer `LHM-Robot-Desktop-Windows-x64-Installer` từ GitHub Actions
+   của commit `main` đã PASS và cài LHM Robot.
+2. Tạo **Chrome profile mới riêng cho LHM**, không sử dụng profile cá nhân
+   chứa email, tài khoản ngân hàng hoặc hệ thống quản trị nhạy cảm.
+3. Mở **LHM Robot → Thiết lập Robot → Cài tiện ích OpenCLI vào Chrome riêng**.
+   Nút này mở đúng trang [Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk).
+   Trong profile Chrome chuyên dụng, anh tự xác nhận quyền extension.
+4. Trong **Thiết lập Robot**, chọn **Tìm Chrome profile đang kết nối**.
+   Phần mềm chỉ hiển thị các profile có extension OpenCLI đang kết nối,
+   không tự chọn profile cá nhân. Anh chọn **đúng profile riêng của LHM**;
+   ID profile sẽ tự điền vào ô. Không cần lệnh `opencli profile rename`.
+5. Nhập website HTTPS được phép (ví dụ `example.com`), bật OpenCLI
+   và danh sách host OpenCLI là tập con của danh sách tổng.
+   **Lưu và khởi động lại ứng dụng**.
+6. Bấm **Kiểm tra kết nối OpenCLI / Chrome**. Chỉ tiếp tục khi CLI đã cài,
+   Bridge đã hoạt động và đúng profile đang kết nối. Agent Content có thể
+   đề xuất click/điền sau khi anh duyệt; QA/Sales chỉ mở và đọc trang.
+
+**Chỉ code/CLI/installer được kiểm tra trên CI.** Chưa thể tự tuyên bố
+đã đăng nhập và thao tác thành công trên Chrome profile của chủ máy.
 
 ## Những gì được phép
 
@@ -41,8 +39,8 @@ quản trị cấp quyền, thử trên máy Windows và kiểm chứng kết qu
 |---|---|---|
 | `opencli_open` | `{"url":"https://example.com/path"}` | HTTPS host phải có trong cả hai allowlist |
 | `opencli_state` | `{}` | URL hiện tại phải được phép; dữ liệu DOM bị giới hạn |
-| `opencli_click` | `{"ref":12}` | Content; duyệt từng bước; ref phải xuất hiện trong state mới |
-| `opencli_fill` | `{"ref":3,"text":"Nội dung"}` | Content; duyệt từng bước; không dùng cho mật khẩu |
+| `opencli_click` | `{"ref":12,"url":"https://example.com/form","label":"Send"}` | Content; duyệt từng bước; ref phải xuất hiện trong state mới |
+| `opencli_fill` | `{"ref":3,"url":"https://example.com/form","label":"Caption","text":"Nội dung"}` | Content; duyệt từng bước; không dùng cho mật khẩu |
 
 Không có quyền `opencli eval`, JavaScript tùy ý, Chrome native API,
 network sniff, đọc cookie, chuyển tab người dùng, tải file, plugin install,
@@ -67,9 +65,7 @@ network sniff, đọc cookie, chuyển tab người dùng, tải file, plugin in
   trang mà Agent quan sát có thể được chuyển tới LLM theo thiết kế.
 - Chức năng này chỉ gọi được từ **Windows native runner**; Linux
   container/remote worker trả 503, không có fallback đụng tài khoản cá nhân.
-- OpenCLI là công cụ bên thứ ba; LHM **không tự cài, tự cập nhật hoặc bật
-  extension**. Phiên bản API Browser Bridge có thể thay đổi. Test CI
-  kiểm lệnh CLI và mã, chưa chứng minh profile đăng nhập thực tế hoạt động.
+- OpenCLI là công cụ bên thứ ba; **Node và OpenCLI CLI được kèm trong installer** và không tự cập nhật. Extension Chrome vẫn do chủ máy cài và cấp quyền. Test CI xác minh CLI được đóng gói, không chứng minh phiên Chrome đã đăng nhập.
 
 ## Nghiệm thu thực tế trên máy Windows
 

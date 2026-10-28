@@ -25,7 +25,7 @@ READ_TOOLS=frozenset({"opencli_open","opencli_state"})
 WRITE_TOOLS=frozenset({"opencli_click","opencli_fill"})
 ALL_TOOLS=READ_TOOLS|WRITE_TOOLS
 _ID=re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
-_PROFILE=re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,38}$")
+_PROFILE=re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$")
 MAX_OUTPUT=40_000
 
 
@@ -81,25 +81,40 @@ def validate(role: str,tool: str,args: dict[str,Any]) -> None:
             raise HTTPException(422,"Invalid OpenCLI text")
 
 
-def _configuration() -> tuple[str,str,str]:
+def _toolchain() -> tuple[str,str]:
     if not _windows() or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
         raise HTTPException(503,"OpenCLI requires Windows Desktop Native Runner")
-    if os.getenv("LHM_OPENCLI_ENABLED")!="1":
-        raise HTTPException(403,"OpenCLI chưa bật trong Thiết lập Robot")
-    profile=os.getenv("LHM_OPENCLI_PROFILE","").strip()
-    if not _PROFILE.fullmatch(profile):
-        raise HTTPException(409,"Chọn Chrome profile riêng đã kết nối OpenCLI")
+    # The commercial Windows installer ships its own Node and OpenCLI
+    # 2.0.2 package. Never require the customer to install npm globally.
+    # No auto-updates, plugins or remote installers are triggered by an Agent.
+    bundle=os.environ.get("LHM_OPENCLI_BUNDLE_DIR","").strip()
+    if bundle:
+        base=Path(bundle)
+        if not base.is_absolute():
+            raise HTTPException(503,"Invalid OpenCLI bundle path")
+        node=base/"node.exe"
+        package=base/"node_modules"/"@jackwener"/"opencli"
+        entry=package/"dist"/"src"/"main.js"
+        metadata=package/"package.json"
+        if not node.is_file() or not entry.is_file() or not metadata.is_file():
+            raise HTTPException(503,"Bundled OpenCLI files missing; reinstall LHM Robot")
+        try:
+            record=json.loads(metadata.read_text(encoding="utf-8"))
+        except (OSError,ValueError) as exc:
+            raise HTTPException(503,"Bundled OpenCLI package metadata corrupt") from exc
+        if record.get("name")!="@jackwener/opencli" or record.get("version")!="2.0.2":
+            raise HTTPException(503,"Bundled OpenCLI package version mismatch")
+        return str(node),str(entry)
+    # Development/source checkout only. Production always provides a bundle
+    # directory; no arbitrary npm.cmd execution or shell fallback.
     node=shutil.which("node.exe") or shutil.which("node")
     if not node:
         raise HTTPException(503,"Node.js 20.18.1+ chưa có trên Windows")
-    # npm -g may use %APPDATA%\\npm or the Node installation prefix
-    # (e.g. GitHub Windows runner); never execute npm.cmd to resolve it.
     roots=[]
     appdata=os.environ.get("APPDATA","")
     if appdata:
         roots.append(Path(appdata)/"npm")
     roots.append(Path(node).resolve().parent)
-    # We only load the verified @jackwener/opencli package's known entry.
     for root in roots:
         package=root/"node_modules"/"@jackwener"/"opencli"
         entry=package/"dist"/"src"/"main.js"
@@ -111,9 +126,18 @@ def _configuration() -> tuple[str,str,str]:
         except (OSError,ValueError):
             continue
         if record.get("name")=="@jackwener/opencli" and record.get("version")=="2.0.2":
-            return node,str(entry),profile
+            return node,str(entry)
     raise HTTPException(503,"Cài OpenCLI 2.0.2 bằng npm -g trong Windows; Node global prefix chưa được nhận diện")
 
+
+def _configuration() -> tuple[str,str,str]:
+    if os.getenv("LHM_OPENCLI_ENABLED")!="1":
+        raise HTTPException(403,"OpenCLI chưa bật trong Thiết lập Robot")
+    profile=os.getenv("LHM_OPENCLI_PROFILE","").strip()
+    if not _PROFILE.fullmatch(profile):
+        raise HTTPException(409,"Chọn Chrome profile riêng đã kết nối OpenCLI")
+    node,entry=_toolchain()
+    return node,entry,profile
 
 async def _invoke(node: str,entry: str,profile: str,session: str,
                   action: str,*argv: str) -> dict[str,Any]:

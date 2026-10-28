@@ -61,6 +61,33 @@ async function checkReadiness(){
  }finally{refresh.disabled=false}
 }
 $("refreshReadiness").onclick=checkReadiness;
+$("opencliFindProfiles").onclick=async()=>{
+ const button=$("opencliFindProfiles"),list=$("opencliProfileSelect"),panel=$("opencliCheckResult");
+ button.disabled=true;
+ try{
+   const found=await window.lhmSettings.opencliProfiles();
+   list.replaceChildren();
+   const blank=document.createElement("option");
+   blank.value="";blank.textContent="Chọn Chrome profile riêng…";
+   list.append(blank);
+   for(const item of found.profiles||[]){
+     if(!item || typeof item.id!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(item.id))continue;
+     const option=document.createElement("option");
+     option.value=item.id;option.textContent=String(item.label||item.id).slice(0,80);
+     list.append(option);
+   }
+   panel.textContent=list.options.length>1?"Chọn profile Chrome riêng trong danh sách rồi Lưu cấu hình.":String(found.detail||"Chưa thấy Chrome profile kết nối");
+ }catch(e){panel.textContent="Không tìm được Chrome profile: "+(e.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
+$("opencliProfileSelect").onchange=()=>{if($("opencliProfileSelect").value)$("opencliProfile").value=$("opencliProfileSelect").value;};
+$("opencliExtension").onclick=async()=>{
+ const button=$("opencliExtension"),panel=$("opencliCheckResult");
+ button.disabled=true;
+ try {await window.lhmSettings.opencliExtension();panel.textContent="Đã mở Chrome Web Store. Cài extension trong Chrome profile riêng của LHM, sau đó quay lại kiểm tra kết nối.";}
+ catch(e){panel.textContent="Không mở được trang extension: "+(e.message||"lỗi hệ thống");}
+ finally {button.disabled=false;}
+};
 $("opencliCheck").onclick=async()=>{
  const button=$("opencliCheck"), panel=$("opencliCheckResult");
  button.disabled=true;panel.textContent="Đang kiểm tra Windows Controller và Chrome Bridge...";

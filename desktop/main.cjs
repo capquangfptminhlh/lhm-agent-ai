@@ -4,7 +4,7 @@
  * No web page receives Node, filesystem, OS command or Electron IPC powers.
  * The local Python runtime is a supervised, separate executable.
  */
-const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage} = require("electron");
+const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage ,shell} = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -69,7 +69,7 @@ function saveSettings(input) {
   const opencliEnabled=input.opencliEnabled===true;
   const opencliProfile=String(input.opencliProfile||"").trim();
   const opencliHosts=String(input.opencliHosts||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
-  if(opencliEnabled && (!/^[a-zA-Z][a-zA-Z0-9_-]{1,38}$/.test(opencliProfile) || !opencliHosts.length)) {
+  if(opencliEnabled && (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(opencliProfile) || !opencliHosts.length)) {
     throw new Error("OpenCLI cần tên Chrome profile riêng và danh sách website được phép.");
   }
   if(opencliHosts.some(x=>!allowedHosts.includes(x)) || opencliHosts.length>15) {
@@ -153,6 +153,9 @@ function envForRuntime() {
     LHM_OPENCLI_ENABLED:c.opencliEnabled===true?"1":"0",
     LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
     LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
+    LHM_OPENCLI_BUNDLE_DIR:app.isPackaged?path.join(process.resourcesPath,"opencli-runtime"):
+      (fs.existsSync(path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime","node.exe"))?
+        path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime"):""),
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
@@ -181,7 +184,7 @@ function nativeEnv(runtimeEnv) {
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
-    "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS",
+    "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
@@ -389,6 +392,26 @@ function settingsIPC(){
       keyUnlocked:!!unwrapSecret(c.openrouterKey),
       allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
       allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
+  });
+  ipcMain.handle("settings:opencli-extension",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    // A fixed, trusted Chrome Web Store destination. Renderer never chooses URL.
+    await shell.openExternal("https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk");
+    return {opened:true};
+  });
+  ipcMain.handle("settings:opencli-profiles",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try {
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/opencli/profiles",runnerToken);
+      if(response.status!==200)throw Error("Native controller unavailable");
+      const data=JSON.parse(response.text);
+      if(!Array.isArray(data.profiles))throw Error("Invalid profile discovery");
+      return {profiles:data.profiles.slice(0,12),detail:String(data.detail||"").slice(0,160)};
+    } catch {
+      return {profiles:[],detail:"Không liệt kê được Chrome profile, kiểm tra Browser Bridge."};
+    }
   });
   ipcMain.handle("settings:opencli-status",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
