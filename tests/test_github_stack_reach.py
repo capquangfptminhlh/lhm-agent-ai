@@ -192,6 +192,49 @@ class AgentReachSubprocessTests(unittest.IsolatedAsyncioTestCase):
         # Reject excessive untrusted output without storing broken JSON in SQLite.
         self.assertEqual(bad.exception.status_code,502)
 
+    async def test_windows_is_off_by_default_and_is_opt_in_public_only(self):
+        class Fake:
+            returncode=0
+            async def communicate(self):
+                payload={"schema_version":1,"ok":True,"channel":"github",
+                         "action":"search","backend":"github-api",
+                         "items":[{"title":"Public repo","url":"https://github.com/org/project"}]}
+                return json.dumps(payload).encode(),b""
+        recorded=[]
+        async def start(*argv,**kwargs):
+            recorded.append((argv,kwargs))
+            return Fake()
+        with tempfile.TemporaryDirectory() as root:
+            with patch.object(reach,"_on_windows",return_value=True):
+                with patch.dict(os.environ,{"LHM_WINDOWS_REACH_ENABLED":"0"}):
+                    with self.assertRaises(HTTPException) as blocked:
+                        await reach.search("demo","content",{
+                            "channel":"github","query":"agent tools"},Path(root))
+                    self.assertEqual(blocked.exception.status_code,403)
+                with patch.dict(os.environ,{
+                    "LHM_WINDOWS_REACH_ENABLED":"1",
+                    "OPENROUTER_API_KEY":"SHOULD_NOT_PASS",
+                    "LHM_COMPUTER_RUNNER_TOKEN":"SHOULD_NOT_PASS",
+                    "GH_TOKEN":"SHOULD_NOT_PASS",
+                }):
+                    with patch.object(reach.asyncio,"create_subprocess_exec",side_effect=start):
+                        result=await reach.search("demo","content",{
+                            "channel":"github","query":"agent tools"},Path(root))
+                        with self.assertRaises(HTTPException) as channel_error:
+                            await reach.search("demo","content",{
+                                "channel":"bilibili","query":"agent tools"},Path(root))
+        self.assertEqual(channel_error.exception.status_code,403)
+        self.assertEqual(result["items"][0]["title"],"Public repo")
+        self.assertEqual(len(recorded),1)
+        argv,kwargs=recorded[0]
+        self.assertEqual(argv[-3:],("reach-worker","github","agent tools"))
+        self.assertEqual(kwargs.get("creationflags"),getattr(reach.subprocess,"CREATE_NO_WINDOW",0))
+        self.assertNotIn("start_new_session",kwargs)
+        for name in ("GH_TOKEN","OPENROUTER_API_KEY","LHM_COMPUTER_RUNNER_TOKEN"):
+            self.assertNotIn(name,kwargs["env"])
+        self.assertIn("reach-home",kwargs["env"]["USERPROFILE"])
+        self.assertIn("reach-home",kwargs["env"]["APPDATA"])
+
     async def test_false_ok_and_invalid_json_do_not_return_unverified_success(self):
         class Fake:
             returncode=0
