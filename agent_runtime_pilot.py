@@ -257,3 +257,43 @@ def execution_state(ws: str,order_id: str):
             "tool_jobs":jobs,
             "verified_external_completion":stage=="completed",
             "note":"Chỉ kết luận hoàn thành khi verifier đọc bằng chứng từ nhà cung cấp"}
+
+
+@router.get("/agents/runtime-pilot/metrics")
+def pilot_metrics(workspace_id: str = "demo"):
+    """Real database observations, never synthetic AI success/cost counters.
+
+    Cost only covers Work Order + QA task usage; Computer LLM calls currently
+    book against workspace without run ID and cannot be attributed precisely.
+    """
+    from tool_hub import _pilot_ws
+    _pilot_ws(workspace_id)
+    prepare_db()
+    with db() as c:
+        rows=c.execute("""SELECT id,role,task_id,qa_task_id FROM agent_work_orders
+            WHERE workspace_id=? AND role IN ('content','sales','quality')
+            ORDER BY rowid DESC LIMIT 500""",(workspace_id,)).fetchall()
+        task_ids=[task for row in rows for task in (row["task_id"],row["qa_task_id"]) if task]
+        cost=0.0
+        if task_ids:
+            placeholders=",".join("?" for _ in task_ids)
+            cost=float(c.execute("SELECT COALESCE(SUM(upper_cost_usd),0) FROM usage"
+                      " WHERE workspace_id=? AND task_id IN ("+placeholders+")",
+                      (workspace_id,*task_ids)).fetchone()[0])
+    observed=[execution_state(workspace_id,row["id"]) for row in rows]
+    total=len(observed)
+    verified=sum(item["verified_external_completion"] for item in observed)
+    intervention=sum(item["stage"]=="needs_human" for item in observed)
+    failures=sum(item["stage"]=="failed" for item in observed)
+    return {
+        "workspace_id":workspace_id,"sample_size":total,
+        "external_verified_orders":verified,
+        "external_verified_rate":round(verified/total,4) if total else None,
+        "needs_human_orders":intervention,
+        "needs_human_rate":round(intervention/total,4) if total else None,
+        "failed_orders":failures,
+        "source_and_qa_upper_cost_usd":round(cost,7),
+        "computer_model_cost_included":False,
+        "observation_limit":500,
+        "note":"Only provider-verified publication counts as external completion. Computer token costs are not yet attributable per run."
+    }
