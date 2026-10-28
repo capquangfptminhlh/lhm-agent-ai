@@ -89,6 +89,30 @@ class OpenCLIPolicyTests(unittest.TestCase):
                         with self.assertRaises(HTTPException):
                             bridge._configuration()
 
+    def test_bundle_is_preferred_without_system_node_or_user_npm(self):
+        with tempfile.TemporaryDirectory(prefix="lhm-bundle-") as tmp:
+            root=Path(tmp)
+            package=root/"node_modules"/"@jackwener"/"opencli"
+            entry=package/"dist"/"src"/"main.js"
+            entry.parent.mkdir(parents=True)
+            entry.write_text("console.log('ready')",encoding="utf-8")
+            (package/"package.json").write_text(json.dumps({
+                "name":"@jackwener/opencli","version":"2.0.2"}),encoding="utf-8")
+            (root/"node.exe").write_bytes(b"node")
+            with patch.object(bridge,"_windows",return_value=True):
+                with patch.dict(os.environ,{"LHM_OPENCLI_BUNDLE_DIR":str(root)}):
+                    with patch.object(bridge.shutil,"which",return_value=None) as which:
+                        node,script,alias=bridge._configuration()
+                        which.assert_not_called()
+            self.assertEqual((node,script,alias),(str(root/"node.exe"),str(entry),"lhm-work"))
+            (package/"package.json").write_text(json.dumps({
+                "name":"@jackwener/opencli","version":"2.0.3"}),encoding="utf-8")
+            with patch.object(bridge,"_windows",return_value=True):
+                with patch.dict(os.environ,{"LHM_OPENCLI_BUNDLE_DIR":str(root)}):
+                    with self.assertRaises(HTTPException) as exc:
+                        bridge._configuration()
+            self.assertEqual(exc.exception.status_code,503)
+
     def test_no_implicit_profile_or_missing_cli(self):
         with patch.object(bridge,"_windows",return_value=True):
             with patch.dict(os.environ,{"LHM_OPENCLI_PROFILE":""}):
