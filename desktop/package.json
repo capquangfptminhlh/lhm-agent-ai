@@ -38,6 +38,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "vendor/opencli-runtime",
+        "to": "opencli-runtime",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
