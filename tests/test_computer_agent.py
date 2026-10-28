@@ -111,6 +111,60 @@ class ComputerAgentTests(unittest.TestCase):
         self.assertEqual(saved["status"],"completed_unverified")
         self.assertEqual(self.client.post(url).status_code,409)
 
+    def test_opencli_click_pauses_for_owner_reconciliation_and_never_claims_provider_success(self):
+        r=self.create(role="content",key="opencli-reconcile-click-001")
+        url="/computer/runs/"+r["id"]+"/tick"
+        args={"ref":12,"url":"https://example.com/form","label":"Send"}
+        with patch.dict(os.environ,{
+            "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com"}):
+            with patch.object(agent,"_next_action",AsyncMock(return_value=("opencli_click",args))):
+                waiting=self.client.post(url)
+            self.assertEqual(waiting.status_code,200,waiting.text)
+            self.assertEqual(waiting.json()["status"],"awaiting_approval")
+            sid=waiting.json()["step_id"]
+            approved=self.client.post("/computer/runs/"+r["id"]+"/steps/"+sid+"/approve")
+            self.assertEqual(approved.status_code,200,approved.text)
+            receipt={"provider":"OpenCLI","action":"opencli_click",
+                     "confirmed_by_cli":True,"external_effect_verified":False,
+                     "requires_owner_reconciliation":True,
+                     "url_before":"https://example.com/form",
+                     "url_after":"https://example.com/sent"}
+            with patch.object(agent,"runner_call",AsyncMock(return_value=receipt)) as tool:
+                paused=self.client.post(url)
+            self.assertEqual(paused.status_code,200,paused.text)
+            self.assertEqual(paused.json()["status"],"awaiting_reconciliation")
+            tool.assert_awaited_once()
+            before=self.client.get("/computer/runs/"+r["id"]).json()
+            self.assertEqual(before["steps"][-1]["status"],"needs_review")
+            self.assertFalse(before["steps"][-1]["result"]["external_effect_verified"])
+            self.assertEqual(self.client.post(url).status_code,409)
+            reconciled=self.client.post("/computer/runs/"+r["id"]+"/reconciliation/acknowledge")
+            self.assertEqual(reconciled.status_code,200,reconciled.text)
+            self.assertEqual(reconciled.json()["status"],"queued")
+            self.assertEqual(reconciled.json()["steps"][-1]["status"],"reviewed_unverified")
+            self.assertFalse(reconciled.json()["steps"][-1]["result"]["external_effect_verified"])
+            self.assertEqual(self.client.post("/computer/runs/"+r["id"]+"/reconciliation/acknowledge").status_code,409)
+            with patch.object(agent,"_next_action",AsyncMock(return_value=(
+                "finish",{"summary":"Đã thao tác Chrome, chưa có biên nhận website"}))):
+                done=self.client.post(url)
+            self.assertEqual(done.json()["status"],"completed_unverified")
+
+    def test_opencli_click_missing_receipt_fails_closed(self):
+        r=self.create(role="content",key="opencli-missing-receipt-001")
+        url="/computer/runs/"+r["id"]+"/tick"
+        with patch.dict(os.environ,{
+            "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com"}):
+            with patch.object(agent,"_next_action",AsyncMock(return_value=(
+                "opencli_click",{"ref":7,"url":"https://example.com/submit","label":"Send"}))):
+                pending=self.client.post(url).json()
+            self.client.post("/computer/runs/"+r["id"]+"/steps/"+pending["step_id"]+"/approve")
+            with patch.object(agent,"runner_call",AsyncMock(return_value={"confirmed_by_cli":True})):
+                failed=self.client.post(url)
+            self.assertEqual(failed.json()["status"],"needs_review")
+            self.assertEqual(self.client.post("/computer/runs/"+r["id"]+"/reconciliation/acknowledge").status_code,409)
+
     def test_nonzero_command_exit_is_a_failed_observation(self):
         r=self.create(key="computer-nonzero-001")
         with patch.object(agent,"_next_action",AsyncMock(return_value=(
