@@ -132,3 +132,16 @@ quyền chung được thiết kế riêng, không thừa hưởng quyền Conte
 Windows CI chạy kiểm thử `browser_snapshot` với **Edge thực** từ EXE
 đóng gói, trên trang trống `about:blank`, không đăng nhập hay mở
 Internet. Việc vào website đăng nhập của chủ máy vẫn cần nghiệm thu trên máy thật.
+
+## Đóng Edge sạch sẽ khi thoát Robot
+
+Trình duyệt **Microsoft Edge** do Playwright Native Runner mở là một
+phiên khác với profile **Chrome/OpenCLI** do chủ máy kết nối. Khi Robot
+đóng, Electron gọi endpoint quản trị cục bộ đã xác thực
+`POST /v1/browser/close` để chờ đóng các Edge context do Robot sở hữu,
+sau đó mới dừng native runner. Endpoint này không đóng tab Chrome ngoài
+ứng dụng hoặc xóa dữ liệu profile của anh.
+
+GitHub Windows CI kiểm tra Edge thật mở được từ EXE đóng gói, sau đó
+kiểm tra profile Edge được đóng sạch trước khi xóa thư mục test.
+Bài kiểm thử không đăng nhập website và không gửi dữ liệu tài khoản.
