@@ -83,11 +83,29 @@ def _configuration() -> tuple[str,str,str]:
     if not _PROFILE.fullmatch(profile):
         raise HTTPException(409,"Chọn Chrome profile riêng đã kết nối OpenCLI")
     node=shutil.which("node.exe") or shutil.which("node")
+    if not node:
+        raise HTTPException(503,"Node.js 20.18.1+ chưa có trên Windows")
+    # npm -g may use %APPDATA%\\npm or the Node installation prefix
+    # (e.g. GitHub Windows runner); never execute npm.cmd to resolve it.
+    roots=[]
     appdata=os.environ.get("APPDATA","")
-    entry=Path(appdata)/"npm"/"node_modules"/"@jackwener"/"opencli"/"dist"/"src"/"main.js"
-    if not node or not appdata or not entry.is_file():
-        raise HTTPException(503,"Cài Node.js 20.18.1+ và npm install -g @jackwener/opencli trên Windows")
-    return node,str(entry),profile
+    if appdata:
+        roots.append(Path(appdata)/"npm")
+    roots.append(Path(node).resolve().parent)
+    # We only load the verified @jackwener/opencli package's known entry.
+    for root in roots:
+        package=root/"node_modules"/"@jackwener"/"opencli"
+        entry=package/"dist"/"src"/"main.js"
+        metadata=package/"package.json"
+        if not entry.is_file() or not metadata.is_file():
+            continue
+        try:
+            record=json.loads(metadata.read_text(encoding="utf-8"))
+        except (OSError,ValueError):
+            continue
+        if record.get("name")=="@jackwener/opencli" and record.get("version")=="2.0.2":
+            return node,str(entry),profile
+    raise HTTPException(503,"Cài OpenCLI 2.0.2 bằng npm -g trong Windows; Node global prefix chưa được nhận diện")
 
 
 async def _invoke(node: str,entry: str,profile: str,session: str,
