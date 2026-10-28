@@ -1,0 +1,324 @@
+{
+  "version": "2026-10-28",
+  "source": "Curated live GitHub repositories and source READMEs; NOT installed/connected by listing",
+  "selection_principles": [
+    "license_and_self_host_readiness",
+    "active_maintenance",
+    "API_or_MCP_or_documented_CLI",
+    "nonduplicate_shared_runtime",
+    "human_approval_and_verifiable_results"
+  ],
+  "recommended_stack": [
+    "agent_reach",
+    "opencli",
+    "postiz",
+    "browser_use",
+    "playwright",
+    "activepieces",
+    "langgraph",
+    "crawl4ai",
+    "mem0",
+    "langfuse",
+    "comfyui",
+    "twenty",
+    "chatwoot",
+    "ui_tars",
+    "omniparser",
+    "openhands",
+    "openclaw",
+    "mcp_gateway",
+    "graphiti"
+  ],
+  "tools": [
+    {
+      "id": "agent_reach",
+      "repo": "Panniantong/Agent-Reach",
+      "url": "https://github.com/Panniantong/Agent-Reach",
+      "category": "Research",
+      "license_note": "MIT",
+      "status": "pilot_adapter",
+      "why": "Read/search across supported channels; requires separately installed read-only CLI.",
+      "roles": [
+        "research",
+        "strategy",
+        "lead",
+        "content",
+        "ads",
+        "analytics",
+        "quality",
+        "support",
+        "compliance"
+      ]
+    },
+    {
+      "id": "opencli",
+      "repo": "jackwener/OpenCLI",
+      "url": "https://github.com/jackwener/OpenCLI",
+      "category": "Browser",
+      "license_note": "Apache-2.0",
+      "status": "selected_not_connected",
+      "why": "Logged-in Chrome browser CLI. Requires extension, daemon, isolated profile and approval gate.",
+      "roles": [
+        "content",
+        "lead",
+        "sales",
+        "support",
+        "research"
+      ]
+    },
+    {
+      "id": "postiz",
+      "repo": "gitroomhq/postiz-app",
+      "url": "https://github.com/gitroomhq/postiz-app",
+      "category": "Social publishing",
+      "license_note": "AGPL-3.0",
+      "status": "existing_adapter",
+      "why": "Publisher and provider read-back already coded; real credentials/OAuth and channel whitelist required.",
+      "roles": [
+        "content"
+      ]
+    },
+    {
+      "id": "browser_use",
+      "repo": "browser-use/browser-use",
+      "url": "https://github.com/browser-use/browser-use",
+      "category": "Browser",
+      "license_note": "MIT",
+      "status": "selected_not_connected",
+      "why": "Browser-agent fallback to existing Playwright runner; not connected.",
+      "roles": [
+        "content",
+        "research",
+        "lead",
+        "sales",
+        "support"
+      ]
+    },
+    {
+      "id": "playwright",
+      "repo": "microsoft/playwright",
+      "url": "https://github.com/microsoft/playwright",
+      "category": "Browser",
+      "license_note": "Apache-2.0",
+      "status": "existing_runtime",
+      "why": "Used by the existing Computer Runner. Avoid adding a second browser runtime.",
+      "roles": [
+        "content",
+        "lead",
+        "research",
+        "quality",
+        "sales",
+        "support"
+      ]
+    },
+    {
+      "id": "activepieces",
+      "repo": "activepieces/activepieces",
+      "url": "https://github.com/activepieces/activepieces",
+      "category": "Workflow/MCP",
+      "license_note": "MIT-Community",
+      "status": "existing_adapter",
+      "why": "Gated workflow integration and per-role webhooks already coded; real Flows unverified.",
+      "roles": [
+        "director",
+        "strategy",
+        "operations",
+        "finance",
+        "hr",
+        "procurement",
+        "sales",
+        "content",
+        "ads",
+        "support",
+        "compliance",
+        "analytics"
+      ]
+    },
+    {
+      "id": "langgraph",
+      "repo": "langchain-ai/langgraph",
+      "url": "https://github.com/langchain-ai/langgraph",
+      "category": "State machine",
+      "license_note": "MIT",
+      "status": "selected_not_connected",
+      "why": "Durable checkpoint / pause / resume for long-running Work Orders; incremental adoption only.",
+      "roles": [
+        "director",
+        "operations",
+        "strategy",
+        "quality"
+      ]
+    },
+    {
+      "id": "crawl4ai",
+      "repo": "unclecode/crawl4ai",
+      "url": "https://github.com/unclecode/crawl4ai",
+      "category": "Web reading",
+      "license_note": "Apache-2.0",
+      "status": "existing_adapter",
+      "why": "Existing read-only website crawling adapter; requires configured service.",
+      "roles": [
+        "research",
+        "strategy",
+        "lead",
+        "quality",
+        "procurement"
+      ]
+    },
+    {
+      "id": "mem0",
+      "repo": "mem0ai/mem0",
+      "url": "https://github.com/mem0ai/mem0",
+      "category": "Memory",
+      "license_note": "Apache-2.0",
+      "status": "selected_not_connected",
+      "why": "Scoped long-term agent memory with explicit memory boundaries; no current connection.",
+      "roles": [
+        "director",
+        "research",
+        "content",
+        "sales",
+        "support",
+        "crm",
+        "quality"
+      ]
+    },
+    {
+      "id": "langfuse",
+      "repo": "langfuse/langfuse",
+      "url": "https://github.com/langfuse/langfuse",
+      "category": "Observability",
+      "license_note": "Check source edition",
+      "status": "catalog_reference",
+      "why": "AI traces, cost tracking and evaluations; already cited in Tool Hub catalog, not connected.",
+      "roles": [
+        "director",
+        "operations",
+        "quality",
+        "analytics"
+      ]
+    },
+    {
+      "id": "comfyui",
+      "repo": "comfyanonymous/ComfyUI",
+      "url": "https://github.com/comfyanonymous/ComfyUI",
+      "category": "Media",
+      "license_note": "GPL-3.0",
+      "status": "existing_adapter",
+      "why": "Local image/video workflow generation; existing adapter; live model/server not verified.",
+      "roles": [
+        "content",
+        "ads"
+      ]
+    },
+    {
+      "id": "twenty",
+      "repo": "twentyhq/twenty",
+      "url": "https://github.com/twentyhq/twenty",
+      "category": "CRM",
+      "license_note": "Check source edition",
+      "status": "existing_adapter",
+      "why": "Create person adapter present, owner-authorized API credentials required.",
+      "roles": [
+        "crm",
+        "sales",
+        "lead",
+        "support"
+      ]
+    },
+    {
+      "id": "chatwoot",
+      "repo": "chatwoot/chatwoot",
+      "url": "https://github.com/chatwoot/chatwoot",
+      "category": "Customer support",
+      "license_note": "Check source edition",
+      "status": "existing_adapter",
+      "why": "Create contact adapter present; actual omnichannel account needed.",
+      "roles": [
+        "support",
+        "crm",
+        "sales"
+      ]
+    },
+    {
+      "id": "ui_tars",
+      "repo": "bytedance/UI-TARS-desktop",
+      "url": "https://github.com/bytedance/UI-TARS-desktop",
+      "category": "Computer vision",
+      "license_note": "Apache-2.0",
+      "status": "research_only",
+      "why": "Benchmark/possible GUI operator, heavy model/runtime; not automatic replacement.",
+      "roles": [
+        "operations",
+        "quality"
+      ]
+    },
+    {
+      "id": "omniparser",
+      "repo": "microsoft/OmniParser",
+      "url": "https://github.com/microsoft/OmniParser",
+      "category": "Computer vision",
+      "license_note": "Mixed weights",
+      "status": "research_only",
+      "why": "Structured screenshot parsing and GUI grounding; separately review model weight licensing.",
+      "roles": [
+        "operations",
+        "quality"
+      ]
+    },
+    {
+      "id": "openhands",
+      "repo": "All-Hands-AI/OpenHands",
+      "url": "https://github.com/All-Hands-AI/OpenHands",
+      "category": "Coding",
+      "license_note": "Check source edition",
+      "status": "research_only",
+      "why": "Coding agent benchmark/optional sandbox; not safe to give unrestricted repo write by default.",
+      "roles": [
+        "operations",
+        "quality"
+      ]
+    },
+    {
+      "id": "openclaw",
+      "repo": "openclaw/openclaw",
+      "url": "https://github.com/openclaw/openclaw",
+      "category": "Agent harness",
+      "license_note": "MIT",
+      "status": "reference_only",
+      "why": "Complete assistant alternative; deliberately not embedded to avoid second competing agent core.",
+      "roles": [
+        "director",
+        "operations"
+      ]
+    },
+    {
+      "id": "mcp_gateway",
+      "repo": "IBM/mcp-context-forge",
+      "url": "https://github.com/IBM/mcp-context-forge",
+      "category": "Tool governance",
+      "license_note": "Check license",
+      "status": "selected_not_connected",
+      "why": "Future server-side MCP gateway / authorization and isolation; needs security review.",
+      "roles": [
+        "director",
+        "operations",
+        "quality"
+      ]
+    },
+    {
+      "id": "graphiti",
+      "repo": "getzep/graphiti",
+      "url": "https://github.com/getzep/graphiti",
+      "category": "Memory graph",
+      "license_note": "Apache-2.0",
+      "status": "reference_only",
+      "why": "Optional temporal knowledge graph after basic memory scope proven.",
+      "roles": [
+        "research",
+        "analytics",
+        "strategy"
+      ]
+    }
+  ]
+}
