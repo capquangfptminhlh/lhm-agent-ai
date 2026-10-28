@@ -83,6 +83,7 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertEqual(payload["runs"][0]["html_url"],
                          "https://github.com/capquangfptminhlh/cnlg/actions/runs/12345")
         self.assertEqual(calls[0].url.host, "api.github.com")
+        self.assertEqual(calls[0].url.params.get("branch"),"main")
         self.assertEqual(calls[0].method, "GET")
         self.assertNotIn("authorization", calls[0].headers)
 
@@ -155,6 +156,7 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertEqual(d["failed_jobs"][0]["html_url"],
                          "https://github.com/capquangfptminhlh/ggminh/actions/runs/789/job/431")
         self.assertEqual(d["runs"][0]["head_branch"],"main")
+        self.assertEqual(d["branch_scope"],"main")
         self.assertEqual(len(calls),2)
         self.assertTrue(all(path.startswith("/repos/capquangfptminhlh/ggminh/actions/")
                             for path in calls))
