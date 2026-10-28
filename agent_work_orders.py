@@ -297,7 +297,7 @@ def create_order(ws: str,role: str,inp: WorkOrderIn):
 
 def _fleet_view(c,row) -> dict[str,Any]:
     from openrouter_provider import model_configured
-    orders=c.execute("""SELECT f.role,f.work_order_id,o.task_id,t.status,t.error
+    orders=c.execute("""SELECT f.role,f.work_order_id,o.task_id,t.status,t.error,t.model
         FROM agent_fleet_orders f
         JOIN agent_work_orders o ON o.id=f.work_order_id
         JOIN tasks t ON t.id=o.task_id AND t.workspace_id=?
@@ -314,8 +314,7 @@ def _fleet_view(c,row) -> dict[str,Any]:
     else:
         phase="queued"
     hb=c.execute("SELECT updated_at FROM worker_heartbeats WHERE id='default'").fetchone()
-    from core import MODEL
-    model=_selected_model()
+    model=orders[0]["model"] if orders else None
     return {
         "id":row["id"],"workspace_id":row["workspace_id"],
         "mission":row["mission"],"created_at":row["created_at"],
@@ -328,7 +327,7 @@ def _fleet_view(c,row) -> dict[str,Any]:
                    "task_id":r["task_id"],"task_status":r["status"],
                    "error":r["error"] if r["status"] in errors else None}
                   for r in orders],
-        "readiness":{"api_key_configured":model_configured(model),
+        "readiness":{"api_key_configured":bool(model and model_configured(model)),
                      "worker_recent_heartbeat":bool(hb and now()-int(hb["updated_at"])<45)},
         "external_actions_performed":False,
         "external_verification":False,
