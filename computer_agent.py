@@ -26,6 +26,7 @@ from openrouter_provider import call_free_model, is_free_model, local_free_quota
 
 router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
+  "agent_reach_search":"Read-only cross-platform search via separately installed Agent-Reach; {channel: github|youtube|bilibili, query: text}; no login or posting.",
   "list_files":"List files under this Agent's sandbox directory; {path?: relative dir}",
   "read_file":"Read UTF-8 file inside sandbox; {path: relative file}",
   "write_file":"Write one UTF-8 file inside sandbox; {path: relative, content: text}; may require approval",
@@ -304,6 +305,9 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
     from agent_runtime_pilot import PILOT_TOOLS, pilot_role_for_run
     bound_role=pilot_role_for_run(run_id) if run_id else None
     allowed=PILOT_TOOLS[bound_role] if bound_role else set(TOOLS)
+    from agent_reach_bridge import SEARCH_ROLES
+    if role not in SEARCH_ROLES:
+        allowed=allowed-{"agent_reach_search"}
     enabled=((k,v) for k,v in TOOLS.items()
              if k in allowed
              if (native or not k.startswith("windows_"))
@@ -559,6 +563,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
             from agent_runtime_pilot import assert_pilot_action
             assert_pilot_action(run,tool,args,steps)
+            if tool=="agent_reach_search":
+                from agent_reach_bridge import validate as validate_reach
+                validate_reach(run["role"],args)
             approval_needed=await _approval_for_action(tool,args,run)
             sid=new_id()
             with db() as c:
@@ -582,6 +589,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # Bound pilot policy is enforced again for previously-approved steps.
         from agent_runtime_pilot import assert_pilot_action
         assert_pilot_action(run,tool,args)
+        if tool=="agent_reach_search":
+            from agent_reach_bridge import validate as validate_reach
+            validate_reach(run["role"],args)
         # P3 evidence pair: capture local UI state BEFORE a UI mutation so
         # the step record carries an auditable before/after comparison.
         pre_state=None

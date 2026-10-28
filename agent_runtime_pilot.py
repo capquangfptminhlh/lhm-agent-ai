@@ -24,11 +24,11 @@ router = APIRouter(tags=["Agent Runtime Pilot"])
 
 PILOT_TOOLS = {
     # Browser writes are still always manually approved by Computer Agent.
-    "content": frozenset({"list_files","read_file","browser_open","browser_snapshot",
+    "content": frozenset({"agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot","browser_click","browser_fill"}),
     "sales": frozenset({"list_files","read_file","browser_open","browser_snapshot",
                          "browser_scroll","browser_screenshot"}),
-    "quality": frozenset({"list_files","read_file","browser_open","browser_snapshot",
+    "quality": frozenset({"agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot"}),
 }
 PILOT_HOST_ENV = {role: "LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS" for role in PILOT_TOOLS}

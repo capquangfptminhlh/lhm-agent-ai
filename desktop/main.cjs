@@ -22,6 +22,7 @@ const ROUTES = Object.freeze({
   "Việc cố định Agent":"/agent-work",
   "Công cụ 16 phòng ban":"/agents/departments/ui",
   "Runtime 3 Agent Pilot":"/agents/runtime-pilot/ui",
+  "Kho công cụ GitHub":"/agents/github-stack/ui",
   "Agent theo repository":"/repo-agents/ui",
   "Máy tính Agent":"/computer",
   "Công cụ chuyên môn":"/agent-tools",
