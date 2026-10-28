@@ -21,6 +21,9 @@ class OpenCLIPolicyTests(unittest.TestCase):
         self.env=patch.dict(os.environ,{
             "LHM_COMPUTER_ALLOWED_HOSTS":"example.com,example.org",
             "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_SALES_ALLOWED_HOSTS":"example.com",
             "LHM_OPENCLI_ENABLED":"1",
             "LHM_OPENCLI_PROFILE":"lhm-work",
             "LHM_DESKTOP_NATIVE":"1",
@@ -38,6 +41,18 @@ class OpenCLIPolicyTests(unittest.TestCase):
             self.assertFalse(bridge.allowed_url(url),url)
         with patch.dict(os.environ,{"LHM_OPENCLI_ALLOWED_HOSTS":""}):
             self.assertFalse(bridge.allowed_url("https://example.com"))
+
+    def test_role_host_fence_cannot_be_bypassed_by_opencli(self):
+        url="https://example.com/publish"
+        self.assertTrue(bridge.allowed_url(url,"content"))
+        self.assertTrue(bridge.allowed_url(url,"sales"))
+        with patch.dict(os.environ,{"LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":""}):
+            self.assertFalse(bridge.allowed_url(url,"content"))
+            with self.assertRaises(HTTPException):
+                bridge.validate("content","opencli_open",{"url":url})
+        with patch.dict(os.environ,{"LHM_COMPUTER_SALES_ALLOWED_HOSTS":"crm.example.com"}):
+            self.assertFalse(bridge.allowed_url(url,"sales"))
+        self.assertTrue(bridge.allowed_url(url,"research"))
 
     def test_tool_roles_and_exact_args(self):
         self.assertIn("opencli_click",PILOT_TOOLS["content"])
@@ -130,6 +145,9 @@ class OpenCLIExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.env=patch.dict(os.environ,{
             "LHM_COMPUTER_ALLOWED_HOSTS":"example.com",
             "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS":"example.com",
+            "LHM_COMPUTER_SALES_ALLOWED_HOSTS":"example.com",
             "LHM_OPENCLI_ENABLED":"1","LHM_OPENCLI_PROFILE":"lhm-work",
             "LHM_DESKTOP_NATIVE":"1",
             "OPENROUTER_API_KEY":"DO_NOT_PASS",
