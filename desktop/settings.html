@@ -60,6 +60,10 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <p>Để trống = không cho thao tác bất kỳ ứng dụng Windows nào. Robot chỉ hiển thị các cửa sổ thuộc ứng dụng trong danh sách.</p>
 <label>Website HTTPS được phép mở bằng browser automation<input id="allowedHosts" placeholder="example.com, docs.example.com"></label>
 <p>Để trống = robot không được mở website ngoài. Không sử dụng IP, wildcard hoặc localhost.</p>
+<label>Website dành riêng cho Content Agent<input id="contentHosts" placeholder="example.com, blog.example.com" autocomplete="off"></label>
+<label>Website dành riêng cho Sales Agent<input id="salesHosts" placeholder="crm.example.com" autocomplete="off"></label>
+<label>Website dành riêng cho Quality Agent<input id="qualityHosts" placeholder="example.com" autocomplete="off"></label>
+<p>Danh sách từng Agent phải nằm trong danh sách website HTTPS tổng ở trên. Để trống = Agent đó KHÔNG có quyền vào website, kể cả khi OpenCLI đã bật. Lưu rồi khởi động lại.</p>
 <div class="card"><h2>OpenCLI · Chrome profile riêng (tùy chọn)</h2>
 <label class="check"><input type="checkbox" id="opencliEnabled"> Cho Agent điều khiển profile Chrome được chọn qua OpenCLI (Windows)</label>
 <button id="opencliExtension" type="button" style="background:#566a7e">1. Cài tiện ích OpenCLI vào Chrome riêng</button>
@@ -69,7 +73,7 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <select id="opencliProfileSelect" aria-label="Chọn Chrome profile của LHM"><option value="">Chọn Chrome profile riêng…</option></select>
 <label>Profile OpenCLI đã chọn<input id="opencliProfile" placeholder="Chọn từ danh sách bên trên" autocomplete="off" maxlength="80"></label>
 <label>Website OpenCLI được phép (phải có trong danh sách HTTPS bên trên)<input id="opencliHosts" placeholder="example.com, docs.example.com" autocomplete="off"></label>
-<p>Không tự sao chép Chrome cá nhân. Cài OpenCLI CLI và Browser Bridge extension trong Chrome profile riêng, đăng nhập nền tảng bằng tay. Robot chỉ mở/đọc trang được phép; Content Agent muốn click/điền phải được anh duyệt từng lần. Không có quyền chạy JavaScript, API ẩn, plugin hoặc gửi bài hàng loạt. Thiết lập yêu cầu khởi động lại.</p></div>
+<p>Không tự sao chép Chrome cá nhân. Node/OpenCLI đã nằm trong bộ cài Windows. Anh chỉ cần tự cài Browser Bridge extension vào Chrome profile riêng và đăng nhập nền tảng bằng tay. Robot chỉ mở/đọc trang được phép; Content Agent muốn click/điền phải được anh duyệt từng lần. Không có quyền chạy JavaScript, API ẩn, plugin hoặc gửi bài hàng loạt. Thiết lập yêu cầu khởi động lại.</p></div>
 </div>
 </details>
 <div class="notice">Robot chạy bằng quyền Windows của người đang đăng nhập; chưa có VM cách ly cho mỗi Agent. Không đưa ứng dụng ngân hàng, ví tiền, phần mềm quản lý mật khẩu hoặc ứng dụng chứa dữ liệu nhạy cảm vào danh sách cho phép. Các thao tác click/gõ vẫn yêu cầu anh duyệt từng bước.</div>

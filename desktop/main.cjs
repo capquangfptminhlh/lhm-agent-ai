@@ -62,6 +62,15 @@ function saveSettings(input) {
       .split(",").map(x=>x.trim()).filter(Boolean);
   const allowedApps = String(input.allowedApps || "").toLowerCase()
       .split(",").map(x=>x.trim()).filter(Boolean);
+  const roleHosts={};
+  for(const role of ["content","sales","quality"]){
+    const key=role+"Hosts";
+    const hosts=String(input[key]||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+    if(hosts.length>20 || hosts.some(h=>!allowedHosts.includes(h))){
+      throw new Error("Website "+role+" phải là tập con của danh sách HTTPS tổng (tối đa 20).");
+    }
+    roleHosts[key]=[...new Set(hosts)];
+  }
   if (allowedHosts.length > 30 || allowedHosts.some(h=>
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
@@ -87,7 +96,7 @@ function saveSettings(input) {
     throw new Error("Vision model phải là tên model OpenRouter :free cụ thể, không dùng gói trả phí.");
   }
   const data = {
-    provider, allowedHosts:[...new Set(allowedHosts)],
+    provider, allowedHosts:[...new Set(allowedHosts)], ...roleHosts,
     allowedApps:[...new Set(allowedApps)],
     visionEnabled:input.visionEnabled===true,
     trustedEnabled:input.trustedEnabled===true,
@@ -122,6 +131,9 @@ function settingsForUI() {
   return {
     provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
+    contentHosts:Array.isArray(c.contentHosts)?c.contentHosts.join(","):"",
+    salesHosts:Array.isArray(c.salesHosts)?c.salesHosts.join(","):"",
+    qualityHosts:Array.isArray(c.qualityHosts)?c.qualityHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
@@ -159,6 +171,9 @@ function envForRuntime() {
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
+    LHM_COMPUTER_CONTENT_ALLOWED_HOSTS:(Array.isArray(c.contentHosts)?c.contentHosts:[]).join(","),
+    LHM_COMPUTER_SALES_ALLOWED_HOSTS:(Array.isArray(c.salesHosts)?c.salesHosts:[]).join(","),
+    LHM_COMPUTER_QUALITY_ALLOWED_HOSTS:(Array.isArray(c.qualityHosts)?c.qualityHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
     LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
@@ -186,6 +201,8 @@ function nativeEnv(runtimeEnv) {
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
     "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
+    "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS","LHM_COMPUTER_SALES_ALLOWED_HOSTS",
+    "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
@@ -243,9 +260,9 @@ function stopAll() {
   shutdown=true;
   for(const k of ["worker","native","api"])terminate(k);
 }
-function backendFetch(url,token,method="GET",body=null) {
+function backendFetch(url,token,method="GET",body=null,timeoutMs=1600) {
   return new Promise((resolve,reject)=>{
-    const req=http.request(url,{method,timeout:1600,
+    const req=http.request(url,{method,timeout:timeoutMs,
       headers:{"Authorization":"Bearer "+token,
         ...(body?{"Content-Type":"application/json"}:{})}},res=>{
       const chunks=[];
@@ -454,7 +471,26 @@ function settingsIPC(){
     return {saved:true};
   });
 }
-app.on("before-quit",stopAll);
+app.on("before-quit",event=>{
+  if(shutdown)return;
+  event.preventDefault();
+  // Edge is an owned persistent Playwright context. End its native profile
+  // lease before killing the runner; otherwise Windows may leave an orphan
+  // msedge.exe holding files even after Robot closes. Never close the user's
+  // independently opened Chrome/OpenCLI profiles here.
+  (async()=>{
+    try {
+      if(children.has("native")){
+        await backendFetch(NATIVE_ORIGIN+"/v1/browser/close",runnerToken,"POST",null,8500);
+      }
+    } catch(e) {
+      writeLog("electron","Browser cleanup skipped: "+(e?.name||"error")+"\n");
+    } finally {
+      stopAll();
+      app.quit();
+    }
+  })();
+});
 app.on("window-all-closed",()=>{if(process.platform!=="darwin")app.quit();});
 app.on("activate",()=>{if(!mainWindow)createMain();});
 app.whenReady().then(async()=>{

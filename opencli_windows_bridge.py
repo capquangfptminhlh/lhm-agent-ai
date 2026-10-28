@@ -33,7 +33,7 @@ def _windows() -> bool:
     return os.name=="nt"
 
 
-def allowed_url(url: str) -> bool:
+def allowed_url(url: str, role: str | None = None) -> bool:
     if not isinstance(url,str) or len(url)>1500 or any(ord(c)<32 for c in url):
         return False
     try:
@@ -43,7 +43,14 @@ def allowed_url(url: str) -> bool:
                       os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if h.strip()}
         tool_hosts={h.strip().lower().rstrip(".") for h in
                     os.getenv("LHM_OPENCLI_ALLOWED_HOSTS","").split(",") if h.strip()}
-        return (u.scheme=="https" and host and host in global_hosts & tool_hosts
+        # Specialist Agents require an explicit role-scoped host list; the
+        # global/OpenCLI allowlists alone never grant a pilot Agent access.
+        allow=global_hosts & tool_hosts
+        if role in ("content","sales","quality"):
+            own={h.strip().lower().rstrip(".") for h in
+                 os.getenv("LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS","").split(",") if h.strip()}
+            allow &= own
+        return (u.scheme=="https" and host and host in allow
                 and u.port in (None,443) and not u.username and not u.password
                 and "\\" not in url and "#" not in url)
     except (ValueError,TypeError):
@@ -62,13 +69,13 @@ def validate(role: str,tool: str,args: dict[str,Any]) -> None:
               "opencli_fill":{"ref","url","label","text"}}[tool]
     if set(args)!=expected:
         raise HTTPException(422,"OpenCLI tool arguments do not match the allowlist")
-    if tool=="opencli_open" and not allowed_url(args.get("url")):
+    if tool=="opencli_open" and not allowed_url(args.get("url"),role):
         raise HTTPException(403,"OpenCLI URL không thuộc danh sách HTTPS được cấp quyền")
     if tool in WRITE_TOOLS:
         n=args.get("ref")
         if type(n) is not int or not 1<=n<=3000:
             raise HTTPException(422,"OpenCLI requires a numeric ref from a recent state")
-        if not allowed_url(args.get("url")):
+        if not allowed_url(args.get("url"),role):
             raise HTTPException(403,"OpenCLI click/fill URL must be allowlisted")
         label=args.get("label")
         if (not isinstance(label,str) or not 2<=len(label.strip())<=120
@@ -181,10 +188,10 @@ def _url_from_response(response: dict[str,Any]) -> str:
     return data.get("url","") if isinstance(data,dict) else ""
 
 
-def _state(response: dict[str,Any]) -> dict[str,Any]:
+def _state(response: dict[str,Any], role: str | None = None) -> dict[str,Any]:
     data=response.get("data")
     url=_url_from_response(response)
-    if not allowed_url(url):
+    if not allowed_url(url,role):
         raise HTTPException(409,"OpenCLI page moved outside approved hosts; stop and inspect")
     snapshot=data.get("snapshot") if isinstance(data,dict) else None
     if not isinstance(snapshot,str):
@@ -207,11 +214,11 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | 
         return await _invoke(node,entry,profile,session,action,*rest)
     if tool=="opencli_open":
         res=await call("open",args["url"])
-        if not allowed_url(_url_from_response(res)):
+        if not allowed_url(_url_from_response(res),role):
             raise HTTPException(409,"OpenCLI navigation redirected outside approved hosts")
         return {"url":_url_from_response(res),"opened":True,"provider":"OpenCLI",
                 "verified_navigation":True}
-    before=_state(await call("state"))
+    before=_state(await call("state"),role)
     if tool=="opencli_state":
         return {**before,"provider":"OpenCLI","read_only":True}
     # Manual approval binds the URL and semantic label, not only an ordinal.
@@ -236,7 +243,7 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | 
             raise HTTPException(409,"OpenCLI fill not confirmed; do not auto retry")
     # Postflight verifies current URL. This does not prove an external post,
     # purchase, or CRM mutation took place.
-    after=_state(await call("state"))
+    after=_state(await call("state"),role)
     return {"provider":"OpenCLI","action":tool,
             "url_before":before["url"],"url_after":after["url"],
             "confirmed_by_cli":True,"external_effect_verified":False,

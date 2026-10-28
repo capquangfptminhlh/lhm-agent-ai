@@ -60,6 +60,31 @@ test("OpenCLI is explicit opt-in with dedicated Chrome profile and host scope",(
    assert.match(js,new RegExp(field));
  }
 });
+test("Windows owner can scope Content Sales Quality domains; no implicit global inheritance",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ for(const role of ["content","sales","quality"]){
+   assert.match(html,new RegExp('id="'+role+'Hosts"'));
+   assert.match(js,new RegExp(role+'Hosts'));
+   assert.match(main,new RegExp("LHM_COMPUTER_"+role.toUpperCase()+"_ALLOWED_HOSTS"));
+ }
+ assert.match(main,/hosts\.some\(h=>!allowedHosts\.includes\(h\)\)/);
+ const envSection=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];
+ for(const role of ["CONTENT","SALES","QUALITY"]){
+   assert.match(envSection,new RegExp("LHM_COMPUTER_"+role+"_ALLOWED_HOSTS"));
+ }
+});
+test("Electron releases ONLY owned Playwright Edge profile before stopping native runner",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const runner=fs.readFileSync(path.join(root,"..","computer_executor.py"),"utf8");
+ assert.match(main,/before-quit/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/browser\/close"/);
+ assert.match(main,/await backendFetch\(NATIVE_ORIGIN/);
+ assert.match(runner,/@runner\.post\("\/v1\/browser\/close"\)/);
+ assert.match(runner,/_auth\(authorization\)/);
+ assert.match(runner,/await asyncio\.wait_for\(context\.close\(\)/);
+});
 test("Native runner receives no cloud secrets and no main env",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const native=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];
