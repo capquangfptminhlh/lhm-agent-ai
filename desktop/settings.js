@@ -76,7 +76,7 @@ $("opencliFindProfiles").onclick=async()=>{
      option.value=item.id;option.textContent=String(item.label||item.id).slice(0,80);
      list.append(option);
    }
-   panel.textContent=list.options.length>1?"Chọn profile Chrome riêng trong danh sách rồi Lưu cấu hình.":String(found.detail||"Chưa thấy Chrome profile kết nối");
+   panel.textContent=(found.daemon_started?"Đã khởi chạy Browser Bridge cục bộ. ":"")+(list.options.length>1?"Chọn đúng profile Chrome riêng trong danh sách rồi Lưu cấu hình.":String(found.detail||"Chưa thấy Chrome profile kết nối"));
  }catch(e){panel.textContent="Không tìm được Chrome profile: "+(e.message||"lỗi kết nối");}
  finally{button.disabled=false;}
 };
