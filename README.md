@@ -1,3 +1,20 @@
+## OpenCLI cho Windows — thao tác Chrome profile riêng, có phê duyệt
+
+Bản Computer Agent có thêm OpenCLI Browser Bridge **tùy chọn** để mở
+trang HTTPS được anh cấp quyền, xem các phần tử DOM, click và điền văn
+bản theo tham chiếu số. **Mọi click/fill đều đợi anh duyệt từng bước.**
+QA/Sales chỉ đọc; Content mới có quyền đề xuất click/fill.
+
+Cài Node.js, cài OpenCLI `npm install -g @jackwener/opencli@2.0.2`, tự
+cài Browser Bridge extension vào **Chrome profile mới**, đặt tên profile
+và bật ở **Thiết lập Robot**. Phải thiết lập danh sách host riêng, không
+tự truy cập Chrome cá nhân, không cần Linux/Docker. OpenCLI là bên thứ ba
+chạy bằng tài khoản Windows hiện tại; chưa có nghiệm thu phiên Chrome
+thật nếu chủ máy chưa thiết lập. Xem
+[docs/WINDOWS_OPENCLI_PILOT.md](docs/WINDOWS_OPENCLI_PILOT.md).
+
+---
+
 ## Windows: Agent-Reach tìm kiếm ngay trong LHM Robot Desktop (không cần Linux)
 
 Bản Windows đóng gói có Agent-Reach v1.6.0 từ **wheel GitHub chính thức**,
