@@ -312,6 +312,11 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
     from agent_reach_bridge import SEARCH_ROLES
     if role not in SEARCH_ROLES:
         allowed=allowed-{"agent_reach_search"}
+    from opencli_windows_bridge import READ_ROLES as OPENCLI_ROLES
+    if (role not in OPENCLI_ROLES or not native or
+            os.environ.get("LHM_OPENCLI_ENABLED")!="1" or
+            not os.environ.get("LHM_OPENCLI_PROFILE")):
+        allowed=allowed-{"opencli_open","opencli_state","opencli_click","opencli_fill"}
     enabled=((k,v) for k,v in TOOLS.items()
              if k in allowed
              if (native or not k.startswith("windows_"))
