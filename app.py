@@ -26,7 +26,6 @@ from department_tools import router as department_router
 from agent_runtime_pilot import router as agent_pilot_router
 from github_tool_stack import router as github_stack_router
 from repo_agent_bindings import router as repository_agents_router
-from repo_agent_bindings import router as repo_agents_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
@@ -51,7 +50,6 @@ app.include_router(department_router)
 app.include_router(agent_pilot_router)
 app.include_router(github_stack_router)
 app.include_router(repository_agents_router)
-app.include_router(repo_agents_router)
 
 
 @app.middleware("http")
