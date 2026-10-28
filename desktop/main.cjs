@@ -390,6 +390,22 @@ function settingsIPC(){
       allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
       allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
   });
+  ipcMain.handle("settings:opencli-status",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try{
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/opencli/status",runnerToken);
+      if(response.status!==200)throw Error("Windows native controller is unavailable");
+      const data=JSON.parse(response.text);
+      if(typeof data.ready!=="boolean" || typeof data.cli_installed!=="boolean")
+        throw Error("Invalid OpenCLI status");
+      return data;
+    }catch(err){
+      return {ready:false,enabled:false,cli_installed:false,
+              bridge_running:false,profile_connected:false,
+              detail:"Windows controller not ready or OpenCLI status unavailable"};
+    }
+  });
   ipcMain.handle("settings:test-openrouter",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
