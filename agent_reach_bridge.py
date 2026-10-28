@@ -45,9 +45,13 @@ def validate(role: str, args: dict[str,Any]) -> tuple[str,str]:
     return channel,query
 
 
+def _on_windows() -> bool:
+    return os.name=="nt"
+
+
 async def search(ws: str,role: str,args: dict[str,Any], home: Path) -> dict[str,Any]:
     channel,query=validate(role,args)
-    windows=(os.name=="nt")
+    windows=_on_windows()
     if windows:
         # Explicit opt-in: separate subprocess uses the *same Windows user*,
         # so this is NOT a sandbox; restrict to public backends only.
