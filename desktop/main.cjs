@@ -260,9 +260,9 @@ function stopAll() {
   shutdown=true;
   for(const k of ["worker","native","api"])terminate(k);
 }
-function backendFetch(url,token,method="GET",body=null) {
+function backendFetch(url,token,method="GET",body=null,timeoutMs=1600) {
   return new Promise((resolve,reject)=>{
-    const req=http.request(url,{method,timeout:1600,
+    const req=http.request(url,{method,timeout:timeoutMs,
       headers:{"Authorization":"Bearer "+token,
         ...(body?{"Content-Type":"application/json"}:{})}},res=>{
       const chunks=[];
@@ -471,7 +471,26 @@ function settingsIPC(){
     return {saved:true};
   });
 }
-app.on("before-quit",stopAll);
+app.on("before-quit",event=>{
+  if(shutdown)return;
+  event.preventDefault();
+  // Edge is an owned persistent Playwright context. End its native profile
+  // lease before killing the runner; otherwise Windows may leave an orphan
+  // msedge.exe holding files even after Robot closes. Never close the user's
+  // independently opened Chrome/OpenCLI profiles here.
+  (async()=>{
+    try {
+      if(children.has("native")){
+        await backendFetch(NATIVE_ORIGIN+"/v1/browser/close",runnerToken,"POST",null,8500);
+      }
+    } catch(e) {
+      writeLog("electron","Browser cleanup skipped: "+(e?.name||"error")+"\n");
+    } finally {
+      stopAll();
+      app.quit();
+    }
+  })();
+});
 app.on("window-all-closed",()=>{if(process.platform!=="darwin")app.quit();});
 app.on("activate",()=>{if(!mainWindow)createMain();});
 app.whenReady().then(async()=>{
