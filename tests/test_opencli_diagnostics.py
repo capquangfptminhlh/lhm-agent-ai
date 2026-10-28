@@ -44,6 +44,39 @@ class DiagnosticTests(unittest.IsolatedAsyncioTestCase):
                         status=await diag.inspect()
         self.assertTrue(status["ready"])
 
+    async def test_profile_picker_only_returns_connected_valid_ids(self):
+        class Fake:
+            returncode=0
+            async def communicate(self):
+                return json.dumps({"ok":True,"data":{
+                    "daemonRunning":True,
+                    "profiles":[
+                        {"contextId":"lhm_context_01","alias":"LHM","connected":True},
+                        {"contextId":"personal_context","alias":"personal","connected":False},
+                        {"contextId":"bad:profile","alias":"bad","connected":True}
+                    ]}}).encode(),b""
+        with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1"}):
+            with patch.object(diag,"_windows",return_value=True):
+                with patch.object(diag,"_toolchain",return_value=("node.exe","main.js")):
+                    with patch.object(diag.asyncio,"create_subprocess_exec",return_value=Fake()):
+                        result=await diag.connected_profiles()
+        self.assertEqual(result["profiles"],[{"id":"lhm_context_01","label":"LHM"}])
+        self.assertNotIn("personal",str(result))
+
+    async def test_profile_picker_requires_native_controller_token(self):
+        from fastapi.testclient import TestClient
+        import computer_executor
+        api=TestClient(computer_executor.runner)
+        with patch.dict(os.environ,{"LHM_COMPUTER_RUNNER_TOKEN":"owner-test-token"}):
+            self.assertEqual(api.get("/v1/opencli/profiles").status_code,401)
+            with patch.object(diag,"connected_profiles",return_value={
+                "cli_installed":True,"profiles":[{"id":"lhm_context_01","label":"LHM"}],
+                "detail":"Choose dedicated profile"}):
+                result=api.get("/v1/opencli/profiles",
+                    headers={"Authorization":"Bearer owner-test-token"})
+        self.assertEqual(result.status_code,200)
+        self.assertEqual(result.json()["profiles"][0]["id"],"lhm_context_01")
+
     async def test_disabled_never_launches_process(self):
         with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1","LHM_OPENCLI_ENABLED":"0"}):
             with patch.object(diag,"_windows",return_value=True):
