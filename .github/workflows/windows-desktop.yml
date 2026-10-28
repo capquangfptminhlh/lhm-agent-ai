@@ -94,6 +94,7 @@ jobs:
 
       - name: Validate Electron JavaScript before packaging
         run: |
+          node --check desktop/scripts/ensure-opencli-bundle.cjs
           node --check desktop/main.cjs
           node --check desktop/settings-preload.cjs
           node --check desktop/settings.js
