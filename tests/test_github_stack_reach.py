@@ -93,7 +93,7 @@ class AgentReachSubprocessTests(unittest.IsolatedAsyncioTestCase):
         class Fake:
             returncode=0
             async def communicate(self):
-                return json.dumps({"ok":True,"result":[{"title":"Public repository"}]}).encode(),b""
+                return json.dumps({"schema_version":1,"ok":True,"channel":"github","action":"search","backend":"github-api","items":[{"title":"Public repository","url":"https://github.com/example/repo","text":"public","raw":{"untrusted_secret":"redacted"}}]}).encode(),b""
         captured=[]
         async def launch(*argv,**kw):
             captured.append((argv,kw))
@@ -108,6 +108,9 @@ class AgentReachSubprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["provider"],"Agent-Reach")
         self.assertEqual(result["mode"],"read_only_search")
         self.assertFalse(result["verified"])
+        self.assertEqual(result["items"][0]["title"],"Public repository")
+        self.assertNotIn("raw",result["items"][0])
+        self.assertEqual(result["source_backend"],"github-api")
         argv,kwargs=captured[0]
         self.assertEqual(argv,("/usr/local/bin/agent-reach","github","search","best agent"))
         self.assertFalse(kwargs.get("shell",False))
@@ -115,6 +118,18 @@ class AgentReachSubprocessTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("LHM_COMPUTER_RUNNER_TOKEN",kwargs["env"])
         self.assertIn("reach-home",kwargs["env"]["HOME"])
         self.assertTrue(kwargs["cwd"].startswith("/"))
+
+    async def test_wrong_search_schema_is_rejected(self):
+        class Fake:
+            returncode=0
+            async def communicate(self):
+                return json.dumps({"ok":True,"result":[{"title":"should not pass"}]}).encode(),b""
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(reach.shutil,"which",return_value="/usr/local/bin/agent-reach"):
+                with patch.object(reach.asyncio,"create_subprocess_exec",return_value=Fake()):
+                    with self.assertRaises(HTTPException) as caught:
+                        await reach.search("demo","research",{"channel":"github","query":"agent tool"},Path(tmp))
+        self.assertEqual(caught.exception.status_code,502)
 
     async def test_false_ok_and_invalid_json_do_not_return_unverified_success(self):
         class Fake:
