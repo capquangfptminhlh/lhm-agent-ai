@@ -85,9 +85,16 @@ def _safe_path(ws: str,role: str,name: str) -> Path:
         raise HTTPException(403,"Path outside Agent sandbox")
     return path
 
-def _allowed_domain(url: str) -> bool:
+def _allowed_domain(url: str, role: str | None = None) -> bool:
     allow={x.lower().rstrip(".").strip() for x in
             os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if x.strip()}
+    # Extra network fence for specialist Chrome profiles. Both global and
+    # role host lists must allow a target; an empty global list denies all.
+    if role in ("content","sales","quality"):
+        raw=os.getenv("LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS","")
+        if raw.strip():
+            own={x.lower().rstrip(".").strip() for x in raw.split(",") if x.strip()}
+            allow &= own
     try:
         u=urlsplit(url)
         host=(u.hostname or "").lower().rstrip(".")
@@ -165,7 +172,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
                 viewport={"width":1300,"height":850},**options)
             async def guard(route):
                 url=route.request.url
-                if url.startswith(("about:","data:","blob:")) or _allowed_domain(url):
+                if url.startswith(("about:","data:","blob:")) or _allowed_domain(url, role):
                     await route.continue_()
                 else:
                     await route.abort()
@@ -176,7 +183,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
         page.set_default_timeout(8000)
         if tool=="browser_open":
             url=args.get("url","")
-            if not isinstance(url,str) or not _allowed_domain(url):
+            if not isinstance(url,str) or not _allowed_domain(url, role):
                 raise HTTPException(422,"Browser URL must match an admin-approved HTTPS host")
             await page.goto(url,wait_until="domcontentloaded",timeout=16000)
         elif tool=="browser_scroll":

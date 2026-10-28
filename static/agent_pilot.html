@@ -1,0 +1,112 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM Agent · Work Order to Verification</title>
+<style>
+:root{font:14px/1.6 system-ui,"Segoe UI",sans-serif;background:#f3f6fa;color:#1c314d}
+*{box-sizing:border-box}body{margin:0}header{background:#172b46;color:#fff;padding:16px 24px}header a{color:#c9e6fc}
+main{max-width:1160px;margin:24px auto;padding:0 18px}h1{font-size:25px;margin:0 0 8px}h2{font-size:18px;margin:0 0 12px}
+.panel{border:1px solid #d9e3ef;background:#fff;border-radius:14px;padding:19px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+input,textarea,select{width:100%;font:inherit;border-radius:8px;border:1px solid #bdcee1;padding:10px;background:#fff}textarea{min-height:100px}
+label{display:block;font-weight:600;margin:11px 0 4px}button{font:inherit;cursor:pointer;color:#fff;border:0;border-radius:8px;background:#176bbd;padding:10px 14px}
+button:disabled{opacity:.45;cursor:not-allowed}.alt{background:#526c8a}.hint{color:#58708a;font-size:13px}
+pre{background:#eef3f8;padding:13px;white-space:pre-wrap;word-break:break-word;overflow:auto;max-height:460px;border-radius:9px;font:12px/1.6 ui-monospace,monospace}
+.status{padding:10px 13px;border-left:3px solid #859eb6;background:#f1f5fa;white-space:pre-wrap;margin:12px 0}
+.rail{display:flex;gap:5px;flex-wrap:wrap;margin:12px 0}.rail span{background:#eaf1f7;border-radius:7px;padding:7px 10px;font-size:12px}
+@media(max-width:770px){.grid{grid-template-columns:1fr}.panel{padding:13px}}
+</style></head><body>
+<header><strong>LHM Agent AI · Pilot GrokBot-style</strong> &nbsp;
+<a href="/agents/departments/ui">16 phòng ban</a> ·
+<a href="/agent-work">Giao việc</a> · <a href="/tool-hub">Tool Hub</a></header>
+<main><h1>Work Order → Computer → Công cụ → Verify</h1>
+<p class="hint">3 vai trò thử nghiệm: Content, Sales, QA. Chỉ dùng URL được quản trị viên cấp quyền. Trạng thái “đã gửi” không phải “đã đăng”. Lệnh nhạy cảm luôn phải duyệt.</p>
+<div class="rail"><span>1 · Giao việc</span><span>2 · Computer / Worker</span><span>3 · QA</span><span>4 · Duyệt công cụ</span><span>5 · Provider verification</span></div>
+<div class="grid"><div>
+<section class="panel">
+<h2>1. Nhiệm vụ cố định</h2>
+<label for="workspace">Workspace</label><input id="workspace" value="demo" maxlength="48">
+<label for="role">Agent</label><select id="role"><option value="content">Content / Social</option><option value="sales">Sales</option><option value="quality">QA</option></select>
+<label for="objective">Yêu cầu</label><textarea id="objective">Soạn nội dung giới thiệu BESI, nêu rõ những thông tin cần kiểm chứng, không tự đăng.</textarea>
+<button id="create">Tạo Work Order</button>
+<button class="alt" id="inspect">Xem trạng thái</button>
+<label for="orderid">Work Order ID (tự điền sau khi tạo)</label><input id="orderid" placeholder="Mã công việc">
+</section>
+<section class="panel">
+<h2>2. Computer Agent được giới hạn quyền</h2>
+<p class="hint">Chạy cùng một lõi Computer. Quyền browser/file, hostname và bộ nhớ tách theo vai trò. Chrome click/fill và thao tác nhạy cảm phải duyệt trong màn hình Computer.</p>
+<div class="row"><button id="computer">Khởi tạo Computer Run</button><a href="/computer">Mở Computer</a></div>
+<p id="profile" class="hint"></p>
+</section>
+<section class="panel">
+<h2>3. QA độc lập</h2>
+<button id="qa">Yêu cầu QA</button>
+<p class="hint">Quality Agent đánh giá bản nháp; bằng chứng bài đã đăng phải kiểm qua API, không dùng lời AI tự nhận.</p>
+</section>
+</div><div>
+<section class="panel">
+<h2>4. Content → Postiz API</h2>
+<label for="channels">Channel ID nằm trong whitelist (phân cách bằng dấu phẩy)</label>
+<input id="channels" placeholder="Kênh Postiz đã thực sự kết nối">
+<label for="mode">Hành động</label><select id="mode"><option value="draft">Lưu nháp, an toàn nhất</option><option value="now">Gửi đăng ngay (cần duyệt)</option></select>
+<label for="media">Ảnh đã upload lên Postiz (JSON)</label>
+<textarea id="media" placeholder='[{"id":"media-id","path":"https://..."}]'></textarea>
+<div class="row">
+<button id="handoff">Tạo yêu cầu chờ duyệt</button><button id="approve" class="alt">Chủ duyệt</button><button id="execute">Thực thi API</button><button id="verify" class="alt">Xác minh bài</button>
+</div>
+<p class="hint">Nếu không có API key, whitelist và media thực, thao tác sẽ bị chặn. Với mạng lỗi/timeout phải đối soát trước, không gửi lại tự động.</p>
+<label for="jobid">Tool Job ID</label><input id="jobid" placeholder="Mã yêu cầu đăng bài">
+</section>
+<section class="panel">
+<h2>5. Bằng chứng &amp; báo cáo</h2>
+<div class="status" id="message" role="status" aria-live="polite">Chưa chạy.</div>
+<pre id="details">Chưa có trạng thái.</pre>
+</section></div></div></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+const root=()=>"/workspaces/"+encodeURIComponent($("workspace").value.trim());
+let idKey=()=>window.crypto?.randomUUID?.()||("key-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+async function call(url,opts){
+ const r=await fetch(url,{cache:"no-store",...opts});
+ const data=await r.json().catch(()=>({detail:"Lỗi định dạng trả về"}));
+ if(!r.ok)throw Error(typeof data.detail==="string"?data.detail:"HTTP "+r.status);
+ return data;
+}
+function show(label,data){$("message").textContent=label;$("details").textContent=JSON.stringify(data,null,2)}
+async function doIt(fn){try{await fn()}catch(e){$("message").textContent="DỪNG: "+e.message}}
+function workUrl(){const id=$("orderid").value.trim();if(!id)throw Error("Chưa có Work Order ID");return root()+"/agent-work-orders/"+encodeURIComponent(id)}
+$("create").onclick=()=>doIt(async()=>{
+ const r=await call(root()+"/agents/"+encodeURIComponent($("role").value)+"/work-orders",{
+  method:"POST",headers:{"Content-Type":"application/json"},
+  body:JSON.stringify({objective:$("objective").value,idempotency_key:"pilot-"+idKey()})});
+ $("orderid").value=r.id;show("Đã tạo nhiệm vụ; Worker sẽ xử lý nếu kết nối model đã sẵn sàng.",r);
+});
+$("inspect").onclick=()=>doIt(async()=>{const s=await call(workUrl()+"/execution");show("Trạng thái thực: "+s.stage,s)});
+$("computer").onclick=()=>doIt(async()=>{const s=await call(workUrl()+"/computer-pilot",{method:"POST",
+ headers:{"Content-Type":"application/json"},body:JSON.stringify({max_steps:10})});
+ show("Computer Run: "+s.status+". Mở /computer để giám sát/duyệt từng thao tác.",s)});
+$("qa").onclick=()=>doIt(async()=>{const s=await call(workUrl()+"/quality-review",{method:"POST"});show("Quality task đã tạo. Sau khi Worker hoàn tất, xem trạng thái.",s)});
+$("handoff").onclick=()=>doIt(async()=>{
+ if($("role").value!=="content")throw Error("Chỉ Agent Content được gửi bài Postiz");
+ const channels=$("channels").value.split(",").map(x=>x.trim()).filter(Boolean);
+ const media=$("media").value.trim()?JSON.parse($("media").value):[];
+ const s=await call(workUrl()+"/social-handoff",{method:"POST",headers:{"Content-Type":"application/json"},
+ body:JSON.stringify({channel_ids:channels,media,mode:$("mode").value,idempotency_key:idKey()})});
+ $("jobid").value=s.id;show("Tool Job đang chờ phê duyệt. CHƯA đăng.",s);
+});
+function jobUrl(){const id=$("jobid").value.trim();if(!id)throw Error("Chưa có Tool Job ID");return "/tool-jobs/"+encodeURIComponent(id)}
+$("approve").onclick=()=>doIt(async()=>{
+ if(!confirm("Anh xác nhận duyệt đúng nội dung và kênh đã chọn?"))return;
+ const s=await call(jobUrl()+"/approve",{method:"POST"});show("Đã duyệt. Worker có thể tự gửi ngay; kiểm tra trạng thái trước khi thao tác thêm.",s);
+});
+$("execute").onclick=()=>doIt(async()=>{
+ if(!confirm("GỬI YÊU CẦU THẬT tới Postiz? Nếu timeout không được bấm lại để tránh trùng bài."))return;
+ const s=await call(jobUrl()+"/execute",{method:"POST"});show("Provider nhận yêu cầu, CHƯA được xác minh công khai.",s);
+});
+$("verify").onclick=()=>doIt(async()=>{const s=await call(jobUrl()+"/verify",{method:"POST"});
+ show(s.verification?.verified?"Postiz xác nhận trạng thái PUBLISHED và release URL":"Chưa có đủ bằng chứng bài đã đăng",s);
+});
+(async()=>{try{const d=await call("/agents/runtime-pilot");
+$("profile").textContent=d.roles.map(x=>x.role+": "+x.tools.join(", ")+
+(x.browser_host_allowlist_configured?" (host whitelist có cấu hình)":" (chưa có whitelist host)")).join("\n");
+$("profile").style.whiteSpace="pre-wrap";}catch(e){$("profile").textContent=e.message}})();
+</script></body></html>

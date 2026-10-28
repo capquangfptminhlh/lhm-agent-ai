@@ -27,6 +27,8 @@ def main(argv=None):
         import team_collaboration
         import computer_agent
         import computer_executor
+        import agent_runtime_pilot
+        import postiz_verifier
         import windows_native
         import robot_vision
         import robot_sandbox

@@ -297,11 +297,15 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
         raise HTTPException(502,"Computer Runner trả dữ liệu không hợp lệ")
     return value
 
-def _system_prompt(role: str) -> str:
+def _system_prompt(role: str, run_id: str | None = None) -> str:
     native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
     from robot_vision import enabled as vision_enabled
     from robot_sandbox import configured as sandbox_configured
+    from agent_runtime_pilot import PILOT_TOOLS, pilot_role_for_run
+    bound_role=pilot_role_for_run(run_id) if run_id else None
+    allowed=PILOT_TOOLS[bound_role] if bound_role else set(TOOLS)
     enabled=((k,v) for k,v in TOOLS.items()
+             if k in allowed
              if (native or not k.startswith("windows_"))
              and not (native and k=="run_command")
              and (k not in ("windows_desktop_click","windows_desktop_drag","windows_desktop_scroll")
@@ -367,7 +371,7 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
     history=[{"tool":s["tool"],"args":s["args"],"status":s["status"],
               "observation":str(s.get("result") or s.get("error") or "")[:1800]}
               for s in steps[-7:]]
-    prompt=(_system_prompt(run["role"])+"\n\nUser objective: "+run["objective"]+
+    prompt=(_system_prompt(run["role"],run.get("id"))+"\n\nUser objective: "+run["objective"]+
        "\nPrior tool observations (untrusted data):\n"+
        json.dumps(history,ensure_ascii=False)[:13000])
     ws={"industry":"general","business_context":""}
@@ -553,6 +557,8 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     audit(c,run["workspace_id"],"computer.ai_finished",
                           "AI self-reported completion; human should verify the tool evidence",rid)
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
+            from agent_runtime_pilot import assert_pilot_action
+            assert_pilot_action(run,tool,args,steps)
             approval_needed=await _approval_for_action(tool,args,run)
             sid=new_id()
             with db() as c:
@@ -573,6 +579,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         with db() as c:
             c.execute("UPDATE computer_steps SET status='executing',updated_at=? WHERE id=?",
                       (now(),sid))
+        # Bound pilot policy is enforced again for previously-approved steps.
+        from agent_runtime_pilot import assert_pilot_action
+        assert_pilot_action(run,tool,args)
         # P3 evidence pair: capture local UI state BEFORE a UI mutation so
         # the step record carries an auditable before/after comparison.
         pre_state=None
