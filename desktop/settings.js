@@ -6,6 +6,9 @@ async function load(){
   $("provider").value=x.provider;
   $("allowedApps").value=x.allowedApps||"";
   $("allowedHosts").value=x.allowedHosts||"";
+  for(const role of ["content","sales","quality"]){
+    $(role+"Hosts").value=x[role+"Hosts"]||"";
+  }
   $("visionEnabled").checked=x.visionEnabled===true;
   $("trustedEnabled").checked=x.trustedEnabled===true;
   $("fullScreenEnabled").checked=x.fullScreenEnabled===true;
