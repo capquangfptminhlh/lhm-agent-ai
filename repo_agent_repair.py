@@ -317,6 +317,10 @@ def reject_repair(ws: str,agent_id: str,repair_id: str):
 async def approve_repair(ws: str,agent_id: str,repair_id: str):
     """One owner click -> GitHub draft PR. Unknown outcomes require reconciliation."""
     repo=_agent(agent_id)
+    # Never allow a token-bearing local API to write GitHub when the owner has
+    # not configured the desktop/admin authentication boundary.
+    if not os.environ.get("LHM_ADMIN_TOKEN","").strip():
+        raise HTTPException(403,"Phải bật xác thực LHM_ADMIN_TOKEN trước khi ghi GitHub")
     # Fail before changing state if no WRITE token exists. READ token cannot publish.
     _github_headers(True)
     prepare_db()
