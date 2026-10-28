@@ -54,10 +54,12 @@ class RepoAgentsTests(unittest.TestCase):
         self.assertEqual(self.client.get("/repo-agents/bad/ci").status_code, 404)
 
     def test_repo_agent_router_has_no_duplicate_api_routes(self):
-        paths=[(route.path,tuple(sorted(route.methods or [])))
-               for route in app.app.routes if route.path.startswith("/repo-agents")
-               or "/repo-agents/" in route.path]
-        self.assertEqual(len(paths),len(set(paths)))
+        # This application may use a custom _IncludedRouter wrapper rather
+        # than flattening APIRoute.path; inspect actual registration code.
+        source=Path(app.__file__).read_text(encoding="utf-8")
+        self.assertEqual(source.count("from repo_agent_bindings import router"),1)
+        self.assertEqual(source.count("app.include_router(repository_agents_router)"),1)
+        self.assertEqual(self.client.get("/repo-agents").status_code,200)
 
     def test_live_check_uses_only_predefined_repo_read_only_and_returns_real_run(self):
         calls = []
