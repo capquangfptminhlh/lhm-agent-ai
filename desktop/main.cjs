@@ -85,6 +85,7 @@ function saveSettings(input) {
     fullScreenEnabled:input.fullScreenEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
+    reachEnabled:input.reachEnabled===true,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
     deepseekKey:""
@@ -117,6 +118,7 @@ function settingsForUI() {
     fullScreenEnabled:c.fullScreenEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
+    reachEnabled:c.reachEnabled===true,
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
@@ -134,6 +136,7 @@ function envForRuntime() {
     LHM_COMPUTER_URL:NATIVE_ORIGIN,
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
+    LHM_WINDOWS_REACH_ENABLED:c.reachEnabled===true?"1":"0",
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
@@ -161,6 +164,7 @@ function nativeEnv(runtimeEnv) {
   for(const key of safeKeys) if(process.env[key]) env[key]=process.env[key];
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
+    "LHM_WINDOWS_REACH_ENABLED",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
