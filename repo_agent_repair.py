@@ -182,6 +182,35 @@ def get_repair(ws: str,agent_id: str,repair_id: str):
         return _view(_row(c,ws,agent_id,repair_id))
 
 
+@router.get("/repo-agents/{agent_id}/repair-source")
+async def get_repair_source(agent_id: str,path: str):
+    """Read a bounded existing UTF-8 file for an owner-editable replacement."""
+    repo=_agent(agent_id)
+    safe=_path(path)
+    async with httpx.AsyncClient(timeout=12,trust_env=False,
+                                 follow_redirects=False) as client:
+        head=await _request(client,"GET",_api(repo,"branches/main"))
+        sha=head.get("commit",{}).get("sha")
+        if not isinstance(sha,str) or not _SHA.fullmatch(sha):
+            raise HTTPException(502,"GitHub không trả SHA main hợp lệ")
+        original=await _request(client,"GET",_api(repo,"contents/"+
+                                    "/".join(quote(x,safe="") for x in safe.split("/"))),
+                                    params={"ref":sha})
+    if original.get("type")!="file" or original.get("encoding")!="base64":
+        raise HTTPException(422,"Chỉ hỗ trợ file văn bản tồn tại")
+    try:
+        raw=base64.b64decode(original["content"],validate=False)
+        if len(raw)>_MAX_SOURCE or b"\x00" in raw:
+            raise ValueError("size or binary")
+        content=raw.decode("utf-8")
+    except (KeyError,ValueError,UnicodeError,TypeError):
+        raise HTTPException(422,"File không phải UTF-8 hoặc quá lớn")
+    return {"agent_id":agent_id,"repository":repo,"branch":"main",
+            "head_sha":sha,"blob_sha":original.get("sha"),
+            "path":safe,"content":content,"read_only":True,
+            "notice":"Chưa sửa file, chưa tạo PR. Mọi thay đổi cần owner duyệt."}
+
+
 @router.post("/workspaces/{ws}/repo-agents/{agent_id}/repairs",status_code=201)
 async def propose_repair(ws: str,agent_id: str,inp: RepairIn):
     repo=_agent(agent_id)
