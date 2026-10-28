@@ -138,6 +138,30 @@ class SpecialistFleetTests(unittest.TestCase):
         self.assertIn("chưa thực hiện",order["draft"])
         self.assertFalse(order["external_action_completed"])
 
+    def test_worker_can_complete_all_16_distinct_roles_without_provider_actions(self):
+        # Exercise the actual queue/worker dispatch, model mocked only.
+        with patch.dict(os.environ,{"LHM_OPENROUTER_1M_LIMIT":"20"}):
+            f=self.create(key="fleet-all-16-workers-2026")
+            answer={"choices":[{"message":{"content":"Bản nháp chuyên môn, chờ người duyệt."}}],
+                    "usage":{"prompt_tokens":10,"completion_tokens":15,"cost":0}}
+            tasks=[]
+            with core.db() as c:
+                for order in f["orders"]:
+                    tasks.append(c.execute(
+                        "SELECT id,role,workspace_id,model FROM tasks WHERE id=?",
+                        (order["task_id"],)).fetchone())
+            with patch.object(app,"deepseek_request",new=AsyncMock(return_value=answer)) as model:
+                for task in tasks:
+                    self.assertEqual(asyncio.run(worker.dispatch_agent_batch([task])),1)
+                self.assertEqual(model.await_count,16)
+            done=self.client.get("/workspaces/demo/agent-fleets/"+f["id"]).json()
+            self.assertEqual(done["status"],"drafts_ready_unverified")
+            self.assertEqual(done["drafts_ready"],16)
+            self.assertFalse(done["external_actions_performed"])
+            self.assertFalse(done["external_verification"])
+            with core.db() as c:
+                self.assertEqual(c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0],0)
+
     def test_all_drafts_ready_is_not_a_provider_receipt(self):
         f=self.create()
         with core.db() as c:
