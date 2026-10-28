@@ -73,17 +73,24 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Validate OpenCLI 2.0.2 Windows CLI without connecting personal Chrome
+      - name: Bundle OpenCLI 2.0.2 and Node 24 directly for Windows customers
         shell: pwsh
         run: |
-          npm install -g --ignore-scripts --no-audit --no-fund @jackwener/opencli@2.0.2
-          $npmRoot = (npm root -g).Trim()
-          $cli = Join-Path $npmRoot "@jackwener/opencli/dist/src/main.js"
-          Write-Host "OpenCLI npm global root: $npmRoot"
-          if (-not (Test-Path $cli)) { throw "OpenCLI Windows npm entrypoint missing" }
-          node $cli browser state --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "OpenCLI browser state interface incompatible" }
-          Write-Host "OpenCLI 2.0.2 browser CLI inspected; no real Chrome profile connected"
+          $bundle = Join-Path $PWD "desktop/vendor/opencli-runtime"
+          New-Item -ItemType Directory -Force $bundle | Out-Null
+          npm install --prefix $bundle --no-save --ignore-scripts --no-audit --no-fund @jackwener/opencli@2.0.2
+          if ($LASTEXITCODE -ne 0) { throw "Pinned OpenCLI package install failed" }
+          Copy-Item -LiteralPath (Get-Command node).Source -Destination (Join-Path $bundle "node.exe")
+          $cli = Join-Path $bundle "node_modules/@jackwener/opencli/dist/src/main.js"
+          $package = Join-Path $bundle "node_modules/@jackwener/opencli/package.json"
+          if (-not (Test-Path $cli) -or -not (Test-Path $package) -or -not (Test-Path (Join-Path $bundle "node.exe"))) {
+            throw "Bundled Node/OpenCLI entrypoint missing"
+          }
+          $meta=Get-Content $package -Raw | ConvertFrom-Json
+          if ($meta.name -ne "@jackwener/opencli" -or $meta.version -ne "2.0.2") { throw "Unexpected OpenCLI version" }
+          & (Join-Path $bundle "node.exe") $cli browser state --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Bundled OpenCLI cannot start" }
+          Write-Host "Node + pinned OpenCLI are bundled; no end-user npm or Node install needed"
 
       - name: Validate Electron JavaScript before packaging
         run: |
@@ -140,6 +147,17 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist:win
+
+      - name: Inspect real packaged OpenCLI resources and execute shipped Node
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD "desktop/dist/win-unpacked/resources/opencli-runtime"
+          $node = Join-Path $root "node.exe"
+          $cli = Join-Path $root "node_modules/@jackwener/opencli/dist/src/main.js"
+          if (-not (Test-Path $node) -or -not (Test-Path $cli)) { throw "Installer is missing bundled OpenCLI or Node" }
+          & $node $cli browser state --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Installed OpenCLI cannot start" }
+          Write-Host "Real packaged Windows resources contain working Node/OpenCLI"
 
       - name: Check Windows installer exists and is not empty
         shell: pwsh
