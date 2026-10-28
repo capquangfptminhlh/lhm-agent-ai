@@ -26,7 +26,7 @@ của LHM thực thi công việc viết báo cáo.
 ## Thao tác thực tế
 
 1. Trong LHM Robot mở `/repo-agents/ui`.
-2. Chọn repo và **Kiểm tra CI thật** để xem run/branch, job và step lỗi
+2. Chọn repo và **Kiểm tra CI thật** để xem các run trên nhánh `main`, job và step lỗi
    có được GitHub API trả về, cùng trạng thái độ đầy đủ của bằng chứng.
 3. Chọn **Chẩn đoán bằng AI**: yêu cầu được xếp hàng, ràng buộc đúng repo,
    đúng run và dedupe theo workspace + agent + run ID.
