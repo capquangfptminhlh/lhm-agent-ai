@@ -69,7 +69,7 @@ function saveSettings(input) {
   const opencliEnabled=input.opencliEnabled===true;
   const opencliProfile=String(input.opencliProfile||"").trim();
   const opencliHosts=String(input.opencliHosts||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
-  if(opencliEnabled && (!/^[a-zA-Z][a-zA-Z0-9_-]{1,38}$/.test(opencliProfile) || !opencliHosts.length)) {
+  if(opencliEnabled && (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(opencliProfile) || !opencliHosts.length)) {
     throw new Error("OpenCLI cần tên Chrome profile riêng và danh sách website được phép.");
   }
   if(opencliHosts.some(x=>!allowedHosts.includes(x)) || opencliHosts.length>15) {
@@ -399,6 +399,19 @@ function settingsIPC(){
     // A fixed, trusted Chrome Web Store destination. Renderer never chooses URL.
     await shell.openExternal("https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk");
     return {opened:true};
+  });
+  ipcMain.handle("settings:opencli-profiles",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try {
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/opencli/profiles",runnerToken);
+      if(response.status!==200)throw Error("Native controller unavailable");
+      const data=JSON.parse(response.text);
+      if(!Array.isArray(data.profiles))throw Error("Invalid profile discovery");
+      return {profiles:data.profiles.slice(0,12),detail:String(data.detail||"").slice(0,160)};
+    } catch {
+      return {profiles:[],detail:"Không liệt kê được Chrome profile, kiểm tra Browser Bridge."};
+    }
   });
   ipcMain.handle("settings:opencli-status",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
