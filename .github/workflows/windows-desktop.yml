@@ -77,7 +77,9 @@ jobs:
         shell: pwsh
         run: |
           npm install -g --ignore-scripts --no-audit --no-fund @jackwener/opencli@2.0.2
-          $cli = Join-Path $env:APPDATA "npm/node_modules/@jackwener/opencli/dist/src/main.js"
+          $npmRoot = (npm root -g).Trim()
+          $cli = Join-Path $npmRoot "@jackwener/opencli/dist/src/main.js"
+          Write-Host "OpenCLI npm global root: $npmRoot"
           if (-not (Test-Path $cli)) { throw "OpenCLI Windows npm entrypoint missing" }
           node $cli browser state --help | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "OpenCLI browser state interface incompatible" }
