@@ -28,6 +28,12 @@ test("OpenCLI Node and package are embedded in Windows installer; fixed extensio
  assert.match(main,/chromewebstore\.google\.com\/detail\/opencli/);
  assert.match(settings,/id="opencliExtension"/);
  assert.match(preload,/opencliExtension:.*settings:opencli-extension/);
+ assert.match(preload,/opencliProfiles:.*settings:opencli-profiles/);
+ assert.match(main,/settings:opencli-profiles/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/opencli\/profiles"/);
+ assert.match(settings,/id="opencliFindProfiles"/);
+ assert.match(settings,/id="opencliProfileSelect"/);
+
 });
 test("OpenCLI status is settings-only and authenticated on Windows native runner",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
