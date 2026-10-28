@@ -332,6 +332,13 @@ async def opencli_status(authorization: str | None = Header(None)):
     return await inspect()
 
 
+@runner.get("/v1/opencli/profiles")
+async def opencli_profiles(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from opencli_diagnostics import connected_profiles
+    return await connected_profiles()
+
+
 @runner.post("/v1/tool")
 async def tool_endpoint(request: ToolRequest,authorization: str | None = Header(None)):
     _auth(authorization)
