@@ -371,6 +371,29 @@ def _assert_payload(action: str, p: dict[str, Any]) -> None:
         raise HTTPException(422, "Tool chưa được cấp phép")
 
 
+def _assert_publish_agent_scope(c, ws: str, action: str, payload: dict[str,Any]) -> None:
+    """Server-side RBAC for AI-origin publishing, rechecked at approval and dispatch.
+
+    Owner-authored jobs without source_task_id are distinct and still require
+    manual approval. No Sales/QA/Research AI result may impersonate Content.
+    """
+    if action not in {"postiz.create_post","wordpress.create_post"}:
+        return
+    source=payload.get("source_task_id")
+    if source is None:
+        return
+    record=c.execute("SELECT role FROM tasks WHERE workspace_id=? AND id=?",
+                     (ws,source)).fetchone()
+    if not record or record["role"]!="content":
+        raise HTTPException(403,"Chỉ Agent Content có quyền đưa nội dung AI sang công cụ xuất bản")
+    if action=="postiz.create_post":
+        channel_ids=payload.get("channel_ids",[])
+        authorized={x.strip() for x in os.getenv("LHM_CONTENT_POSTIZ_ALLOWED_CHANNEL_IDS","").split(",")
+                    if x.strip()}
+        if not authorized or not isinstance(channel_ids,list) or set(channel_ids)-authorized:
+            raise HTTPException(403,"Kênh Postiz không nằm trong whitelist đăng bài của Agent Content")
+
+
 def _job_view(row) -> dict[str, Any]:
     obj = dict(row)
     obj["payload"] = json.loads(obj.pop("payload_json"))
@@ -442,9 +465,11 @@ def create_tool_job(ws: str, payload: ToolJobIn):
         if not isinstance(source, str):
             raise HTTPException(422, "source_task_id không hợp lệ")
         with db() as c:
+            _assert_publish_agent_scope(c,ws,payload.action,payload.payload)
             assert_source_approved(c, ws, payload.action, payload.payload)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
+        _assert_publish_agent_scope(c,ws,payload.action,payload.payload)
         assert_source_approved(c, ws, payload.action, payload.payload)
         if payload.action in DEPARTMENT_ACTIONS:
             assert_department_origin(c, ws, payload.action, payload.payload)
@@ -478,6 +503,7 @@ def approve_tool_job(job_id: str):
         _pilot_ws(r["workspace_id"])
         if r["status"] != "awaiting_approval": raise HTTPException(409,"Yêu cầu không ở trạng thái chờ duyệt")
         body = json.loads(r["payload_json"])
+        _assert_publish_agent_scope(c,r["workspace_id"],r["action"],body)
         assert_source_approved(c, r["workspace_id"], r["action"], body)
         if r["action"] in DEPARTMENT_ACTIONS:
             assert_department_origin(c, r["workspace_id"], r["action"], body)
@@ -578,6 +604,7 @@ async def execute_tool_job(job_id: str):
         body = json.loads(row["payload_json"])
         if not row["approval_digest"] or row["approval_digest"] != approval_digest(row["action"], body):
             raise HTTPException(409,"Payload hoặc đích xuất bản đã thay đổi; cần duyệt lại")
+        _assert_publish_agent_scope(c,row["workspace_id"],row["action"],body)
         assert_source_approved(c, row["workspace_id"], row["action"], body)
         if row["action"] in DEPARTMENT_ACTIONS:
             assert_department_origin(c, row["workspace_id"], row["action"], body)
