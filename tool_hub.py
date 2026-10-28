@@ -645,18 +645,22 @@ async def _verify_wordpress_public(receipt: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("/tool-jobs/{job_id}/verify")
 async def verify_tool_job(job_id: str):
-    """Safe read-back; WordPress only until Postiz published URL APIs are integrated."""
+    """Independent provider read-back: WordPress public URL or Postiz published state/URL."""
     with db() as c:
         job=c.execute("SELECT * FROM tool_jobs WHERE id=?",(job_id,)).fetchone()
         if not job: raise HTTPException(404,"Tool job not found")
         _pilot_ws(job["workspace_id"])
-        if job["action"] != "wordpress.create_post":
-            raise HTTPException(422,"Automatic verification is currently supported for WordPress only")
+        if job["action"] not in {"wordpress.create_post","postiz.create_post"}:
+            raise HTTPException(422,"Verification is supported only for WordPress and Postiz")
         if job["status"] not in {"accepted_unverified", "verified_published"}:
             raise HTTPException(409,"No accepted provider receipt available")
         receipt=json.loads(job["result_json"] or "{}")
     try:
-        result=await _verify_wordpress_public(receipt)
+        if job["action"]=="wordpress.create_post":
+            result=await _verify_wordpress_public(receipt)
+        else:
+            from postiz_verifier import verify_postiz_receipt
+            result=await verify_postiz_receipt(receipt,_postiz_request)
     except (httpx.HTTPError, ValueError, TypeError) as exc:
         # A failed readback must not mutate an already-submitted job to failed.
         raise HTTPException(502,_remote_error(exc) if isinstance(exc,httpx.HTTPError) else str(exc)[:250]) from exc
@@ -664,5 +668,6 @@ async def verify_tool_job(job_id: str):
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
             c.execute("UPDATE tool_jobs SET status='verified_published',updated_at=? WHERE id=? AND status IN ('accepted_unverified','verified_published')",(now(),job_id))
-            audit(c,job["workspace_id"],"tool_job.verified","Verified WordPress status and public URL HTTP 200",job_id)
+            audit(c,job["workspace_id"],"tool_job.verified",
+                  "Verified provider readback for "+job["action"],job_id)
     return {"id":job_id,"status":"verified_published" if result["verified"] else "accepted_unverified", "verification": result}
