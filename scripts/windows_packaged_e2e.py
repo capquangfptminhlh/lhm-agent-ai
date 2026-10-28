@@ -120,6 +120,20 @@ def main():
             assert info["no_paid_fallback"] is True, info
             status, body = request("http://127.0.0.1:7782/health")
             assert status in (401, 403), "Native health exposed without token"
+            # Finish Notepad/Explorer acceptance BEFORE opening the owned Edge
+            # browser. GUI focus / Alt+Tab can close or disturb the headless
+            # context, making cleanup nondeterministic and leaving locks.
+            # Real GUI acceptance drives actual Notepad/Explorer through
+            # the source runner on this same Windows desktop session.
+            # Kept as a subprocess so its processes/env stay isolated
+            # from the packaged runtime under test above.
+            gui = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "windows_gui_acceptance.py")],
+                cwd=str(ROOT), timeout=170, check=False,
+                capture_output=True, text=True)
+            sys.stdout.write(gui.stdout or "")
+            sys.stderr.write(gui.stderr or "")
+            assert gui.returncode == 0, "Real Windows GUI acceptance failed"
             # Open the *actual installed Microsoft Edge* from the frozen
             # Windows native runner (not a Playwright/Chrome mock). A blank
             # page needs no external network and sends no real account data.
@@ -140,22 +154,13 @@ def main():
             print("PACKAGED WINDOWS E2E PASS: 2 real EXEs, 27 HTTP reads, "
                   "free-only, native auth and emergency pause. "
                   f"worst_route_ms={max(latencies)*1000:.0f}", flush=True)
-            # Real GUI acceptance drives actual Notepad/Explorer through
-            # the source runner on this same Windows desktop session.
-            # Kept as a subprocess so its processes/env stay isolated
-            # from the packaged runtime under test above.
-            gui = subprocess.run(
-                [sys.executable, str(ROOT / "scripts" / "windows_gui_acceptance.py")],
-                cwd=str(ROOT), timeout=170, check=False,
-                capture_output=True, text=True)
-            sys.stdout.write(gui.stdout or "")
-            sys.stderr.write(gui.stderr or "")
-            assert gui.returncode == 0, "Real Windows GUI acceptance failed"
             status, body = request("http://127.0.0.1:7782/v1/browser/close",
                     "e2e-runner-token", "POST", timeout=20)
             assert status == 200, "Packaged Edge shutdown endpoint failed"
-            assert json.loads(body).get("contexts_closed") == 1, (
-                "Owned Edge browser context was not closed cleanly")
+            closed = json.loads(body).get("contexts_closed")
+            assert closed == 1, (
+                f"Owned Edge browser context was not closed cleanly: {closed}, "
+                "inspect native browser lifecycle before releasing installer")
             edge_cleaned = True
             print("PACKAGED WINDOWS EDGE CLEANUP PASS: owned browser released",flush=True)
         except Exception as exc:
