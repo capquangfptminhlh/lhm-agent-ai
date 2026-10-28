@@ -92,9 +92,9 @@ def _allowed_domain(url: str, role: str | None = None) -> bool:
     # role host lists must allow a target; an empty global list denies all.
     if role in ("content","sales","quality"):
         raw=os.getenv("LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS","")
-        if raw.strip():
-            own={x.lower().rstrip(".").strip() for x in raw.split(",") if x.strip()}
-            allow &= own
+        # Fail closed: an empty role allowlist cannot inherit the global list.
+        own={x.lower().rstrip(".").strip() for x in raw.split(",") if x.strip()}
+        allow &= own
     try:
         u=urlsplit(url)
         host=(u.hostname or "").lower().rstrip(".")
