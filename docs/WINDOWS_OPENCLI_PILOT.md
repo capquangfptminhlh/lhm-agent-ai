@@ -91,6 +91,26 @@ Các kiểm tra tự động trên GitHub không thể xác minh đăng nhập C
 profile cá nhân ở máy của chủ sở hữu. Chúng chỉ xác minh mã, Windows EXE,
 CLI đã cài, giao diện và các hợp đồng giả lập.
 
+## Kiểm tra kết quả sau thao tác Chrome
+
+Khi người quản trị đã duyệt một lệnh `opencli_click`, OpenCLI xác nhận
+click và trả trạng thái trang sau thao tác. **Đó chưa phải biên nhận đăng bài,
+tạo đơn hay gửi tin từ nhà cung cấp.** Computer Run chuyển sang
+`awaiting_reconciliation` và không tự gọi LLM để click tiếp.
+
+1. Mở website thực tế trong Chrome profile LHM để đối chiếu hiệu lực thao tác,
+   số lượng bản ghi và dấu hiệu bị gửi trùng; không bấm lại mù quáng.
+2. Trong màn hình `/computer`, xem biên nhận bước click rồi nhấn
+   **Đã kiểm tra kết quả click — tiếp tục** nếu muốn cho phép Agent làm bước kế.
+3. Hệ thống chỉ ghi `reviewed_unverified` và cho phép chạy tiếp; **không đánh
+   dấu `verified_published`**. Muốn xác minh đã đăng cần provider/API receipt
+   độc lập như Tool Hub Postiz/WordPress.
+
+Nếu OpenCLI trả kết quả không hợp lệ hoặc timeout sau click, Run vẫn ở
+`needs_review` và không thể chỉ bấm xác nhận tiếp tục; cần xử lý sự cố
+hoặc tạo kế hoạch mới sau khi đối soát tác động bên ngoài. Đây vẫn là
+kiểm thử offline/CI, không chứng minh profile Chrome thật của chủ máy.
+
 ## Kiểm tra hợp đồng CLI (bản sửa Windows)
 
 OpenCLI v2.0.2 khai báo `--profile` và `--session` trực tiếp

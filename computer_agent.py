@@ -223,7 +223,7 @@ def cancel_computer_run(rid: str):
         r=_get(c,rid)
         if r["status"]=="processing":
             raise HTTPException(409,"Agent đang thực thi lệnh; không thể khẳng định đã hủy thao tác đang chạy")
-        if r["status"] not in ("queued","awaiting_approval","awaiting_checkpoint"):
+        if r["status"] not in ("queued","awaiting_approval","awaiting_checkpoint","awaiting_reconciliation"):
             raise HTTPException(409,"Session không thể hủy ở trạng thái này")
         c.execute("UPDATE computer_runs SET status='cancelled',updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.cancelled","Human cancelled computer session",rid)
@@ -261,6 +261,41 @@ def approve_computer_checkpoint(rid: str):
                   (now(),rid))
         audit(c,r["workspace_id"],"computer.checkpoint_approved",
               "Human approved trusted-run checkpoint; run resumed",rid)
+        return _view(c,_get(c,rid))
+
+
+@router.post("/computer/runs/{rid}/reconciliation/acknowledge")
+def acknowledge_computer_reconciliation(rid: str):
+    """Owner checked the Chrome outcome; do NOT assert an external success.
+
+    Acknowledgement only unblocks later, separately approved actions. It
+    never replays a click or changes external_effect_verified to true.
+    """
+    prepare_db()
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        r=_get(c,rid)
+        if r["status"]!="awaiting_reconciliation":
+            raise HTTPException(409,"Phiên không có thao tác OpenCLI cần đối soát")
+        step=c.execute("SELECT * FROM computer_steps WHERE run_id=? ORDER BY number DESC LIMIT 1",
+                       (rid,)).fetchone()
+        if not step or step["tool"]!="opencli_click" or step["status"]!="needs_review":
+            raise HTTPException(409,"Không có click OpenCLI đã ghi nhận để đối soát")
+        try:
+            receipt=json.loads(step["result_json"] or "{}")
+        except ValueError:
+            receipt={}
+        if (not isinstance(receipt,dict)
+                or receipt.get("requires_owner_reconciliation") is not True
+                or receipt.get("confirmed_by_cli") is not True
+                or receipt.get("external_effect_verified") is not False):
+            raise HTTPException(409,"Thiếu biên nhận OpenCLI hợp lệ; không thể tiếp tục")
+        c.execute("UPDATE computer_steps SET status='reviewed_unverified',error=NULL,updated_at=? WHERE id=?",
+                  (now(),step["id"]))
+        c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",
+                  (now(),rid))
+        audit(c,r["workspace_id"],"computer.reconciliation_acknowledged",
+              "Owner reviewed OpenCLI click; provider effect remains UNVERIFIED",rid)
         return _view(c,_get(c,rid))
 
 
@@ -565,7 +600,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 summary=args.get("summary")
                 if not isinstance(summary,str) or not summary.strip() or len(summary)>2000:
                     raise HTTPException(422,"AI finish summary invalid")
-                if not any(s["status"]=="completed" for s in steps):
+                if not any(s["status"] in ("completed","reviewed_unverified") for s in steps):
                     raise HTTPException(422,"AI chưa thực thi công cụ; không thể tự nhận hoàn thành")
                 with db() as c:
                     c.execute("UPDATE computer_runs SET status='completed_unverified',outcome=?,updated_at=? WHERE id=?",
@@ -640,6 +675,26 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 verify_failed=verification.get("ok") is False
                 if verify_failed:
                     step_status="failed"
+        # The CLI confirming a Chrome click is NOT evidence that a provider
+        # accepted a post, order or message. Pause the loop before the LLM
+        # can propose another action or claim an external success.
+        if tool=="opencli_click":
+            if (result.get("confirmed_by_cli") is not True
+                    or result.get("requires_owner_reconciliation") is not True
+                    or result.get("external_effect_verified") is not False):
+                raise HTTPException(502,"OpenCLI click receipt incomplete; owner inspection required")
+            clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
+            detail="Chrome click executed; inspect the provider before continuing. Not verified published."
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("UPDATE computer_steps SET status='needs_review',result_json=?,error=?,updated_at=? WHERE id=?",
+                          (clean,detail,now(),sid))
+                c.execute("UPDATE computer_runs SET status='awaiting_reconciliation',error=?,updated_at=? WHERE id=?",
+                          (detail,now(),rid))
+                audit(c,run["workspace_id"],"computer.external_reconciliation_required",
+                      "OpenCLI click observed, provider effect unverified; owner must inspect",rid)
+            return {"status":"awaiting_reconciliation","id":rid,
+                    "last_tool":tool,"step_status":"needs_review"}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
         with db() as c:
             c.execute("BEGIN IMMEDIATE")

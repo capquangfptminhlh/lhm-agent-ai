@@ -222,6 +222,26 @@ class SharedAgentPilotTests(unittest.TestCase):
             "idempotency_key":"content-wrong-channel"})
         self.assertEqual(other.status_code,403,other.text)
 
+    def test_completed_ai_draft_cannot_hide_computer_human_gate(self):
+        order=self.create_order("content",key="pilot-stage-reconciliation-001")
+        self.finish_and_pass_qa(order)
+        run=self.client.post("/workspaces/demo/agent-work-orders/"+order["id"]+
+                             "/computer-pilot",json={"max_steps":5}).json()
+        url="/workspaces/demo/agent-work-orders/"+order["id"]+"/execution"
+        with core.db() as c:
+            c.execute("UPDATE computer_runs SET status='awaiting_reconciliation' WHERE id=?",
+                      (run["id"],))
+        state=self.client.get(url).json()
+        self.assertEqual(state["stage"],"needs_human")
+        self.assertEqual(state["computer_status"],"awaiting_reconciliation")
+        self.assertFalse(state["verified_external_completion"])
+        with core.db() as c:
+            c.execute("UPDATE computer_runs SET status='needs_review' WHERE id=?",(run["id"],))
+        self.assertEqual(self.client.get(url).json()["stage"],"needs_human")
+        with core.db() as c:
+            c.execute("UPDATE computer_runs SET status='queued' WHERE id=?",(run["id"],))
+        self.assertEqual(self.client.get(url).json()["stage"],"executing")
+
     def test_retry_budget_and_work_order_observability(self):
         order=self.create_order("content")
         start=self.client.post("/workspaces/demo/agent-work-orders/"+order["id"]+
@@ -233,6 +253,10 @@ class SharedAgentPilotTests(unittest.TestCase):
             pilot.assert_pilot_action(start,"browser_fill",{"selector":"#post","text":"abc"},
                 [{"tool":"browser_fill","args":{"selector":"#post","text":"abc"},
                   "status":"completed"}])
+        with self.assertRaises(Exception):
+            pilot.assert_pilot_action(start,"browser_fill",{"selector":"#post","text":"abc"},
+                [{"tool":"browser_fill","args":{"selector":"#post","text":"abc"},
+                  "status":"reviewed_unverified"}])
         metrics=self.client.get("/agents/runtime-pilot/metrics?workspace_id=demo")
         self.assertEqual(metrics.status_code,200,metrics.text)
         values=metrics.json()
