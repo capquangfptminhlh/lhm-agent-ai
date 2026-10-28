@@ -30,8 +30,10 @@ là worker tìm kiếm read-only, **không phải điều khiển máy tính to�
   `79455eafd94302561aa5f52b0722a0fc359279c3170a27c6990486027fd56830`.
   Đó không phải tên package cùng tên không liên quan trên PyPI. PyInstaller
   `--collect-all agent_reach` đóng thư viện vào runtime.
-- Worker luôn ép backend `github-api` hoặc `yt-dlp`, không cho AI chọn
-  backend, arbitrary URL, user cookie hoặc lệnh cài/update.
+- GitHub dùng backend Agent-Reach `github-api`. YouTube dùng API thư viện
+  `yt-dlp` đóng gói trực tiếp trong worker vì bản frozen EXE không hỗ trợ
+  `python -m yt_dlp` như Python thường. Cả hai chỉ tìm kiếm công khai;
+  không cho AI chọn backend, arbitrary URL, user cookie hoặc lệnh cài/update.
 - Mỗi vai trò/workspace có HOME/APPDATA/LOCALAPPDATA riêng. Child env không
   mang `OPENROUTER_API_KEY`, `LHM_COMPUTER_RUNNER_TOKEN`, `GH_TOKEN`.
 - Windows process **vẫn chạy cùng tài khoản hệ điều hành** và có thể đọc
