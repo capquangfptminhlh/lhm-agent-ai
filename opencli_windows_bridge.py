@@ -148,8 +148,10 @@ async def _invoke(node: str,entry: str,profile: str,session: str,
          if k in os.environ}
     env["OPENCLI_PROFILE"]=profile
     env["NO_COLOR"]="1"
-    cmd=[node,entry,"--profile",profile,"browser",action,*argv,
-         "--session",session]
+    # OpenCLI v2.0.2 defines --profile and --session on each browser
+    # subcommand (not on the CLI root). Keep flags AFTER `browser action`.
+    cmd=[node,entry,"browser",action,*argv,
+         "--profile",profile,"--session",session]
     try:
         proc=await asyncio.create_subprocess_exec(
             *cmd,env=env,stdout=asyncio.subprocess.PIPE,
@@ -191,12 +193,16 @@ def _state(response: dict[str,Any]) -> dict[str,Any]:
             "truncated":len(snapshot)>9000,"verified_navigation":True}
 
 
-async def execute(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict[str,Any]:
+async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | None = None) -> dict[str,Any]:
     validate(role,tool,args)
     if not _ID.fullmatch(ws) or not _ID.fullmatch(role):
         raise HTTPException(422,"Invalid workspace or role")
     node,entry,profile=_configuration()
-    session="lhm_"+ws+"_"+role
+    # A distinct Computer Run must not reuse another run\'s active tab.
+    # Direct/manual tool calls without run_id preserve legacy role scope.
+    if run_id is not None and not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",run_id):
+        raise HTTPException(422,"Invalid OpenCLI run identifier")
+    session=("lhm_"+run_id.replace("-","") if run_id else "lhm_"+ws+"_"+role)
     async def call(action:str,*rest:str):
         return await _invoke(node,entry,profile,session,action,*rest)
     if tool=="opencli_open":

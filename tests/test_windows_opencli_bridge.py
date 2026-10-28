@@ -152,11 +152,45 @@ class OpenCLIExecutionTests(unittest.IsolatedAsyncioTestCase):
                         "lhm_demo_content","state")
         self.assertTrue(response["ok"])
         argv,kwargs=calls[0]
-        self.assertEqual(argv,("C:/node.exe","C:/npm/main.js","--profile",
-                               "lhm-work","browser","state","--session","lhm_demo_content"))
+        self.assertEqual(argv,("C:/node.exe","C:/npm/main.js","browser","state",
+                               "--profile","lhm-work","--session","lhm_demo_content"))
         self.assertFalse(kwargs.get("shell",False))
         for key in ("GH_TOKEN","OPENROUTER_API_KEY","LHM_COMPUTER_RUNNER_TOKEN"):
             self.assertNotIn(key,kwargs["env"])
+
+    async def test_opencli_sessions_are_isolated_for_independent_runs(self):
+        observed=[]
+        async def invocation(node,entry,profile,session,action,*args):
+            observed.append((session,action,args))
+            return {"ok":True,"data":{"url":"https://example.com/page",
+                 "snapshot":"[1] button Select"}}
+        one="01234567-89ab-4cde-8fab-0123456789ab"
+        two="fedcba98-7654-4bcd-8fab-9876543210ab"
+        with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
+            with patch.object(bridge,"_invoke",side_effect=invocation):
+                await bridge.execute("demo","content","opencli_state",{},run_id=one)
+                await bridge.execute("demo","content","opencli_state",{},run_id=two)
+                await bridge.execute("demo","content","opencli_state",{},run_id=one)
+        self.assertEqual(len(observed),3)
+        self.assertNotEqual(observed[0][0],observed[1][0])
+        self.assertEqual(observed[0][0],observed[2][0])
+        self.assertEqual(observed[0][0],"lhm_"+one.replace("-",""))
+        with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
+            with self.assertRaises(HTTPException):
+                await bridge.execute("demo","content","opencli_state",{},
+                    run_id="../../bad")
+
+    async def test_native_runner_routes_run_id_to_opencli(self):
+        from computer_executor import ToolRequest, perform
+        one="01234567-89ab-4cde-8fab-0123456789ab"
+        with patch("computer_executor._home") as isolated_home:
+            with patch("opencli_windows_bridge.execute",return_value={
+                "url":"https://example.com","read_only":True}) as execute:
+                request=ToolRequest(workspace_id="demo",role="content",
+                        tool="opencli_state",args={},run_id=one)
+                await perform(request)
+                isolated_home.assert_called_once_with("demo","content")
+        execute.assert_awaited_once_with("demo","content","opencli_state",{},run_id=one)
 
     async def test_click_checks_fresh_ref_and_url_before_and_after(self):
         calls=[]

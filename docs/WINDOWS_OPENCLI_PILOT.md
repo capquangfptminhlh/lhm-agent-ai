@@ -19,7 +19,7 @@ chính repository và kiểm SHA-256 khi cần.
 3. Mở **LHM Robot → Thiết lập Robot → Cài tiện ích OpenCLI vào Chrome riêng**.
    Nút này mở đúng trang [Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk).
    Trong profile Chrome chuyên dụng, anh tự xác nhận quyền extension.
-4. Trong **Thiết lập Robot**, chọn **Tìm Chrome profile đang kết nối**.
+4. Trong **Thiết lập Robot**, chọn **Khởi chạy Browser Bridge và tìm Chrome profile**. Đây là hành động chủ động của anh, chạy daemon OpenCLI trên máy cục bộ (localhost), có thể duy trì chạy sau khi đóng giao diện. Nếu daemon đã chạy, LHM không tự khởi động lại. Không tự đăng nhập Chrome.
    Phần mềm chỉ hiển thị các profile có extension OpenCLI đang kết nối,
    không tự chọn profile cá nhân. Anh chọn **đúng profile riêng của LHM**;
    ID profile sẽ tự điền vào ô. Không cần lệnh `opencli profile rename`.
@@ -90,3 +90,24 @@ network sniff, đọc cookie, chuyển tab người dùng, tải file, plugin in
 Các kiểm tra tự động trên GitHub không thể xác minh đăng nhập Chrome
 profile cá nhân ở máy của chủ sở hữu. Chúng chỉ xác minh mã, Windows EXE,
 CLI đã cài, giao diện và các hợp đồng giả lập.
+
+## Kiểm tra hợp đồng CLI (bản sửa Windows)
+
+OpenCLI v2.0.2 khai báo `--profile` và `--session` trực tiếp
+ở **lệnh con trình duyệt**. LHM gọi CLI theo thứ tự:
+
+```text
+node.exe <installed-opencli-main.js> browser state --profile <approved-profile> --session <run-session>
+node.exe <installed-opencli-main.js> browser open https://example.com --profile <approved-profile> --session <run-session>
+```
+
+LHM không chạy shell; các tham số được truyền dưới dạng argv cố định.
+GitHub Windows CI kiểm tra rằng các option này được bản Node/OpenCLI **trong
+bộ cài** nhận dạng, chứ không chỉ kiểm tra lệnh `--help` chung.
+
+Mỗi Computer Run được gắn **một session Chrome riêng theo UUID chạy việc**,
+tránh trường hợp hai Work Order cùng Content Agent dùng nhầm tab lẫn nhau.
+Tuy nhiên các session vẫn hoạt động trong Chrome profile chuyên dụng do
+chủ máy chọn: chúng không phải các máy ảo tách biệt, và vẫn có thể chia sẻ
+cookie/tài khoản đăng nhập bên trong cùng profile. Mọi click/fill tiếp tục
+chờ phê duyệt và kiểm lại URL/nhãn phần tử.

@@ -297,7 +297,7 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
         response=await client.post(_runner_base()+"/v1/tool",
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],
-                 "tool":tool,"args":args})
+                 "run_id":r.get("id"),"tool":tool,"args":args})
     if response.status_code!=200:
         raise HTTPException(502,"Computer Runner từ chối hoặc không thực thi lệnh")
     value=response.json()
