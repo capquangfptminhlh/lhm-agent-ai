@@ -254,6 +254,78 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
     }
 
 
+async def _all_ci_snapshots() -> list[dict[str,Any]]:
+    """Nine fixed repositories; bounded parallel reads, no caller-supplied URLs."""
+    semaphore=asyncio.Semaphore(3)
+
+    async def inspect_one(agent_id: str) -> dict[str,Any]:
+        async with semaphore:
+            agent=agent_profile(agent_id)
+            try:
+                result=await check_ci(agent_id)
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":True,"overall_health":result["overall_health"],
+                        "runs":result["runs"][:4],
+                        "failed_jobs":result["failed_jobs"][:8],
+                        "inspected_workflows":result["inspected_workflows"],
+                        "distinct_workflows_observed":result["distinct_workflows_observed"]}
+            except HTTPException as error:
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":False,"overall_health":"unavailable",
+                        "error":str(error.detail)[:240],"runs":[],"failed_jobs":[]}
+            except Exception:
+                return {"agent_id":agent_id,"repository":agent["repository"],
+                        "verified":False,"overall_health":"unavailable",
+                        "error":"Lỗi kiểm tra CI; không đủ bằng chứng","runs":[],"failed_jobs":[]}
+    return await asyncio.gather(*(inspect_one(agent_id) for agent_id in PROJECT_AGENTS))
+
+
+@router.get("/repo-agents/overview")
+async def repository_agents_overview():
+    data=await _all_ci_snapshots()
+    return {"repos":data,"total":len(data),
+            "failed":sum(x["overall_health"]=="failure_observed" for x in data),
+            "unavailable":sum(not x["verified"] for x in data),
+            "notice":"Snapshot bounded to recent main runs; no code writes, no full job logs."}
+
+
+class RepoBatchDiagnosisIn(BaseModel):
+    workspace: str = "demo"
+
+
+@router.post("/repo-agents/diagnose-failing",status_code=201)
+async def diagnose_failing_repositories(inp: RepoBatchDiagnosisIn):
+    """Owner-initiated, max four confirmed-failing repos per click.
+
+    No arbitrary git writes and no assumption that a failed CI job implies
+    an autonomous patch. Each report stays bound to one repository/run.
+    """
+    prepare_db()
+    with db() as c:
+        if not workspace(c,inp.workspace):
+            raise HTTPException(404,"Workspace không tồn tại")
+    snapshots=await _all_ci_snapshots()
+    failed=[r for r in snapshots if r["verified"] and
+            r["overall_health"]=="failure_observed"]
+    queued=[]
+    errors=[]
+    for item in failed[:4]:
+        try:
+            result=await create_repository_diagnosis(
+                item["agent_id"],RepoDiagnosisIn(workspace=inp.workspace))
+            queued.append({"agent_id":item["agent_id"],"repository":item["repository"],
+                           "diagnosis_id":result["id"],"task_id":result["task_id"],
+                           "status":result["task_status"],
+                           "deduplicated":result.get("deduplicated",False)})
+        except HTTPException as error:
+            errors.append({"agent_id":item["agent_id"],
+                           "reason":str(error.detail)[:240]})
+    return {"queued":queued,"errors":errors,
+            "remaining_failed_repos":max(0,len(failed)-4),
+            "unavailable_repos":sum(not x["verified"] for x in snapshots),
+            "notice":"Only CI diagnosis drafts were queued; no GitHub code changes or PRs."}
+
+
 @router.get("/repo-agents/{agent_id}/ci")
 async def get_repository_ci(agent_id: str):
     return await check_ci(agent_id)
