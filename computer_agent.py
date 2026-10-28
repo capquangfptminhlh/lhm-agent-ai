@@ -28,8 +28,8 @@ router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
   "opencli_open":"Open a HTTPS URL in owner-approved dedicated Chrome profile; {url: https://allowed.host/path}",
   "opencli_state":"Read the current allowlisted browser URL and numbered DOM elements; {}",
-  "opencli_click":"Click one numeric [ref] from current OpenCLI state; {ref: integer}; always requires owner approval",
-  "opencli_fill":"Fill one numeric [ref] from current OpenCLI state; {ref: integer, text: string}; always requires owner approval",
+  "opencli_click":"Click one numeric [ref] from current OpenCLI state with exact observed URL and label; {ref: integer, url: string, label: string}; always requires owner approval",
+  "opencli_fill":"Fill one numeric [ref] with observed URL and label; {ref: integer, url: string, label: string, text: string}; always requires owner approval",
   "agent_reach_search":"Read-only cross-platform search via separately installed Agent-Reach; {channel: github|youtube|bilibili, query: text}; no login or posting.",
   "list_files":"List files under this Agent's sandbox directory; {path?: relative dir}",
   "read_file":"Read UTF-8 file inside sandbox; {path: relative file}",
@@ -290,7 +290,10 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
     token=os.environ.get("LHM_COMPUTER_RUNNER_TOKEN","").strip()
     if not token:
         raise HTTPException(503,"LHM_COMPUTER_RUNNER_TOKEN chưa được cấu hình")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(32,connect=5),trust_env=False) as client:
+    # OpenCLI runs state-before -> approved action -> state-after as separate
+    # Browser Bridge calls; default 32s would prematurely abandon real writes.
+    timeout=125 if tool.startswith("opencli_") else 32
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=5),trust_env=False) as client:
         response=await client.post(_runner_base()+"/v1/tool",
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],

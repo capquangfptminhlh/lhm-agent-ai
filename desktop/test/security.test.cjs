@@ -17,6 +17,16 @@ test("Electron uses hardened renderer and does not expose Node to web pages",()=
  assert.match(main,/sameOrigin\(url\)/);
  assert.match(main,/setPermissionRequestHandler/);
 });
+test("OpenCLI status is settings-only and authenticated on Windows native runner",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ assert.match(main,/settings:opencli-status/);
+ assert.match(main,/event.sender.id!==settingsWindow.webContents.id/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/opencli\/status"/);
+ assert.match(preload,/opencliStatus:.*settings:opencli-status/);
+ assert.match(html,/id="opencliCheck"/);
+});
 test("OpenCLI is explicit opt-in with dedicated Chrome profile and host scope",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");

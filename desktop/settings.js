@@ -61,6 +61,21 @@ async function checkReadiness(){
  }finally{refresh.disabled=false}
 }
 $("refreshReadiness").onclick=checkReadiness;
+$("opencliCheck").onclick=async()=>{
+ const button=$("opencliCheck"), panel=$("opencliCheckResult");
+ button.disabled=true;panel.textContent="Đang kiểm tra Windows Controller và Chrome Bridge...";
+ try{
+  const s=await window.lhmSettings.opencliStatus();
+  panel.textContent=[
+    (s.enabled?"✓":"✕")+" OpenCLI đã bật",
+    (s.cli_installed?"✓":"✕")+" Node.js / OpenCLI 2.0.2 đã cài",
+    (s.bridge_running?"✓":"✕")+" Browser Bridge đang hoạt động",
+    (s.profile_connected?"✓":"✕")+" Profile Chrome '"+(s.profile_alias||"chưa chọn")+"' đã kết nối",
+    s.ready?"Sẵn sàng thao tác theo quyền được cấp":"Chưa sẵn sàng: "+(s.detail||"kiểm tra cấu hình")
+  ].join("\n");
+ }catch(err){panel.textContent="Không kiểm tra được: "+(err.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
 $("quickStart").onclick=()=>{
  if(!$("openKey").value.trim() && $("openStatus").textContent.includes("chưa có")){
    $("status").textContent="Nhập OpenRouter API key ở trên để Agent có thể trả lời.";

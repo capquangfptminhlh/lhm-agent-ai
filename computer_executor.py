@@ -325,6 +325,13 @@ async def health(authorization: str | None = Header(None)):
             "agent_reach_cli_installed":bool(shutil.which("agent-reach")),
             "tools":sorted(ALLOWED_TOOLS)}
 
+@runner.get("/v1/opencli/status")
+async def opencli_status(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from opencli_diagnostics import inspect
+    return await inspect()
+
+
 @runner.post("/v1/tool")
 async def tool_endpoint(request: ToolRequest,authorization: str | None = Header(None)):
     _auth(authorization)

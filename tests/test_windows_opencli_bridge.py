@@ -45,13 +45,13 @@ class OpenCLIPolicyTests(unittest.TestCase):
         self.assertIn("opencli_state",PILOT_TOOLS["quality"])
         for role in ("quality","sales","research","finance","director"):
             with self.assertRaises(HTTPException):
-                bridge.validate(role,"opencli_click",{"ref":1})
+                bridge.validate(role,"opencli_click",{"ref":1,"url":"https://example.com/form","label":"Publish"})
         for args in ({"ref":True},{"ref":"1"},{"ref":0},{"ref":3001},
-                     {"ref":1,"url":"https://example.com"}):
+                     {"ref":1,"injected":"command"}):
             with self.assertRaises(HTTPException):
-                bridge.validate("content","opencli_click",args)
+                bridge.validate("content","opencli_click",{**args,"url":"https://example.com/form","label":"Publish"})
         bridge.validate("content","opencli_open",{"url":"https://example.com"})
-        bridge.validate("content","opencli_fill",{"ref":3,"text":"Approved caption"})
+        bridge.validate("content","opencli_fill",{"ref":3,"text":"Approved caption","url":"https://example.com/form","label":"Caption"})
 
     def test_mutations_always_wait_for_owner_even_in_trusted_mode(self):
         self.assertTrue(computer_agent._approval_required("opencli_click",
@@ -146,11 +146,53 @@ class OpenCLIExecutionTests(unittest.IsolatedAsyncioTestCase):
             raise AssertionError(action)
         with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
             with patch.object(bridge,"_invoke",side_effect=invoke):
-                out=await bridge.execute("demo","content","opencli_click",{"ref":12})
+                out=await bridge.execute("demo","content","opencli_click",{"ref":12,"url":"https://example.com/form","label":"Send"})
         self.assertEqual([x[0] for x in calls],["state","click","state"])
         self.assertEqual(out["url_after"],"https://example.com/form")
         self.assertFalse(out["external_effect_verified"])
         self.assertTrue(out["requires_owner_reconciliation"])
+
+    async def test_approved_ref_url_and_label_must_match_current_snapshot(self):
+        calls=[]
+        async def invoke(node,entry,profile,session,action,*args):
+            calls.append(action)
+            return {"ok":True,"data":{
+                "url":"https://example.com/changed",
+                "snapshot":"[12] button Delete account"}}
+        with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
+            with patch.object(bridge,"_invoke",side_effect=invoke):
+                with self.assertRaises(HTTPException) as exc:
+                    await bridge.execute("demo","content","opencli_click",{
+                        "ref":12,"url":"https://example.com/form","label":"Send"})
+        self.assertEqual(exc.exception.status_code,409)
+        self.assertEqual(calls,["state"])
+        calls.clear()
+        async def renamed(node,entry,profile,session,action,*args):
+            calls.append(action)
+            return {"ok":True,"data":{
+                "url":"https://example.com/form",
+                "snapshot":"[12] button Delete account"}}
+        with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
+            with patch.object(bridge,"_invoke",side_effect=renamed):
+                with self.assertRaises(HTTPException):
+                    await bridge.execute("demo","content","opencli_click",{
+                        "ref":12,"url":"https://example.com/form","label":"Send"})
+        self.assertEqual(calls,["state"])
+
+    async def test_status_requires_native_token_and_cannot_expose_profile_details(self):
+        from fastapi.testclient import TestClient
+        import computer_executor
+        import opencli_diagnostics
+        with patch.dict(os.environ,{"LHM_COMPUTER_RUNNER_TOKEN":"test-token"}):
+            api=TestClient(computer_executor.runner)
+            self.assertEqual(api.get("/v1/opencli/status").status_code,401)
+            with patch.object(opencli_diagnostics,"inspect",return_value={
+                "enabled":True,"cli_installed":True,"bridge_running":True,
+                "profile_connected":True,"ready":True,"profile_alias":"lhm-work",
+                "detail":"Chrome profile connected"}):
+                response=api.get("/v1/opencli/status",headers={"Authorization":"Bearer test-token"})
+        self.assertEqual(response.status_code,200)
+        self.assertTrue(response.json()["ready"])
 
     async def test_redirect_outside_allowlist_blocks_write(self):
         calls=[]
@@ -160,7 +202,7 @@ class OpenCLIExecutionTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bridge,"_configuration",return_value=("node","app.js","lhm-work")):
             with patch.object(bridge,"_invoke",side_effect=invoke):
                 with self.assertRaises(HTTPException) as e:
-                    await bridge.execute("demo","content","opencli_fill",{"ref":1,"text":"hello"})
+                    await bridge.execute("demo","content","opencli_fill",{"ref":1,"text":"hello","url":"https://example.com/form","label":"Message"})
         self.assertEqual(e.exception.status_code,409)
         self.assertEqual(calls,["state"])
 

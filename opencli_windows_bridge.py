@@ -24,7 +24,7 @@ WRITE_ROLES=frozenset({"content"})
 READ_TOOLS=frozenset({"opencli_open","opencli_state"})
 WRITE_TOOLS=frozenset({"opencli_click","opencli_fill"})
 ALL_TOOLS=READ_TOOLS|WRITE_TOOLS
-_ID=re.compile(r"^[a-z][a-z0-9_-]{1,40}$")
+_ID=re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
 _PROFILE=re.compile(r"^[a-zA-Z][a-zA-Z0-9_-]{1,38}$")
 MAX_OUTPUT=40_000
 
@@ -58,7 +58,8 @@ def validate(role: str,tool: str,args: dict[str,Any]) -> None:
     if not isinstance(args,dict):
         raise HTTPException(422,"Invalid tool args")
     expected={"opencli_open":{"url"},"opencli_state":set(),
-              "opencli_click":{"ref"},"opencli_fill":{"ref","text"}}[tool]
+              "opencli_click":{"ref","url","label"},
+              "opencli_fill":{"ref","url","label","text"}}[tool]
     if set(args)!=expected:
         raise HTTPException(422,"OpenCLI tool arguments do not match the allowlist")
     if tool=="opencli_open" and not allowed_url(args.get("url")):
@@ -67,6 +68,12 @@ def validate(role: str,tool: str,args: dict[str,Any]) -> None:
         n=args.get("ref")
         if type(n) is not int or not 1<=n<=3000:
             raise HTTPException(422,"OpenCLI requires a numeric ref from a recent state")
+        if not allowed_url(args.get("url")):
+            raise HTTPException(403,"OpenCLI click/fill URL must be allowlisted")
+        label=args.get("label")
+        if (not isinstance(label,str) or not 2<=len(label.strip())<=120
+                or any(ord(c)<32 for c in label)):
+            raise HTTPException(422,"OpenCLI requires an observed element label")
     if tool=="opencli_fill":
         value=args.get("text")
         if (not isinstance(value,str) or not 1<=len(value)<=1200
@@ -177,11 +184,16 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict[str,A
     before=_state(await call("state"))
     if tool=="opencli_state":
         return {**before,"provider":"OpenCLI","read_only":True}
-    # Manual approval is separately enforced by Computer Agent for every
-    # click/fill. Preflight snapshot verifies both current URL and ref.
+    # Manual approval binds the URL and semantic label, not only an ordinal.
+    # Ref [12] can identify another button after the page re-renders.
     ref=args["ref"]
-    if f"[{ref}]" not in before["snapshot"]:
-        raise HTTPException(409,"OpenCLI element ref not present in current state; refresh")
+    if before["url"]!=args["url"]:
+        raise HTTPException(409,"OpenCLI page changed since approval; reapprove")
+    marker="["+str(ref)+"]"
+    line=next((line for line in before["snapshot"].splitlines()
+               if marker in line),None)
+    if line is None or args["label"].casefold() not in line.casefold():
+        raise HTTPException(409,"OpenCLI element changed since approval; reapprove")
     if tool=="opencli_click":
         result=await call("click",str(ref))
         data=result.get("data")
