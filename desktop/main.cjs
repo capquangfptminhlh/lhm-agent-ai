@@ -4,7 +4,7 @@
  * No web page receives Node, filesystem, OS command or Electron IPC powers.
  * The local Python runtime is a supervised, separate executable.
  */
-const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage} = require("electron");
+const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage ,shell} = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -154,7 +154,8 @@ function envForRuntime() {
     LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
     LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
     LHM_OPENCLI_BUNDLE_DIR:app.isPackaged?path.join(process.resourcesPath,"opencli-runtime"):
-      path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime"),
+      (fs.existsSync(path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime","node.exe"))?
+        path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime"):""),
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
@@ -391,6 +392,13 @@ function settingsIPC(){
       keyUnlocked:!!unwrapSecret(c.openrouterKey),
       allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
       allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
+  });
+  ipcMain.handle("settings:opencli-extension",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    // A fixed, trusted Chrome Web Store destination. Renderer never chooses URL.
+    await shell.openExternal("https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk");
+    return {opened:true};
   });
   ipcMain.handle("settings:opencli-status",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
