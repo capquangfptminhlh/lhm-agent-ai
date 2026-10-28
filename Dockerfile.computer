@@ -31,7 +31,7 @@ for cmd in [('agent-reach','version'), ('agent-reach','channels')]:
     assert d.get('ok') is True, d
 print('Agent-Reach CLI import + read-only channel discovery OK')
 PY
-COPY computer_executor.py agent_reach_bridge.py opencli_windows_bridge.py ./
+COPY computer_executor.py agent_reach_bridge.py opencli_windows_bridge.py opencli_diagnostics.py ./
 RUN useradd --system --uid 10001 --create-home lhmrunner \
     && mkdir -p /agent-data \
     && chown 10001:10001 /agent-data
