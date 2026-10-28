@@ -87,6 +87,7 @@ def main():
         })
         processes = []
         handles = []
+        edge_cleaned = False
         try:
             for mode in ["native", "api"]:
                 logfile = open(directory / f"{mode}.log", "wb")
@@ -150,6 +151,13 @@ def main():
             sys.stdout.write(gui.stdout or "")
             sys.stderr.write(gui.stderr or "")
             assert gui.returncode == 0, "Real Windows GUI acceptance failed"
+            status, body = request("http://127.0.0.1:7782/v1/browser/close",
+                    "e2e-runner-token", "POST", timeout=20)
+            assert status == 200, "Packaged Edge shutdown endpoint failed"
+            assert json.loads(body).get("contexts_closed") == 1, (
+                "Owned Edge browser context was not closed cleanly")
+            edge_cleaned = True
+            print("PACKAGED WINDOWS EDGE CLEANUP PASS: owned browser released",flush=True)
         except Exception as exc:
             # Annotations are readable without job-log access; keep the
             # actual exception visible there for outside diagnosis.
@@ -164,6 +172,14 @@ def main():
                           flush=True)
             raise
         finally:
+            # Do not force-kill the runtime while it still owns a Chrome/Edge
+            # profile; Windows can retain SQLite locks after process death.
+            if not edge_cleaned and processes and processes[0].poll() is None:
+                try:
+                    request("http://127.0.0.1:7782/v1/browser/close",
+                        "e2e-runner-token", "POST", timeout=15)
+                except Exception:
+                    pass
             for proc in reversed(processes):
                 stop(proc)
             for handle in handles:
