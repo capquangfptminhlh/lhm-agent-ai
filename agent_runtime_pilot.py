@@ -167,7 +167,7 @@ def assert_pilot_action(run: dict, tool: str, args: dict[str,Any],
         matching=[step for step in previous
                   if step.get("tool")==tool and step.get("args")==args]
         if tool in {"browser_click","browser_fill","opencli_click","opencli_fill"} and any(
-                step.get("status") in {"completed","failed","needs_review"} for step in matching):
+                step.get("status") in {"completed","failed","needs_review","reviewed_unverified"} for step in matching):
             raise HTTPException(409,"Trùng thao tác browser có thể đã gửi dữ liệu; cần đối soát")
         read_failures=sum(step.get("status") in {"failed","needs_review"}
                           for step in matching)
@@ -242,12 +242,15 @@ def execution_state(ws: str,order_id: str):
     elif "executing" in statuses or "approved" in statuses:stage="executing"
     elif "accepted_unverified" in statuses:stage="verifying"
     elif "awaiting_approval" in statuses:stage="needs_human"
-    elif qa and qa["verdict"]=="pass":stage="planning"
     elif task and task["status"] in ("failed","blocked_budget","blocked_dependency"):stage="failed"
-    elif task and task["status"]=="completed":stage="verifying"
-    elif comp and comp["status"]=="awaiting_approval":stage="needs_human"
-    elif comp and comp["status"]=="needs_review":stage="needs_human"
+    # A completed AI draft is not a reason to hide a blocked Computer Run.
+    # Human reconciliation must win over planning / generic verifying state.
+    elif comp and comp["status"] in ("awaiting_approval","awaiting_checkpoint",
+                                     "awaiting_reconciliation","needs_review"):
+        stage="needs_human"
     elif comp and comp["status"] in ("queued","processing"):stage="executing"
+    elif qa and qa["verdict"]=="pass":stage="planning"
+    elif task and task["status"]=="completed":stage="verifying"
     else:stage="queued"
     return {"work_order_id":order_id,"role":order["role"],"stage":stage,
             "source_task_status":task["status"] if task else "missing",
