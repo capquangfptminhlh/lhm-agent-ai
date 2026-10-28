@@ -115,10 +115,19 @@ jobs:
       - name: Verify Windows Agent-Reach real public GitHub search using source runtime
         shell: pwsh
         run: |
-          $output = python desktop/runtime.py reach-worker github "agent tools"
-          if ($LASTEXITCODE -ne 0) { throw "Windows Agent-Reach public search failed" }
-          $response = ($output | Out-String) | ConvertFrom-Json
-          if ($response.ok -ne $true -or $response.channel -ne "github" -or $response.action -ne "search") { throw "Native Windows search result schema mismatch" }
+          $succeeded = $false
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            $output = python desktop/runtime.py reach-worker github "agent tools"
+            if ($LASTEXITCODE -eq 0) {
+              $response = ($output | Out-String) | ConvertFrom-Json
+              if ($response.ok -ne $true -or $response.channel -ne "github" -or $response.action -ne "search") { throw "Native Windows search result schema mismatch" }
+              $succeeded = $true
+              break
+            }
+            Write-Warning "Public GitHub search unavailable, attempt $attempt of 3"
+            if ($attempt -lt 3) { Start-Sleep -Seconds 3 }
+          }
+          if (-not $succeeded) { throw "Windows Agent-Reach real public search failed 3 attempts" }
           Write-Host "Windows source Agent-Reach public search PASS"
 
       - name: Smoke test actual bundled runtime EXE
@@ -127,10 +136,19 @@ jobs:
           LHM_DB_PATH: lhm-ci-native-executable.sqlite3
         run: |
           & .\dist\lhm-runtime\lhm-runtime.exe self-test
-          $reachOutput = & .\dist\lhm-runtime\lhm-runtime.exe reach-worker github "agent tools"
-          if ($LASTEXITCODE -ne 0) { throw "Frozen Agent-Reach worker failed" }
-          $data = ($reachOutput | Out-String) | ConvertFrom-Json
-          if ($data.ok -ne $true -or $data.channel -ne "github" -or $data.action -ne "search") { throw "Frozen Agent-Reach search schema invalid" }
+          $succeeded = $false
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            $reachOutput = & .\dist\lhm-runtime\lhm-runtime.exe reach-worker github "agent tools"
+            if ($LASTEXITCODE -eq 0) {
+              $data = ($reachOutput | Out-String) | ConvertFrom-Json
+              if ($data.ok -ne $true -or $data.channel -ne "github" -or $data.action -ne "search") { throw "Frozen Agent-Reach search schema invalid" }
+              $succeeded = $true
+              break
+            }
+            Write-Warning "Frozen public GitHub search unavailable, attempt $attempt of 3"
+            if ($attempt -lt 3) { Start-Sleep -Seconds 3 }
+          }
+          if (-not $succeeded) { throw "Frozen Agent-Reach public GitHub search failed 3 attempts" }
           Write-Host "Frozen Agent-Reach public search PASS"
           if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime failed" }
 
