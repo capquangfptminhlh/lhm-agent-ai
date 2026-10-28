@@ -183,11 +183,13 @@ class OpenCLIExecutionTests(unittest.IsolatedAsyncioTestCase):
     async def test_native_runner_routes_run_id_to_opencli(self):
         from computer_executor import ToolRequest, perform
         one="01234567-89ab-4cde-8fab-0123456789ab"
-        with patch("opencli_windows_bridge.execute",return_value={
-            "url":"https://example.com","read_only":True}) as execute:
-            request=ToolRequest(workspace_id="demo",role="content",
-                    tool="opencli_state",args={},run_id=one)
-            await perform(request)
+        with patch("computer_executor._home") as isolated_home:
+            with patch("opencli_windows_bridge.execute",return_value={
+                "url":"https://example.com","read_only":True}) as execute:
+                request=ToolRequest(workspace_id="demo",role="content",
+                        tool="opencli_state",args={},run_id=one)
+                await perform(request)
+                isolated_home.assert_called_once_with("demo","content")
         execute.assert_awaited_once_with("demo","content","opencli_state",{},run_id=one)
 
     async def test_click_checks_fresh_ref_and_url_before_and_after(self):
