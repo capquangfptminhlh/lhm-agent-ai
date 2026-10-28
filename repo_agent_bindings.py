@@ -6,6 +6,7 @@ A GitHub link or successful AI draft is not an authenticated GitHub write.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -152,6 +153,7 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
             # them is surfaced as unavailable, not passed or empty evidence.
             failures=[]
             details_verified=False
+            details_complete=False
             checked_run=results[0] if results else None
             if checked_run:
                 jobs_url=url+"/"+str(checked_run["id"])+"/jobs"
@@ -164,6 +166,9 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
                         if not isinstance(jobs,list):
                             raise ValueError("jobs invalid")
                         details_verified=True
+                        total=jobs_payload.get("total_count")
+                        details_complete=(len(jobs)<100 and
+                                          (type(total) is not int or total<=len(jobs)))
                         for job in jobs[:100]:
                             if not isinstance(job,dict):
                                 continue
@@ -186,6 +191,7 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
                                             if type(job_id) is int and job_id>0 else None})
                 except (httpx.HTTPError,ValueError,TypeError,KeyError):
                     details_verified=False
+                    details_complete=False
                     failures=[]
     except httpx.HTTPError:
         raise HTTPException(503,"Không kết nối được GitHub API; không thể xác minh CI")
@@ -193,6 +199,7 @@ async def check_ci(agent_id: str) -> dict[str, Any]:
         "agent_id":agent_id,"repository":repo,"job":agent["job"],
         "connection_verified":True,"read_only":True,"runs":results,
         "job_details_verified":details_verified,
+        "job_details_complete":details_complete,
         "failed_jobs":failures[:25],"checked_run_id":checked_run["id"] if checked_run else None,
         "can_create_pr":False,"code_changed":False,
         "next_step":"Chẩn đoán từ nguồn CI đã đọc; không coi đây là PR hay bản sửa code.",
@@ -285,8 +292,9 @@ async def create_repository_diagnosis(agent_id: str,inp: RepoDiagnosisIn):
         "\nCommit SHA: "+recent["head_sha"]+
         "\nURL: "+recent["html_url"]+
         "\nJob details verified: "+str(ci.get("job_details_verified") is True)+
+        "\nJob details complete: "+str(ci.get("job_details_complete") is True)+
         "\nFailing jobs/steps (if independently verified): "+
-            __import__("json").dumps(ci.get("failed_jobs",[]),ensure_ascii=False)[:1600]+
+            json.dumps(ci.get("failed_jobs",[]),ensure_ascii=False)[:1600]+
         "\nIMPORTANT: absence of job details is NOT successful testing; "
         "no full logs were fetched. No code or pull requests were changed."
     )[:2900]
