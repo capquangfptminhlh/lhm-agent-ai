@@ -43,7 +43,7 @@ TOOLS = {
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
   "windows_list":"List Windows app HWNDs whose executables are allowed by the local operator; {}",
-  "windows_snapshot":"Read bounded UI Automation labels from an allowed HWND; {hwnd: integer}",
+  "windows_snapshot":"Read up to 60 UI Automation controls with type, label (redacted for editable/password fields), automation_id and visible center {x,y} local to the allowed HWND; use an observed center with windows_click, never invent coordinates; {hwnd: integer}",
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
   "windows_click":"Click inside focused allowed app window; {hwnd: int, x: local int, y: local int}; approval required",
