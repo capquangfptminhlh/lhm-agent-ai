@@ -37,6 +37,45 @@ class WindowsNativeTests(unittest.TestCase):
              json={"workspace_id":"demo","role":"research",
                    "tool":tool,"args":args})
 
+    def test_snapshot_exposes_bounded_uia_targets_without_secret_text(self):
+        """Semantic controls give the Agent stable IDs and safe local click points."""
+        import sys
+        from types import ModuleType, SimpleNamespace
+
+        window={"hwnd":123,"pid":42,"process":"notepad.exe",
+                "title":"Notepad","x":100,"y":200,"width":400,"height":300}
+
+        def control(kind,label,automation_id,rect,password=False):
+            info=SimpleNamespace(control_type=kind,automation_id=automation_id,
+                                 rectangle=SimpleNamespace(left=rect[0],top=rect[1],
+                                                           right=rect[2],bottom=rect[3]),
+                                 is_password=password)
+            return SimpleNamespace(element_info=info,window_text=lambda:label)
+
+        controls=[
+            control("Button","Lưu","save-button",(120,230,200,270)),
+            control("Edit","SECRET-DO-NOT-ECHO","input-password",(120,280,300,305)),
+            control("Button","Offscreen","other",(40,40,80,80)),
+            control("Text","SENSITIVE-PASSWORD","password",(200,310,280,350),True)
+        ]
+        module=ModuleType("pywinauto")
+        module.Desktop=lambda backend:SimpleNamespace(
+            window=lambda handle:SimpleNamespace(descendants=lambda:controls))
+        with patch.object(wn,"_require_windows"),patch.object(
+                wn,"_window_info",return_value=window),patch.dict(sys.modules,{"pywinauto":module}):
+            result=wn.execute("windows_snapshot",{"hwnd":123})
+        items=result["controls"]
+        self.assertEqual(len(items),4)
+        self.assertEqual(items[0]["automation_id"],"save-button")
+        self.assertEqual(items[0]["center"],{"x":60,"y":50})
+        self.assertEqual(items[0]["label"],"Lưu")
+        self.assertNotIn("center",items[2])
+        self.assertEqual(items[1]["label"],"")
+        self.assertEqual(items[3]["label"],"")
+        self.assertNotIn("SECRET-DO-NOT-ECHO",str(result))
+        self.assertNotIn("SENSITIVE-PASSWORD",str(result))
+        self.assertNotIn("value",items[0])
+
     def test_windows_mutation_unavailable_in_docker(self):
         response=self._post("windows_list",{})
         self.assertEqual(response.status_code,503,response.text)

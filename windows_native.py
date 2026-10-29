@@ -414,12 +414,27 @@ def execute(tool: str,args: dict):
             target=Desktop(backend="uia").window(handle=hwnd)
             for child in target.descendants()[:60]:
                 try:
-                    kind=child.element_info.control_type
-                    name=child.window_text()
-                    # Never read contents or values of edit/password fields.
-                    items.append({"type":str(kind)[:70],
-                                  "label":str(name)[:100] if kind not in ("Edit","Document") else ""})
-                except Exception:continue
+                    meta=child.element_info
+                    kind=str(meta.control_type or "")[:70]
+                    # Never inspect values or read text from editable/document/password fields.
+                    secret=kind.lower() in ("edit","document","password") or bool(
+                        getattr(meta,"is_password",False))
+                    name="" if secret else str(child.window_text() or "")[:100]
+                    item={"type":kind,"label":name,
+                          "automation_id":str(getattr(meta,"automation_id","") or "")[:100]}
+                    rect=getattr(meta,"rectangle",None)
+                    if rect is not None:
+                        # Return coordinates in the SAME top-level HWND coordinate
+                        # space as windows_click. Discard off-window UIA rectangles.
+                        left=int(rect.left)-i["x"]
+                        top=int(rect.top)-i["y"]
+                        right=int(rect.right)-i["x"]
+                        bottom=int(rect.bottom)-i["y"]
+                        if 0<=left<right<=i["width"] and 0<=top<bottom<=i["height"]:
+                            item["center"]={"x":(left+right)//2,"y":(top+bottom)//2}
+                    items.append(item)
+                except (AttributeError,TypeError,ValueError,OverflowError):
+                    continue
             return {"window":i,"controls":items}
         except Exception:
             return {"window":i,"controls":[],"note":"UI Automation controls unavailable"}
