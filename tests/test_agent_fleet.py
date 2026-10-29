@@ -138,6 +138,55 @@ class SpecialistFleetTests(unittest.TestCase):
         self.assertIn("chưa thực hiện",order["draft"])
         self.assertFalse(order["external_action_completed"])
 
+    def test_live_worker_heartbeat_during_slow_model_request(self):
+        """A real in-flight model request must not make the office claim worker offline."""
+        f=self.create(key="fleet-heartbeat-2026")
+        order=next(x for x in f["orders"] if x["role"]=="director")
+        with core.db() as c:
+            task=c.execute("SELECT id,role,workspace_id,model FROM tasks WHERE id=?",
+                           (order["task_id"],)).fetchone()
+        answer={"choices":[{"message":{"content":"Bản nháp đang được xử lý."}}],
+                "usage":{"prompt_tokens":10,"completion_tokens":15,"cost":0}}
+
+        async def scenario():
+            entered=asyncio.Event()
+            finish=asyncio.Event()
+            stop=asyncio.Event()
+
+            async def slow_model(*_args, **_kwargs):
+                entered.set()
+                await finish.wait()
+                return answer
+
+            ticker=asyncio.create_task(worker.maintain_worker_heartbeat(stop,interval=0.02))
+            running=None
+            try:
+                with patch.object(app,"deepseek_request",side_effect=slow_model):
+                    running=asyncio.create_task(worker.dispatch_agent_batch([task]))
+                    await asyncio.wait_for(entered.wait(),timeout=2)
+                    # Simulate a heartbeat expiring while the provider is still busy.
+                    with core.db() as c:
+                        c.execute("UPDATE worker_heartbeats SET updated_at=? WHERE id='default'",
+                                  (core.now()-120,))
+                    await asyncio.sleep(0.09)
+                    snap=self.client.get("/api/office/snapshot?workspace_id=demo")
+                    self.assertEqual(snap.status_code,200,snap.text)
+                    self.assertTrue(snap.json()["worker"]["online"])
+                    with core.db() as c:
+                        live=c.execute("SELECT status FROM tasks WHERE id=?",
+                                       (order["task_id"],)).fetchone()
+                    self.assertEqual(live["status"],"running")
+                    finish.set()
+                    self.assertEqual(await asyncio.wait_for(running,timeout=2),1)
+            finally:
+                finish.set()
+                stop.set()
+                await ticker
+                if running is not None and not running.done():
+                    await asyncio.wait_for(running,timeout=2)
+
+        asyncio.run(scenario())
+
     def test_worker_can_complete_all_16_distinct_roles_without_provider_actions(self):
         # Exercise the actual queue/worker dispatch, model mocked only.
         with patch.dict(os.environ,{"LHM_OPENROUTER_1M_LIMIT":"20"}):
