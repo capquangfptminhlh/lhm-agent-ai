@@ -105,22 +105,48 @@ class SamePRRevisionTests(unittest.TestCase):
             ]})
         if req.url.path.endswith("/commits/"+self.sha+"/status"):
             return httpx.Response(200,json={"statuses":[]})
+        if req.url.path.endswith("/git/commits/"+self.sha):
+            self.assertEqual(req.method,"GET")
+            return httpx.Response(200,json={"tree":{"sha":"d"*40}})
+        if req.url.path.endswith("/git/trees/"+"d"*40):
+            self.assertEqual(req.method,"GET")
+            return httpx.Response(200,json={"truncated":False,"tree":[
+                {"path":"src/calc.py","type":"blob","mode":"100644","sha":self.blob}]})
+        if req.url.path.endswith("/git/blobs"):
+            self.assertEqual(req.method,"POST")
+            payload=json.loads(req.content)
+            self.assertEqual(payload["encoding"],"base64")
+            self.assertEqual(base64.b64decode(payload["content"]).decode(),
+                             'def calc(x):\n    return x + 2\n')
+            return httpx.Response(201,json={"sha":"f"*40})
+        if req.url.path.endswith("/git/trees"):
+            self.assertEqual(req.method,"POST")
+            payload=json.loads(req.content)
+            self.assertEqual(payload["base_tree"],"d"*40)
+            self.assertEqual(payload["tree"],[{
+                "path":"src/calc.py","mode":"100644","type":"blob","sha":"f"*40}])
+            return httpx.Response(201,json={"sha":"9"*40})
+        if req.url.path.endswith("/git/commits"):
+            self.assertEqual(req.method,"POST")
+            payload=json.loads(req.content)
+            self.assertEqual(payload["parents"],[self.sha])
+            self.assertEqual(payload["tree"],"9"*40)
+            return httpx.Response(201,json={"sha":"e"*40})
+        if req.url.path.endswith("/git/refs/heads/"+self.branch):
+            self.assertEqual(req.method,"PATCH")
+            payload=json.loads(req.content)
+            self.assertIs(payload["force"],False)
+            self.assertEqual(payload["sha"],"e"*40)
+            if self.put_fail:
+                return httpx.Response(422,json={"message":"non-fast-forward"})
+            return httpx.Response(200,json={"ref":"refs/heads/"+self.branch,
+                                            "object":{"sha":"e"*40}})
         if req.url.path.endswith("/contents/src/calc.py"):
             if req.method=="GET":
                 self.assertEqual(req.url.params.get("ref"),self.sha)
                 return httpx.Response(200,json={
                     "type":"file","encoding":"base64","sha":self.blob,
                     "content":base64.b64encode(self.source.encode()).decode()})
-            if req.method=="PUT":
-                self.assertEqual(req.headers.get("authorization"),"Bearer write-test")
-                payload=json.loads(req.content)
-                self.assertEqual(payload["branch"],self.branch)
-                self.assertEqual(payload["sha"],self.blob)
-                self.assertEqual(base64.b64decode(payload["content"]).decode(),
-                                 'def calc(x):\n    return x + 2\n')
-                if self.put_fail:
-                    return httpx.Response(502,json={"message":"uncertain commit"})
-                return httpx.Response(200,json={"commit":{"sha":"e"*40}})
         self.fail("Unexpected GitHub request "+req.method+" "+str(req.url))
 
     def mocked_http(self):
@@ -174,11 +200,13 @@ class SamePRRevisionTests(unittest.TestCase):
         self.assertEqual(result.json()["status"],"committed")
         self.assertEqual(result.json()["commit_sha"],"e"*40)
         self.assertEqual(result.json()["pr_number"],77)
-        self.assertEqual([m for m,_,_ in self.http_calls if m!="GET"],["PUT"])
+        self.assertEqual([m for m,_,_ in self.http_calls if m!="GET"],
+                         ["POST","POST","POST","PATCH"])
         with self.mocked_http():
             again=self.owner_approve(initial["id"])
         self.assertEqual(again.status_code,409)
-        self.assertEqual([m for m,_,_ in self.http_calls if m!="GET"],["PUT"])
+        self.assertEqual([m for m,_,_ in self.http_calls if m!="GET"],
+                         ["POST","POST","POST","PATCH"])
 
     def test_duplicate_request_does_not_queue_new_task(self):
         x=self.propose()
@@ -201,7 +229,7 @@ class SamePRRevisionTests(unittest.TestCase):
         self.assertEqual(r.status_code,409,r.text)
         stored=self.client.get(self.endpoint()+"/revisions/"+x["id"]).json()
         self.assertEqual(stored["status"],"stale")
-        self.assertFalse(any(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertFalse(any(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_source_changed_rejects_and_does_not_put(self):
         x=self.propose()
@@ -211,7 +239,7 @@ class SamePRRevisionTests(unittest.TestCase):
             result=self.owner_approve(x["id"])
         self.assertEqual(result.status_code,409,result.text)
         self.assertEqual(self.client.get(self.endpoint()+"/revisions/"+x["id"]).json()["status"],"stale")
-        self.assertFalse(any(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertFalse(any(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_uncertain_github_write_requires_reconciliation_no_retry(self):
         x=self.propose()
@@ -222,11 +250,11 @@ class SamePRRevisionTests(unittest.TestCase):
         self.assertEqual(result.status_code,502)
         stored=self.client.get(self.endpoint()+"/revisions/"+x["id"]).json()
         self.assertEqual(stored["status"],"needs_reconciliation")
-        count=sum(m=="PUT" for m,_,_ in self.http_calls)
+        count=sum(m=="PATCH" for m,_,_ in self.http_calls)
         with self.mocked_http():
             result=self.owner_approve(x["id"])
         self.assertEqual(result.status_code,409)
-        self.assertEqual(count,sum(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertEqual(count,sum(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_without_admin_or_write_token_rejects_before_state_change(self):
         x=self.propose()
@@ -237,7 +265,7 @@ class SamePRRevisionTests(unittest.TestCase):
             no_write=self.owner_approve(x["id"])
         self.assertEqual(no_write.status_code,424)
         self.assertEqual(self.client.get(self.endpoint()+"/revisions/"+x["id"]).json()["status"],"proposed")
-        self.assertFalse(any(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertFalse(any(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_invalid_llm_json_not_approvable(self):
         x=self.propose()
@@ -249,7 +277,7 @@ class SamePRRevisionTests(unittest.TestCase):
         with self.mocked_http():
             approve=self.owner_approve(x["id"])
         self.assertEqual(approve.status_code,409)
-        self.assertFalse(any(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertFalse(any(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_no_failed_ci_or_non_draft_pr_never_queues_worker(self):
         self.check_result="success"
@@ -286,7 +314,7 @@ class SamePRRevisionTests(unittest.TestCase):
         with self.mocked_http():
             done=self.owner_approve(x["id"])
         self.assertEqual(done.status_code,409)
-        self.assertFalse(any(m=="PUT" for m,_,_ in self.http_calls))
+        self.assertFalse(any(m=="PATCH" for m,_,_ in self.http_calls))
 
     def test_untrusted_pr_source_with_secret_never_sent_to_ai(self):
         self.source='OPENROUTER_API_KEY="secret"\n' + self.source
