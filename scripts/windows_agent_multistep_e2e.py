@@ -205,7 +205,7 @@ def _accept(base: Path) -> None:
                          "windows_snapshot","finish"],planned
         with core.db() as connection:
             audit=connection.execute(
-                "SELECT COUNT(*) FROM audit_log WHERE workspace_id=? AND entity_id=?",
+                "SELECT COUNT(*) FROM events WHERE workspace_id=? AND task_id=?",
                 ("demo",rid)).fetchone()[0]
         assert audit>=1, "Run should have a persistent audit record"
         print("REAL WINDOWS COMPUTER AGENT E2E PASS: authenticated runner, 4 actual tool "
