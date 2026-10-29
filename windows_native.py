@@ -380,7 +380,7 @@ def _click_uia_control(hwnd: int, args: dict) -> dict:
     label=args.get("label")
     if (not isinstance(automation_id,str) or not 1<=len(automation_id)<=100
             or not isinstance(label,str) or not 1<=len(label)<=100
-            or kind not in UIA_CLICK_TYPES):
+            or not isinstance(kind,str) or kind not in UIA_CLICK_TYPES):
         raise HTTPException(422,"Use exact observed automation_id, control_type and nonempty label")
     window=_foreground_or_refocus(hwnd)
     try:
