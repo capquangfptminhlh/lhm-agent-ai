@@ -39,6 +39,10 @@ let connection = null;
 let scene3d = null;
 let previouslySynced = false;
 let toastTimer = null;
+// Invalidates responses from an older workspace or superseded live update.
+let workspaceGeneration = 0;
+let liveRevision = 0;
+let pollSequence = 0;
 
 function toast(message, error = false) {
   const el = $('toast');
@@ -617,10 +621,19 @@ function applySnapshot(data) {
   renderStats();renderRoster();renderProfile();renderEvents();renderAttention();setConnection(true);
 }
 async function sync() {
+  const workspaceAtStart=current;
+  const generationAtStart=workspaceGeneration;
+  const revisionAtStart=liveRevision;
+  const requestNumber=++pollSequence;
   try{
-    const result=await api('/api/office3d/snapshot?workspace_id='+encodeURIComponent(current));
+    const result=await api('/api/office3d/snapshot?workspace_id='+encodeURIComponent(workspaceAtStart));
+    // An older HTTP response must never overwrite a newer SSE frame or workspace.
+    if(generationAtStart!==workspaceGeneration || workspaceAtStart!==current ||
+       revisionAtStart!==liveRevision || requestNumber!==pollSequence)return;
     applySnapshot(result);
   }catch(err){
+    if(generationAtStart!==workspaceGeneration || workspaceAtStart!==current ||
+       revisionAtStart!==liveRevision || requestNumber!==pollSequence)return;
     setConnection(false,err.message);
     if(!world)toast('Không lấy được trạng thái backend: '+err.message,true);
   }
@@ -632,7 +645,9 @@ function connectEvents() {
   feed=source;
   source.addEventListener('snapshot',ev=>{
     if(feed!==source)return;
-    try{applySnapshot(JSON.parse(ev.data));}catch(err){toast(err.message,true);}
+    try{const frame=JSON.parse(ev.data);
+      if(frame.workspace?.id===current){liveRevision++;applySnapshot(frame);}
+    }catch(err){toast(err.message,true);}
   });
   source.addEventListener('offline',()=>{
     if(feed!==source)return;
@@ -689,6 +704,7 @@ $('qualityToggle').onclick=()=>{
 };
 $('workspace').onchange=async ev=>{
   current=ev.target.value;
+  workspaceGeneration++;
   previouslySynced=false;world=null;
   connectEvents();await sync();
 };
