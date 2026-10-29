@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException
 from core import MODEL, audit, db, new_id, now, workspace
 from repo_agent_bindings import PROJECT_AGENTS
 from repo_agent_pr_ci import verify_repair_pr_ci
-from repo_agent_pr_annotations import collect_failed_check_annotations
+from repo_agent_pr_annotations import collect_failed_check_annotations, _clean
 from repo_agent_repair import _agent, _row, prepare_db as prepare_repairs
 
 router=APIRouter(tags=["Repository Agent PR Failure Triage"])
@@ -75,13 +75,13 @@ def _view(c,record) -> dict[str,Any]:
 
 def _evidence(snapshot: dict[str,Any]) -> dict[str,Any]:
     failing_checks=[
-        {"check":item["name"][:120],
+        {"check":_clean(item["name"],120),
          "status":item["status"],"conclusion":item.get("conclusion")}
         for item in snapshot.get("check_runs",[]) if
         item.get("conclusion") in
         ("failure","timed_out","cancelled","action_required","startup_failure","stale")]
     failing_statuses=[
-        {"context":item["context"][:120],"state":item["state"]}
+        {"context":_clean(item["context"],120),"state":item["state"]}
         for item in snapshot.get("commit_statuses",[]) if
         item.get("state") in ("failure","error")]
     return {
