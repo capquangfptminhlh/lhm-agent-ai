@@ -28,6 +28,7 @@ from github_tool_stack import router as github_stack_router
 from repo_agent_bindings import router as repository_agents_router
 from repo_agent_repair import router as repair_router
 from repo_agent_ai_patch import router as ai_patch_router
+from repo_agent_pr_ci import router as pr_ci_router
 from pydantic import BaseModel, Field
 from publication_gate import (MAX_HANDOFF_CHARS, REVIEW_ROLES, record_review,
                               review_task_passed, scrub_output)
@@ -54,6 +55,7 @@ app.include_router(github_stack_router)
 app.include_router(repository_agents_router)
 app.include_router(repair_router)
 app.include_router(ai_patch_router)
+app.include_router(pr_ci_router)
 
 
 @app.middleware("http")
