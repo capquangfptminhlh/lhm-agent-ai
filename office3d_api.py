@@ -37,7 +37,35 @@ def build_world_snapshot(workspace_id: str = "demo") -> dict:
                 "total_tasks": item["total"], "completed_tasks": item["completed"],
                 "updated_at": item["updated_at"],
             })
+    # Executive attention queue, derived ONLY from persisted workspace tasks.
+    # Render a bounded list and keep real status/action semantics; "Cần anh"
+    # does not synthesize chat or prompt humans about idle agents.
+    priority = {"awaiting_approval": 0, "blocked_budget": 1,
+                "blocked_dependency": 2, "failed": 3}
+    pending = [item for item in raw["tasks"] if item["status"] in priority]
+    pending.sort(key=lambda item: (priority[item["status"]],
+                 -(item["updated_at"] or 0), item["id"]))
+    attention = [
+        {"task_id": item["id"], "role": item["role"],
+         "title": item["instruction"][:180], "status": item["status"],
+         "updated_at": item["updated_at"],
+         "action": "approve" if item["status"] == "awaiting_approval"
+                   else "inspect"}
+        for item in pending[:10]
+    ]
     return {
+        "attention": attention,
+        "attention_summary": {
+            "requires_owner_approval": raw["statuses"].get("awaiting_approval", 0),
+            "blocked": raw["statuses"].get("blocked_budget", 0)
+                       + raw["statuses"].get("blocked_dependency", 0),
+            "failed": raw["statuses"].get("failed", 0),
+            "pending_tools": raw["tool_summary"]["counts"].get("awaiting_approval", 0),
+            "worker_offline_with_queued_tasks": (
+                not raw["worker"]["online"] and
+                raw["statuses"].get("queued", 0) > 0),
+            "truncated": len(pending) > 10,
+        },
         "schema_version": SCHEMA_VERSION,
         "mode": "live_backend",
         "source": "LHM Agent OS persisted tasks and worker heartbeats",
