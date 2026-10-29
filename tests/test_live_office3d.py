@@ -6,6 +6,8 @@ be completed separately on a real browser/device.
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -136,6 +138,89 @@ class Live3DOfficeTests(unittest.TestCase):
             hdr={"Authorization":"Basic "+user}
             self.assertEqual(self.client.get("/office3d",headers=hdr).status_code,200)
             self.assertEqual(self.client.get("/api/office3d/snapshot",headers=hdr).status_code,200)
+
+
+    def test_owner_attention_queue_is_real_and_ordered(self):
+        pending=self.client.post("/workspaces/demo/tasks",json={
+            "role":"content","instruction":"Duyệt nội dung trước khi đăng",
+            "requires_approval":True})
+        self.assertEqual(pending.status_code,201,pending.text)
+        failed=self.client.post("/workspaces/demo/tasks",json={
+            "role":"research","instruction":"Nghiên cứu dữ liệu nguồn thất bại"})
+        self.assertEqual(failed.status_code,201)
+        with core.db() as c:
+            c.execute("UPDATE tasks SET status='failed' WHERE id=?",
+                      (failed.json()["id"],))
+        snapshot=self.client.get("/api/office3d/snapshot?workspace_id=demo")
+        self.assertEqual(snapshot.status_code,200,snapshot.text)
+        d=snapshot.json()
+        self.assertEqual(d["attention_summary"]["requires_owner_approval"],1)
+        self.assertEqual(d["attention_summary"]["failed"],1)
+        self.assertEqual(len(d["attention"]),2)
+        self.assertEqual(d["attention"][0]["task_id"],pending.json()["id"])
+        self.assertEqual(d["attention"][0]["action"],"approve")
+        self.assertEqual(d["attention"][1]["task_id"],failed.json()["id"])
+        self.assertEqual(d["attention"][1]["action"],"inspect")
+        self.assertFalse(d["attention_summary"]["truncated"])
+        # The UI uses the same real owner-approved transition.
+        approved=self.client.post("/tasks/"+pending.json()["id"]+"/approve")
+        self.assertEqual(approved.status_code,200)
+        after=self.client.get("/api/office3d/snapshot?workspace_id=demo").json()
+        self.assertEqual(after["attention_summary"]["requires_owner_approval"],0)
+        self.assertNotIn(pending.json()["id"],[x["task_id"] for x in after["attention"]])
+        self.assertEqual(after["statuses"]["queued"],1)
+        self.assertTrue(after["attention_summary"]["worker_offline_with_queued_tasks"])
+
+    def test_attention_never_crosses_workspace(self):
+        other=self.client.post("/workspaces",json={
+            "id":"other_queue","name":"Doanh nghiệp B",
+            "industry":"general","budget_usd":1.0})
+        self.assertEqual(other.status_code,201)
+        t=self.client.post("/workspaces/demo/tasks",json={
+            "role":"quality","instruction":"Báo cáo nội bộ A cần chủ duyệt",
+            "requires_approval":True})
+        self.assertEqual(t.status_code,201)
+        own=self.client.get("/api/office3d/snapshot?workspace_id=demo").json()
+        second=self.client.get("/api/office3d/snapshot?workspace_id=other_queue").json()
+        self.assertEqual(own["attention_summary"]["requires_owner_approval"],1)
+        self.assertEqual(second["attention_summary"]["requires_owner_approval"],0)
+        self.assertEqual(second["attention"],[])
+        self.assertFalse(any("nội bộ A" in str(x) for x in second["attention"]))
+
+    def test_attention_is_bounded_and_only_actionable_states(self):
+        for i in range(12):
+            t=self.client.post("/workspaces/demo/tasks",json={
+                "role":"quality",
+                "instruction":"Vấn đề cần quản lý số "+str(i),
+                "requires_approval":True})
+            self.assertEqual(t.status_code,201)
+        d=self.client.get("/api/office3d/snapshot").json()
+        self.assertEqual(d["attention_summary"]["requires_owner_approval"],12)
+        self.assertEqual(len(d["attention"]),10)
+        self.assertTrue(d["attention_summary"]["truncated"])
+        self.assertTrue(all(x["status"]=="awaiting_approval" for x in d["attention"]))
+        self.assertTrue(all(x["action"]=="approve" for x in d["attention"]))
+
+    def test_executive_3d_ui_provides_actionable_local_approval(self):
+        html=self.client.get("/office3d")
+        self.assertEqual(html.status_code,200)
+        for needle in ('id="attentionPanel"','id="attentionList"',
+                       'id="attentionBadge"','id="attentionTools"',
+                       'id="attentionWarnings"'):
+            self.assertIn(needle,html.text)
+        js=self.client.get("/office3d/scene.js")
+        self.assertEqual(js.status_code,200)
+        for marker in ("renderAttention()", "data-attention-approve",
+                       "window", "'/tasks/'", "confirm("):
+            # "window" may be used in the existing scene as well.
+            self.assertIn(marker,js.text)
+        css=self.client.get("/office3d/scene.css")
+        self.assertIn(".attention-panel",css.text)
+        node=shutil.which("node")
+        if node:
+            checked=subprocess.run([node,"--input-type=module","--check"],
+               input=js.text,text=True,capture_output=True)
+            self.assertEqual(checked.returncode,0,checked.stderr)
 
 
 if __name__=="__main__":

@@ -529,6 +529,68 @@ function renderEvents() {
       <time>${esc(timeText(e.timestamp))}</time>
     </div>`).join('')||'<div class="empty-card">Chưa có sự kiện ghi nhận trong backend.</div>';
 }
+const attentionNames={
+  awaiting_approval:'Cần anh duyệt',
+  blocked_budget:'Thiếu ngân sách',
+  blocked_dependency:'Chờ công việc phụ thuộc',
+  failed:'Nhiệm vụ bị lỗi'
+};
+function renderAttention(){
+  if(!world)return;
+  const summary=world.attention_summary||{};
+  const all=Array.isArray(world.attention)?world.attention:[];
+  const count=(Number(summary.requires_owner_approval)||0)+
+    (Number(summary.blocked)||0)+(Number(summary.failed)||0);
+  $('attentionBadge').textContent=String(count);
+  $('attentionToolCount').textContent=String(summary.pending_tools||0);
+  $('attentionTools').classList.toggle('attention-has-tasks',Number(summary.pending_tools)>0);
+  $('attentionList').innerHTML=all.length?all.map(item=>{
+    const directApprove=item.status==='awaiting_approval'&&item.action==='approve';
+    return '<div class="attention-item" role="listitem">'+
+      '<span class="attention-state '+esc(statusClass(item.status))+'">'+
+         esc(attentionNames[item.status]||'Cần kiểm tra')+'</span>'+
+      '<div class="attention-description"><strong>'+esc(compactText(item.title,160))+'</strong>'+
+      '<small>'+esc(item.role)+' · '+esc(timeText(item.updated_at))+'</small></div>'+
+      '<div class="attention-actions">'+
+        '<button type="button" class="secondarybtn" data-attention-role="'+esc(item.role)+
+        '">Xem Agent</button>'+
+        (directApprove?'<button type="button" class="primarybtn" data-attention-approve="'+
+        esc(item.task_id)+'">Duyệt nhiệm vụ</button>':'')+'</div></div>';
+  }).join(''):'<div class="attention-empty">Không có nhiệm vụ cần xử lý trong workspace này.</div>';
+  const warnings=[];
+  if(summary.worker_offline_with_queued_tasks)
+    warnings.push('Worker chưa hoạt động trong khi có nhiệm vụ đang chờ.');
+  if(summary.truncated)
+    warnings.push('Danh sách chỉ hiện 10 nhiệm vụ ưu tiên; xem Quản lý công việc để kiểm tra tất cả.');
+  $('attentionWarnings').textContent=warnings.join(' ');
+}
+$('attentionList').addEventListener('click',async ev=>{
+  const roleButton=ev.target.closest('[data-attention-role]');
+  if(roleButton){
+    if(world?.agents.some(a=>a.id===roleButton.dataset.attentionRole))
+      selectAgent(roleButton.dataset.attentionRole);
+    return;
+  }
+  const button=ev.target.closest('[data-attention-approve]');
+  if(!button||!world)return;
+  const taskId=button.dataset.attentionApprove;
+  const found=world.attention?.find(item=>item.task_id===taskId&&
+    item.status==='awaiting_approval'&&item.action==='approve');
+  if(!found)return;
+  const workspaceAtClick=current;
+  if(!confirm('Anh đồng ý phê duyệt nhiệm vụ này để Worker được phép thực hiện?\n'+
+    compactText(found.title,180)+'\nLưu ý: thao tác này tạo thay đổi trạng thái THẬT.'))return;
+  button.disabled=true;
+  try{
+    const result=await api('/tasks/'+encodeURIComponent(taskId)+'/approve',{method:'POST'});
+    if(result.status!=='queued')throw Error('Kết quả duyệt chưa xác minh');
+    toast('Đã phê duyệt nhiệm vụ. Worker sẽ xử lý khi đủ điều kiện.');
+    if(current===workspaceAtClick)await sync();
+  }catch(err){
+    toast('Không thể duyệt: '+err.message,true);
+    if(current===workspaceAtClick)await sync();
+  }finally{button.disabled=false}
+});
 function renderStats() {
   if(!world)return;
   const st=world.statuses||{},money=world.financials||{};
@@ -552,7 +614,7 @@ function applySnapshot(data) {
     scene3d.update(data,first);
     scene3d.highlight(selected);
   }
-  renderStats();renderRoster();renderProfile();renderEvents();setConnection(true);
+  renderStats();renderRoster();renderProfile();renderEvents();renderAttention();setConnection(true);
 }
 async function sync() {
   try{
