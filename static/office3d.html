@@ -41,6 +41,22 @@
         <span id="liveBadge" class="live-badge">● ĐANG KẾT NỐI</span>
       </div>
     </header>
+    <section class="attention-panel" id="attentionPanel" aria-label="Cần anh xử lý">
+      <div class="attention-top">
+        <div><span class="attention-eyebrow">LHM OWNER DESK · LIVE SQLITE</span>
+          <h2>◉ Cần anh xử lý <span id="attentionBadge" class="attention-count">0</span></h2>
+          <p>Việc cần phê duyệt, lỗi và tắc nghẽn thực tế — không tạo nhiệm vụ giả.</p>
+        </div>
+        <div class="attention-links">
+          <a href="/tool-hub" class="secondarybtn" id="attentionTools">Duyệt công cụ <b id="attentionToolCount">0</b></a>
+          <a href="/agent-work" class="secondarybtn">Quản lý công việc</a>
+        </div>
+      </div>
+      <div id="attentionList" class="attention-list" role="list">
+        <div class="attention-empty">Đang kiểm tra các nhiệm vụ cần anh xử lý...</div>
+      </div>
+      <div id="attentionWarnings" class="attention-warnings" role="status" aria-live="polite"></div>
+    </section>
     <section class="stats" aria-label="Các chỉ số được ghi nhận thực tế">
       <div class="stat"><span class="stat-icon violet">◈</span><div><small>ĐỘI NGŨ AI</small><strong id="agentCount">16</strong><span>8 phòng ban</span></div></div>
       <div class="stat"><span class="stat-icon blue">▶</span><div><small>ĐANG XỬ LÝ</small><strong id="runningCount">—</strong><span id="queueCount">— đang chờ</span></div></div>
