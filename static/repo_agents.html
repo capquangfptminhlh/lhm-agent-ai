@@ -424,6 +424,9 @@ el("prTriageRead").onclick=async()=>{
 const revisionsUrl=()=>repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/revisions";
 function presentRevision(d){
  selectedRevision=d;
+ // A later failing commit must get a NEW idempotency key, not reuse the
+ // request key from the already approved/rejected revision.
+ if(d.status==="committed"||d.status==="rejected")pendingRevisionKey=null;
  const status=el("prRevisionResult");status.hidden=false;
  status.textContent="PR #"+d.pr_number+" · "+d.repository+"\nFile: "+d.path+
   "\nHEAD ban đầu: "+d.head_sha+
