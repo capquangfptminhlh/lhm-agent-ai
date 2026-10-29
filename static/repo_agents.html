@@ -382,7 +382,7 @@ el("prCheck").onclick=async()=>{
 };
 el("prTriage").onclick=async()=>{
  if(!selectedRepair||!selectedRepairAgent||selectedRepair.status!=="pr_created")return;
- if(!confirm("Giao Worker AI chẩn đoán lỗi CI trên PR và commit hiện tại? Dùng quota model miễn phí. KHÔNG tự sửa file hoặc tạo PR."))return;
+ if(!confirm("Đọc thông báo lỗi/vị trí dòng từ GitHub Check Runs của PR, rồi GỬI dữ liệu giới hạn đó cho model AI để chẩn đoán?\nCó thể dùng quota OpenRouter Free. Không gửi toàn bộ log, không tự sửa file, không tạo PR."))return;
  const btn=el("prTriage");btn.disabled=true;
  const output=el("prTriageResult");output.hidden=false;
  output.textContent="Đang xác minh CI thật rồi giao Worker cho đúng PR...";
@@ -410,9 +410,17 @@ el("prTriageRead").onclick=async()=>{
     output.textContent="PR chưa có tác vụ chẩn đoán CI lỗi.";return;
   }
   const d=data.triages[0];
+  const evidence=d.observed_evidence?.annotation_evidence||{};
+  const locations=(evidence.annotations||[]).map(x=>
+    x.file+(x.line?":"+x.line:"")+" · "+x.level+" · "+x.message);
+  const limits="\nGitHub annotations: "+
+    (locations.length?locations.join("\n"):"Chưa có/không đọc được annotation an toàn")+
+    "\nKhông phải full Actions log"+
+    ((evidence.fetch_errors||[]).length?" · một số check không truy cập được":"")+
+    (evidence.truncated?" · bằng chứng bị cắt giới hạn":"");
   output.textContent="BÁO CÁO AGENT VỀ PR #"+d.pr_number+
     "\nCommit: "+d.head_sha+"\nWorker: "+d.task_status+
-    "\nĐã sửa mã: CHƯA · PR mới: CHƯA"+
+    "\nĐã sửa mã: CHƯA · PR mới: CHƯA"+limits+
     (d.report?"\n\nDỰ THẢO PHÂN TÍCH (không xác minh nội dung AI):\n"+d.report:
        d.error?"\nLỗi Worker: "+d.error:
        "\nChưa có kết quả AI, đọc lại sau khi Worker hoàn tất.")+
