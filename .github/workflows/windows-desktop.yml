@@ -39,6 +39,7 @@ on:
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
       - 'scripts/windows_uia_gui_e2e.py'
+      - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -77,6 +78,7 @@ on:
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
       - 'scripts/windows_uia_gui_e2e.py'
+      - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -117,6 +119,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 3
         run: python scripts/windows_uia_gui_e2e.py
+
+      - name: Real multi-step Computer Agent acceptance (approval, Runner, UIA, SQLite)
+        shell: pwsh
+        timeout-minutes: 4
+        run: python scripts/windows_agent_multistep_e2e.py
 
       - name: Run Python runtime import test
         env:
