@@ -53,6 +53,12 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <button id="repairReject" type="button" class="secondary" hidden>Hủy đề xuất</button>
 <button id="prCheck" type="button" class="secondary" hidden>Kiểm tra CI của PR trên GitHub</button>
 <div id="prCIResult" class="notice" hidden role="status" aria-live="polite"></div>
+<button id="prRunDiscover" type="button" class="secondary" hidden>Tìm workflow CI lỗi có thể chạy lại</button>
+<label id="prRunLabel" hidden>Chọn workflow CI có thể ảnh hưởng hệ thống đích:
+<select id="prRunSelect" style="width:100%"></select></label>
+<button id="prRunApprove" type="button" hidden>Duyệt yêu cầu GitHub chạy lại CI lỗi</button>
+<button id="prRunHistory" type="button" class="secondary" hidden>Lịch sử yêu cầu chạy lại</button>
+<div id="prRunStatus" class="notice" role="status" aria-live="polite" hidden></div>
 <button id="prTriage" type="button" hidden>Giao Agent phân tích CI lỗi của PR</button>
 <button id="prTriageRead" type="button" class="secondary" hidden>Xem báo cáo chẩn đoán PR</button>
 <div id="prTriageResult" class="notice" hidden role="status" aria-live="polite"></div>
@@ -87,6 +93,9 @@ function displayRepair(d){
  el("repairReject").hidden=d.status!=="awaiting_approval";
  el("prCheck").hidden=d.status!=="pr_created"||!d.pull_request_number;
  el("prCIResult").hidden=true;
+ el("prRunDiscover").hidden=d.status!=="pr_created";
+ el("prRunHistory").hidden=d.status!=="pr_created";
+ el("prRunLabel").hidden=true;el("prRunApprove").hidden=true;
  el("prTriage").hidden=true;
  el("prTriageRead").hidden=d.status!=="pr_created";
  el("prRevise").hidden=d.status!=="pr_created";
@@ -105,6 +114,9 @@ function chooseRepair(item){
  el("repairRepo").textContent=item.repository+" / "+item.id;
  el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
  el("prCheck").hidden=true;el("prCIResult").hidden=true;
+ el("prRunDiscover").hidden=true;el("prRunHistory").hidden=true;
+ el("prRunLabel").hidden=true;el("prRunApprove").hidden=true;
+ el("prRunStatus").hidden=true;
  el("prTriage").hidden=true;el("prTriageRead").hidden=true;el("prTriageResult").hidden=true;
  el("prRevise").hidden=true;el("prRevisionRead").hidden=true;
  el("prRevisionApprove").hidden=true;el("prRevisionReject").hidden=true;
@@ -379,6 +391,77 @@ el("prCheck").onclick=async()=>{
   output.textContent="Chưa xác minh được GitHub PR CI: "+e.message+
    "\nKhông được coi là PASS khi thiếu bằng chứng.";
  }finally{btn.disabled=false}
+};
+const rerunRoot=()=>repairUrl()+"/"+encodeURIComponent(selectedRepair.id);
+el("prRunDiscover").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="pr_created")return;
+ const btn=el("prRunDiscover");btn.disabled=true;
+ const result=el("prRunStatus");result.hidden=false;
+ result.textContent="Đang đọc Workflow Runs đúng HEAD của Draft PR...";
+ el("prRunLabel").hidden=true;el("prRunApprove").hidden=true;
+ try{
+  const data=await request(rerunRoot()+"/rerunnable-runs");
+  const picker=el("prRunSelect");picker.replaceChildren();
+  for(const item of data.runs){
+   const option=document.createElement("option");
+   option.value=String(item.run_id);
+   option.disabled=item.previous_request;
+   option.textContent=item.workflow_name+" (#"+item.run_id+
+    ", attempt "+item.run_attempt+")"+(item.previous_request?" · đã yêu cầu":"");
+   picker.append(option);
+  }
+  const eligible=data.runs.filter(x=>!x.previous_request);
+  el("prRunLabel").hidden=!data.runs.length;
+  el("prRunApprove").hidden=!eligible.length;
+  if(eligible.length)picker.value=String(eligible[0].run_id);
+  result.textContent="Repo: "+data.repository+"\nPR #"+data.pr_number+
+    "\nCommit: "+data.head_sha+"\nWorkflow CI lỗi khớp SHA: "+data.runs.length+
+    "\nCHỈ CHẠY LẠI FAILED JOBS, không tự sửa code/merge."+
+    "\nCẢNH BÁO: Workflow có thể dùng secrets và gây tác động ngoài; "+
+    "kiểm tra workflow đích trên GitHub trước khi duyệt."+
+    (eligible.length?"\nChọn workflow từ danh sách rồi duyệt.":
+       "\nKhông có workflow phù hợp/đã được yêu cầu. Dùng GitHub Actions kiểm tra thủ công.");
+ }catch(e){
+  result.textContent="Chưa xác minh được workflow: "+e.message+
+    "\nKhông thể kết luận CI đã chạy lại.";
+ }finally{btn.disabled=false}
+};
+el("prRunApprove").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="pr_created")return;
+ const id=Number(el("prRunSelect").value);
+ if(!Number.isSafeInteger(id)||id<=0)return;
+ const text=el("prRunSelect").selectedOptions[0]?.textContent||String(id);
+ if(!confirm("XÁC NHẬN yêu cầu GitHub chạy lại failed jobs của "+text+
+  "?\nĐây là hành động THẬT trên repo đích, có thể dùng secrets hoặc gây tác động."+
+  "\nCần LHM_ADMIN_TOKEN và LHM_GITHUB_ACTIONS_TOKEN (Actions:write)."+
+  "\nKhông tự merge/deploy. Nếu GitHub lỗi, KHÔNG thử lại mù quáng."))return;
+ const btn=el("prRunApprove");btn.disabled=true;
+ const status=el("prRunStatus");status.hidden=false;
+ try{
+  const result=await request(rerunRoot()+"/rerun-failed",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({run_id:id})});
+  status.textContent="Yêu cầu GitHub: "+result.status+
+   "\nRun: "+result.run_url+"\nGốc commit: "+result.head_sha+
+   "\nKHÔNG phải CI PASS. Kiểm tra run mới rồi quay lại Kiểm tra CI của PR.";
+  el("prRunApprove").hidden=true;
+  el("prRunLabel").hidden=true;
+ }catch(e){
+  status.textContent="Không xác nhận được lệnh chạy lại: "+e.message+
+    "\nĐọc lịch sử và đối chiếu GitHub Actions, tuyệt đối không retry mù quáng.";
+  el("prRunApprove").hidden=true;
+ }finally{btn.disabled=false}
+};
+el("prRunHistory").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="pr_created")return;
+ const status=el("prRunStatus");status.hidden=false;
+ try{
+  const data=await request(rerunRoot()+"/rerun-history");
+  status.textContent=data.history.length?data.history.map(x=>
+   "Run #"+x.run_id+" · "+x.workflow_name+" · "+x.status+
+   "\n"+x.run_url+(x.error?"\n"+x.error:"")).join("\n\n"):
+   "Chưa có yêu cầu chạy lại CI nào trong Workspace này.";
+ }catch(e){status.textContent="Không thể đọc lịch sử: "+e.message}
 };
 el("prTriage").onclick=async()=>{
  if(!selectedRepair||!selectedRepairAgent||selectedRepair.status!=="pr_created")return;
