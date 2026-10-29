@@ -129,6 +129,30 @@ class Live3DOfficeTests(unittest.TestCase):
         self.assertIn('href="/office3d"',self.client.get("/dashboard").text)
         self.assertIn('href="/office3d"',self.client.get("/office").text)
 
+    def test_live_sync_discards_stale_workspace_and_sse_poll_responses(self):
+        """A slow HTTP poll must not override newer live data or another workspace."""
+        js=self.client.get("/office3d/scene.js")
+        self.assertEqual(js.status_code,200)
+        source=js.text
+        for marker in (
+            "const workspaceAtStart=current;",
+            "const generationAtStart=workspaceGeneration;",
+            "const revisionAtStart=liveRevision;",
+            "const requestNumber=++pollSequence;",
+            "generationAtStart!==workspaceGeneration",
+            "workspaceAtStart!==current",
+            "revisionAtStart!==liveRevision",
+            "requestNumber!==pollSequence",
+            "workspaceGeneration++;",
+            "liveRevision++;applySnapshot(frame);",
+        ):
+            self.assertIn(marker,source)
+        node=shutil.which("node")
+        if node:
+            check=subprocess.run([node,"--input-type=module","--check"],
+                input=source,text=True,capture_output=True)
+            self.assertEqual(check.returncode,0,check.stderr)
+
     def test_basic_auth_applies_to_scene_and_snapshot(self):
         import base64
         with patch.dict(os.environ,{"LHM_ADMIN_TOKEN":"test-3d-token"}):
