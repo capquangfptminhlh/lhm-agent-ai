@@ -53,6 +53,9 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <button id="repairReject" type="button" class="secondary" hidden>Hủy đề xuất</button>
 <button id="prCheck" type="button" class="secondary" hidden>Kiểm tra CI của PR trên GitHub</button>
 <div id="prCIResult" class="notice" hidden role="status" aria-live="polite"></div>
+<button id="prTriage" type="button" hidden>Giao Agent phân tích CI lỗi của PR</button>
+<button id="prTriageRead" type="button" class="secondary" hidden>Xem báo cáo chẩn đoán PR</button>
+<div id="prTriageResult" class="notice" hidden role="status" aria-live="polite"></div>
 </section>
 </main>
 <script>
@@ -77,6 +80,8 @@ function displayRepair(d){
  el("repairReject").hidden=d.status!=="awaiting_approval";
  el("prCheck").hidden=d.status!=="pr_created"||!d.pull_request_number;
  el("prCIResult").hidden=true;
+ el("prTriage").hidden=true;
+ el("prTriageRead").hidden=d.status!=="pr_created";
 }
 function chooseRepair(item){
  selectedRepairAgent=item;selectedRepair=null;pendingKey=null;
@@ -86,6 +91,7 @@ function chooseRepair(item){
  el("repairRepo").textContent=item.repository+" / "+item.id;
  el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
  el("prCheck").hidden=true;el("prCIResult").hidden=true;
+ el("prTriage").hidden=true;el("prTriageRead").hidden=true;el("prTriageResult").hidden=true;
  repairMessage("Đọc file chính xác từ nhánh main, sửa nội dung, rồi tạo đề xuất. Chỉ khi bấm duyệt mới gửi GitHub.");
  el("repairBox").scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -333,6 +339,7 @@ el("prCheck").onclick=async()=>{
  try{
   const data=await request(repairUrl()+"/"+
                    encodeURIComponent(selectedRepair.id)+"/ci");
+  el("prTriage").hidden=data.verdict!=="failed_observed";
   const lines=data.check_runs.map(x=>x.name+" · "+
     x.status+" / "+(x.conclusion||"chưa kết luận"));
   const legacy=data.commit_statuses.map(x=>x.context+" · "+x.state);
@@ -354,6 +361,47 @@ el("prCheck").onclick=async()=>{
  }catch(e){
   output.textContent="Chưa xác minh được GitHub PR CI: "+e.message+
    "\nKhông được coi là PASS khi thiếu bằng chứng.";
+ }finally{btn.disabled=false}
+};
+el("prTriage").onclick=async()=>{
+ if(!selectedRepair||!selectedRepairAgent||selectedRepair.status!=="pr_created")return;
+ if(!confirm("Giao Worker AI chẩn đoán lỗi CI trên PR và commit hiện tại? Dùng quota model miễn phí. KHÔNG tự sửa file hoặc tạo PR."))return;
+ const btn=el("prTriage");btn.disabled=true;
+ const output=el("prTriageResult");output.hidden=false;
+ output.textContent="Đang xác minh CI thật rồi giao Worker cho đúng PR...";
+ try{
+   const d=await request(repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/triage",
+                         {method:"POST"});
+   output.textContent="Đã giao Agent chẩn đoán PR #"+d.pr_number+
+      "\nCommit: "+d.head_sha+
+      "\nTask: "+d.task_id+" · "+d.task_status+
+      (d.deduplicated?"\nTác vụ cùng commit đã tồn tại; không tạo trùng.":"")+
+      "\nChưa thay đổi GitHub, chưa tự sửa mã, chưa tạo PR mới. "+
+      "Dùng 'Xem báo cáo chẩn đoán PR' để đọc kết quả sau khi Worker chạy.";
+ }catch(e){
+   output.textContent="Chưa giao được PR triage: "+e.message+
+    "\nKhi CI chưa có lỗi được xác minh, không tự tạo việc sửa.";
+ }finally{btn.disabled=false}
+};
+el("prTriageRead").onclick=async()=>{
+ if(!selectedRepair||!selectedRepairAgent||selectedRepair.status!=="pr_created")return;
+ const btn=el("prTriageRead");btn.disabled=true;
+ const output=el("prTriageResult");output.hidden=false;
+ try{
+  const data=await request(repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/triages");
+  if(!data.triages.length){
+    output.textContent="PR chưa có tác vụ chẩn đoán CI lỗi.";return;
+  }
+  const d=data.triages[0];
+  output.textContent="BÁO CÁO AGENT VỀ PR #"+d.pr_number+
+    "\nCommit: "+d.head_sha+"\nWorker: "+d.task_status+
+    "\nĐã sửa mã: CHƯA · PR mới: CHƯA"+
+    (d.report?"\n\nDỰ THẢO PHÂN TÍCH (không xác minh nội dung AI):\n"+d.report:
+       d.error?"\nLỗi Worker: "+d.error:
+       "\nChưa có kết quả AI, đọc lại sau khi Worker hoàn tất.")+
+    "\n\nCác test của repo đích cần kiểm tra độc lập; không tự merge.";
+ }catch(e){
+  output.textContent="Chưa đọc được báo cáo PR: "+e.message;
  }finally{btn.disabled=false}
 };
 el("repairReject").onclick=async()=>{
