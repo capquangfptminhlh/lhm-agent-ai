@@ -76,6 +76,107 @@ class WindowsNativeTests(unittest.TestCase):
         self.assertNotIn("SENSITIVE-PASSWORD",str(result))
         self.assertNotIn("value",items[0])
 
+    def test_semantic_uia_click_requires_unique_fresh_identity(self):
+        import sys
+        from types import ModuleType, SimpleNamespace
+        from unittest.mock import Mock
+
+        window={"hwnd":123,"pid":42,"process":"notepad.exe",
+                "title":"Notepad","x":100,"y":200,"width":400,"height":300}
+        clicked=Mock()
+        def button(label="Lưu",rect=(120,230,200,270),kind="Button",
+                   automation_id="save-button",enabled=True,password=False):
+            meta=SimpleNamespace(control_type=kind,automation_id=automation_id,
+                                 rectangle=SimpleNamespace(left=rect[0],top=rect[1],
+                                                           right=rect[2],bottom=rect[3]),
+                                 is_password=password)
+            return SimpleNamespace(element_info=meta,window_text=lambda:label,
+                is_enabled=lambda:enabled,is_visible=lambda:True,
+                click_input=clicked)
+        controls=[button()]
+        module=ModuleType("pywinauto")
+        module.Desktop=lambda backend:SimpleNamespace(window=lambda handle:
+            SimpleNamespace(descendants=lambda:controls))
+        args={"hwnd":123,"automation_id":"save-button","control_type":"Button","label":"Lưu"}
+        with patch.object(wn,"_require_windows"),patch.object(
+                wn,"_foreground_or_refocus",return_value=window) as focus,patch.object(
+                wn,"_foreground",return_value=window) as foreground,patch.dict(
+                sys.modules,{"pywinauto":module}):
+            result=wn.execute("windows_click_element",args)
+            self.assertTrue(result["clicked"])
+            self.assertFalse(result["verified_effect"])
+            clicked.assert_called_once_with()
+            focus.assert_called_once_with(123)
+            foreground.assert_called_once_with(123)
+
+            clicked.reset_mock()
+            controls[:]=[button(),button()]
+            with self.assertRaises(HTTPException) as duplicate:
+                wn.execute("windows_click_element",args)
+            self.assertEqual(duplicate.exception.status_code,409)
+            clicked.assert_not_called()
+
+            controls[:]=[button(label="Xóa")]
+            with self.assertRaises(HTTPException) as stale:
+                wn.execute("windows_click_element",args)
+            self.assertEqual(stale.exception.status_code,409)
+            clicked.assert_not_called()
+
+            controls[:]=[button(rect=(50,40,80,80))]
+            with self.assertRaises(HTTPException) as off_window:
+                wn.execute("windows_click_element",args)
+            self.assertEqual(off_window.exception.status_code,409)
+            clicked.assert_not_called()
+
+            controls[:]=[button(enabled=False)]
+            with self.assertRaises(HTTPException) as disabled:
+                wn.execute("windows_click_element",args)
+            self.assertEqual(disabled.exception.status_code,409)
+            clicked.assert_not_called()
+
+            controls[:]=[button(password=True)]
+            with self.assertRaises(HTTPException) as password:
+                wn.execute("windows_click_element",args)
+            self.assertEqual(password.exception.status_code,409)
+            clicked.assert_not_called()
+
+            for bad in ({**args,"automation_id":""},
+                        {**args,"control_type":"Edit"},
+                        {**args,"control_type":[]},
+                        {**args,"label":""}):
+                with self.assertRaises(HTTPException) as invalid:
+                    wn.execute("windows_click_element",bad)
+                self.assertEqual(invalid.exception.status_code,422)
+            clicked.assert_not_called()
+
+    def test_semantic_uia_click_is_always_approved_and_paused(self):
+        self.assertTrue(ca._approval_required("windows_click_element",
+            {"mode":"trusted"}))
+        payload={"hwnd":123,"automation_id":"save-button","control_type":"Button","label":"Lưu"}
+        self.assertEqual(self._post("windows_click_element",payload).status_code,503)
+        self.assertEqual(self.client.post("/v1/pause",headers=self.auth,
+                                         json={"paused":True}).status_code,200)
+        self.assertEqual(self._post("windows_click_element",payload).status_code,423)
+
+    def test_windows_verification_uses_real_snapshot_shape(self):
+        import asyncio
+        from unittest.mock import AsyncMock
+        sample={"window":{"title":"Notepad"},"controls":[
+            {"type":"Button","label":"Lưu","automation_id":"save-button"},
+            {"type":"Edit","label":"","automation_id":"document"}]}
+        with patch.object(ca,"runner_call",new=AsyncMock(return_value=sample)):
+            pre=asyncio.run(ca._capture_ui_state(
+                {"workspace_id":"demo"},"windows_click_element",{"hwnd":123}))
+        self.assertEqual(pre["title"],"Notepad")
+        self.assertEqual(pre["controls"],2)
+        self.assertEqual(len(pre["uia_fingerprint"]),20)
+        self.assertNotIn("save-button",str(pre))
+        with patch.object(ca,"_capture_ui_state",new=AsyncMock(return_value=pre)):
+            proof=asyncio.run(ca._post_verify({"workspace_id":"demo"},
+                "windows_click_element",{"hwnd":123},{"clicked":True},pre))
+        self.assertIsNone(proof["ok"])
+        self.assertFalse(proof["observed_change"])
+
     def test_windows_mutation_unavailable_in_docker(self):
         response=self._post("windows_list",{})
         self.assertEqual(response.status_code,503,response.text)
