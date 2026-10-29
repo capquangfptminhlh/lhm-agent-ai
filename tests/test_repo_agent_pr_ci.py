@@ -6,6 +6,9 @@ and verdict are exercised through real FastAPI.
 from __future__ import annotations
 
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -179,6 +182,22 @@ class RepairCIReadTests(unittest.TestCase):
                       (self.repairid,))
         self.assertEqual(self.client.get(self.url()).status_code,409)
         self.assertFalse(self.visits)
+
+    def test_repo_agents_ui_has_action_and_valid_javascript(self):
+        html=self.client.get("/repo-agents/ui").text
+        self.assertIn('id="prCheck"',html)
+        self.assertIn('id="prCIResult"',html)
+        self.assertIn('el("prCheck").onclick=async()=>',html)
+        node=shutil.which("node")
+        if not node:
+            self.skipTest("Node not installed")
+        script=re.search(r"<script>(.*?)</script>",html,re.S)
+        self.assertIsNotNone(script)
+        with tempfile.NamedTemporaryFile(mode="w",suffix=".js",encoding="utf-8") as item:
+            item.write(script.group(1));item.flush()
+            result=subprocess.run([node,"--check",item.name],
+                                  capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
 
     def test_network_403_reports_unavailable_and_not_success(self):
         original=httpx.AsyncClient
