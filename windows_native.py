@@ -363,6 +363,69 @@ def _snap(hwnd):
             "hwnd":hwnd,"title":i["title"],"process":i["process"],
             "width":image.width,"height":image.height}
 
+# Only controls that are ordinarily activated with a mouse click are eligible.
+# No Edit/Document/password controls, shell commands, arbitrary selectors or XPath.
+UIA_CLICK_TYPES=frozenset({"Button","CheckBox","RadioButton","Hyperlink",
+                           "MenuItem","TabItem","ListItem","TreeItem"})
+
+def _click_uia_control(hwnd: int, args: dict) -> dict:
+    """Click one fresh, unique UIA target in an allowlisted foreground HWND.
+
+    The model must provide all three fields taken from windows_snapshot.
+    We re-resolve at execution time (after owner approval) rather than trusting
+    cached coordinates. No substring/first-match fallback is permitted.
+    """
+    automation_id=args.get("automation_id")
+    kind=args.get("control_type")
+    label=args.get("label")
+    if (not isinstance(automation_id,str) or not 1<=len(automation_id)<=100
+            or not isinstance(label,str) or not 1<=len(label)<=100
+            or not isinstance(kind,str) or kind not in UIA_CLICK_TYPES):
+        raise HTTPException(422,"Use exact observed automation_id, control_type and nonempty label")
+    window=_foreground_or_refocus(hwnd)
+    try:
+        from pywinauto import Desktop
+        root=Desktop(backend="uia").window(handle=hwnd)
+        matches=[]
+        for child in root.descendants()[:60]:
+            try:
+                meta=child.element_info
+                if (str(meta.control_type or "")!=kind
+                        or str(meta.automation_id or "")!=automation_id
+                        or bool(getattr(meta,"is_password",False))
+                        or str(child.window_text() or "")!=label):
+                    continue
+                matches.append(child)
+            except (AttributeError,TypeError,ValueError,OverflowError):
+                continue
+    except Exception as exc:
+        raise HTTPException(503,"UI Automation unavailable; no click performed") from exc
+    if len(matches)!=1:
+        raise HTTPException(409,"UI Automation target missing or ambiguous; refresh snapshot")
+    target=matches[0]
+    try:
+        rect=target.element_info.rectangle
+        current=_foreground(hwnd)  # Revalidate allowlist and foreground on this window.
+        bounds=(int(rect.left)-current["x"],int(rect.top)-current["y"],
+                int(rect.right)-current["x"],int(rect.bottom)-current["y"])
+        left,top,right,bottom=bounds
+        if not (0<=left<right<=current["width"] and
+                0<=top<bottom<=current["height"]):
+            raise HTTPException(409,"UI Automation target outside the selected window")
+        if not target.is_enabled() or not target.is_visible():
+            raise HTTPException(409,"UI Automation target disabled or invisible")
+        # Click this freshly resolved control, never an LLM-invented x/y.
+        target.click_input()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # A click could have occurred before an automation error: never auto retry.
+        raise HTTPException(502,"UIA interaction uncertain; manual review before retry") from exc
+    return {"clicked":True,"hwnd":hwnd,"automation_id":automation_id,
+            "control_type":kind,"label":label,"verified_effect":False,
+            "detail":"UIA target clicked; application outcome not yet verified"}
+
+
 def execute(tool: str,args: dict):
     """All native actions are invoked from the authenticated Runner process."""
     _require_windows()
@@ -443,6 +506,8 @@ def execute(tool: str,args: dict):
     if tool=="windows_activate":
         i=_focus(hwnd)
         return {"focused":True,"window":i}
+    if tool=="windows_click_element":
+        return _click_uia_control(hwnd,args)
     if tool=="windows_click":
         i=_foreground_or_refocus(hwnd)
         x,y=_coordinates(i,args)

@@ -283,13 +283,64 @@ class PostVerifyTests(unittest.TestCase):
         self.assertEqual(step["status"], "failed")
         self.assertIn("verification", (step["error"] or "").lower())
 
+    def test_semantic_click_end_to_end_waits_for_owner_and_observes_new_ui(self):
+        """Model action -> approval -> runner click -> fresh UIA pair, not remote success."""
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            r=self.client.post("/workspaces/demo/computer/runs",json={
+                "role":"research","objective":"Bấm nút Lưu của Notepad bằng UI Automation",
+                "mode":"trusted","max_steps":8,"idempotency_key":"uia-e2e-20261029"})
+        self.assertEqual(r.status_code,201,r.text)
+        rid=r.json()["id"]
+        url="/computer/runs/"+rid+"/tick"
+        args={"hwnd":7,"automation_id":"save","control_type":"Button","label":"Lưu"}
+        state={"clicked":False}
+        called=[]
+        async def fake_runner(run,tool,params):
+            called.append(tool)
+            if tool=="windows_snapshot":
+                label="Đã lưu" if state["clicked"] else "Lưu"
+                return {"window":{"hwnd":7,"title":"Notepad"},
+                        "controls":[{"type":"Button","automation_id":"save","label":label}]}
+            if tool=="windows_click_element":
+                state["clicked"]=True
+                return {"clicked":True,"hwnd":7,"verified_effect":False}
+            raise AssertionError(tool)
+
+        with patch.dict(os.environ,{"LHM_DESKTOP_NATIVE":"1",
+                                     "LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            with patch.object(agent,"_next_action",AsyncMock(return_value=(
+                    "windows_click_element",args))),patch.object(
+                    agent,"runner_call",AsyncMock(side_effect=fake_runner)):
+                first=self.client.post(url)
+                self.assertEqual(first.status_code,200,first.text)
+                self.assertEqual(first.json()["status"],"awaiting_approval")
+                self.assertEqual(called,[])
+                approved=self.client.post(
+                    f"/computer/runs/{rid}/steps/{first.json()['step_id']}/approve")
+                self.assertEqual(approved.status_code,200,approved.text)
+                second=self.client.post(url)
+                self.assertEqual(second.status_code,200,second.text)
+                self.assertEqual(second.json()["step_status"],"completed")
+        self.assertEqual(called,["windows_snapshot","windows_click_element",
+                                 "windows_snapshot"])
+        with core.db() as dbconn:
+            saved=dbconn.execute("SELECT * FROM computer_steps WHERE run_id=?",
+                                 (rid,)).fetchone()
+        proof=__import__("json").loads(saved["result_json"])["_verification"]
+        self.assertEqual(proof["method"],"state_pair")
+        self.assertTrue(proof["observed_change"])
+        self.assertIsNone(proof["ok"])
+
     def test_windows_click_captures_uia_post_state(self):
         def side(tool, args):
             if tool == "windows_click":
                 return {"clicked": True, "hwnd": 7}
             if tool == "windows_snapshot":
-                return {"hwnd": 7, "title": "Untitled - Notepad",
-                        "children": [{"n": 1}, {"n": 2}, {"n": 3}]}
+                return {"window": {"hwnd": 7, "title": "Untitled - Notepad"},
+                        "controls": [
+                            {"type": "Button", "label": "Save", "automation_id": "save"},
+                            {"type": "Text", "label": "Status", "automation_id": "status"},
+                            {"type": "Edit", "label": "", "automation_id": "editor"}]}
             raise AssertionError(tool)
 
         async def fake_runner(run, called_tool, called_args):
@@ -322,11 +373,13 @@ class PostVerifyTests(unittest.TestCase):
         self.assertEqual(result["_verification"]["post"]["controls"], 3)
         self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
+        self.assertFalse(result["_verification"]["observed_change"])
+        self.assertEqual(len(result["_verification"]["pre"]["uia_fingerprint"]), 20)
 
 
 class ExecutorRegistryTests(unittest.TestCase):
     def test_new_tools_registered_and_fail_closed_off_windows(self):
-        for tool in ("windows_drag", "windows_desktop_click",
+        for tool in ("windows_drag", "windows_click_element", "windows_desktop_click",
                      "windows_desktop_drag", "windows_desktop_scroll"):
             self.assertIn(tool, executor.WINDOWS_TOOLS)
             self.assertIn(tool, executor.ALLOWED_TOOLS)

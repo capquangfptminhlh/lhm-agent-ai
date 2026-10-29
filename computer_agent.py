@@ -8,6 +8,7 @@ are automated. A separate container runs subprocesses and Playwright.
 from __future__ import annotations
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -47,6 +48,7 @@ TOOLS = {
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
   "windows_click":"Click inside focused allowed app window; {hwnd: int, x: local int, y: local int}; approval required",
+  "windows_click_element":"Click ONE UI Automation control in an allowed Windows HWND. First call windows_snapshot and use exact observed automation_id, control_type and label; no guessing, ambiguous matches fail. Always needs owner approval; {hwnd:int,automation_id:str,control_type:str,label:str}",
   "windows_right_click":"Right-click at local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
   "windows_double_click":"Double-click local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
   "windows_hotkey":"Send only approved shortcuts Ctrl+S/A/C/V/F/Z/Y/Shift+S, Alt+Tab, Alt+Shift+Tab or Enter/Esc/arrows within selected foreground HWND; human approved in supervised mode; {hwnd:int,keys:str}",
@@ -60,7 +62,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -71,7 +73,7 @@ SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","bro
 # post content and a fill can place data into an external form — the
 # decision's "send/post data out" category — and the two cannot be told
 # apart from routine clicks in advance, so the whole surface stays gated.
-ALWAYS_APPROVAL_TOOLS={"opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate",
+ALWAYS_APPROVAL_TOOLS={"opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_click_element",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
                        "browser_click","browser_fill"}
@@ -488,7 +490,7 @@ async def _approval_for_action(tool: str,args: dict,run: dict) -> bool:
         return True
 
 VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
-              "windows_activate","windows_click","windows_type","windows_scroll",
+              "windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
               "windows_right_click","windows_double_click","windows_hotkey",
               "windows_drag","windows_desktop_click","windows_desktop_drag",
               "windows_desktop_scroll"}
@@ -508,9 +510,20 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
             hwnd=args.get("hwnd")
             if type(hwnd) is int:
                 snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
-                children=snap.get("children")
-                return {"title":str(snap.get("title") or "")[:120],
-                        "controls":len(children) if isinstance(children,list) else None}
+                window=snap.get("window") if isinstance(snap,dict) else None
+                controls=snap.get("controls") if isinstance(snap,dict) else None
+                if not isinstance(window,dict) or not isinstance(controls,list):
+                    return None
+                # Store a compact digest, not labels or user-entered values.
+                # A changed digest shows UIA structure changed, NOT that a
+                # network side effect or external submission succeeded.
+                identities=[{"type":x.get("type"),"id":x.get("automation_id"),
+                             "label":x.get("label")}
+                            for x in controls if isinstance(x,dict)]
+                digest=hashlib.sha256(json.dumps(
+                    identities,ensure_ascii=False,sort_keys=True).encode("utf-8")).hexdigest()[:20]
+                return {"title":str(window.get("title") or "")[:120],
+                        "controls":len(identities),"uia_fingerprint":digest}
     except Exception:
         return None
     return None
@@ -546,7 +559,8 @@ async def _post_verify(run: dict,tool: str,args: dict,result: dict,
             post=await _capture_ui_state(run,tool,args)
             if post is None and pre_state is None:
                 return {"method":"state_pair","ok":None,"detail":"state capture unavailable"}
-            return {"method":"state_pair","ok":None,"pre":pre_state,"post":post}
+            return {"method":"state_pair","ok":None,"pre":pre_state,"post":post,
+                    "observed_change":(pre_state!=post) if pre_state is not None and post is not None else None}
     except Exception:
         return {"method":"unavailable","ok":None}
     return None
