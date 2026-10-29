@@ -95,9 +95,16 @@ async def verify_repair_pr_ci(ws: str,agent_id: str,repair_id: str):
                           "waiting") or (conclusion is not None and
                                          not isinstance(conclusion,str)):
             invalid=True
+        check_id=check.get("id")
+        checked_sha=check.get("head_sha")
+        # Only IDs that belong to this exact PR head may be used to fetch
+        # annotations. Old/unknown check-run objects cannot be dereferenced.
+        verified_id=(check_id if type(check_id) is int and check_id>0 and
+                     checked_sha==sha else None)
         observed.append({"name":check["name"][:140],
                          "status":str(status or "unknown")[:30],
-                         "conclusion":conclusion[:30] if isinstance(conclusion,str) else None})
+                         "conclusion":conclusion[:30] if isinstance(conclusion,str) else None,
+                         "verified_check_run_id":verified_id})
     commit_statuses=[]
     for item in statuses[:100]:
         if not isinstance(item,dict) or not isinstance(item.get("context"),str):
