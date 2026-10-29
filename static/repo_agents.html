@@ -51,6 +51,8 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <pre id="patchDiff" hidden></pre>
 <button id="repairApprove" type="button" hidden>Duyệt tạo Pull Request nháp</button>
 <button id="repairReject" type="button" class="secondary" hidden>Hủy đề xuất</button>
+<button id="prCheck" type="button" class="secondary" hidden>Kiểm tra CI của PR trên GitHub</button>
+<div id="prCIResult" class="notice" hidden role="status" aria-live="polite"></div>
 </section>
 </main>
 <script>
@@ -73,6 +75,8 @@ function displayRepair(d){
  el("patchDiff").hidden=false;el("patchDiff").textContent=d.diff_preview;
  el("repairApprove").hidden=d.status!=="awaiting_approval";
  el("repairReject").hidden=d.status!=="awaiting_approval";
+ el("prCheck").hidden=d.status!=="pr_created"||!d.pull_request_number;
+ el("prCIResult").hidden=true;
 }
 function chooseRepair(item){
  selectedRepairAgent=item;selectedRepair=null;pendingKey=null;
@@ -81,6 +85,7 @@ function chooseRepair(item){
  el("repairBox").hidden=false;
  el("repairRepo").textContent=item.repository+" / "+item.id;
  el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
+ el("prCheck").hidden=true;el("prCIResult").hidden=true;
  repairMessage("Đọc file chính xác từ nhánh main, sửa nội dung, rồi tạo đề xuất. Chỉ khi bấm duyệt mới gửi GitHub.");
  el("repairBox").scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -317,6 +322,38 @@ el("repairApprove").onclick=async()=>{
   repairMessage("Không thể xác nhận PR: "+e.message+
    "\nĐọc lại bản vá, kiểm tra branch và PR trên GitHub. KHÔNG thử tạo lại mù quáng.");
   el("repairApprove").hidden=true;
+ }finally{btn.disabled=false}
+};
+el("prCheck").onclick=async()=>{
+ if(!selectedRepairAgent||!selectedRepair||
+    selectedRepair.status!=="pr_created")return;
+ const btn=el("prCheck");btn.disabled=true;
+ const output=el("prCIResult");output.hidden=false;
+ output.textContent="Đang xác minh check-runs và commit status từ GitHub...";
+ try{
+  const data=await request(repairUrl()+"/"+
+                   encodeURIComponent(selectedRepair.id)+"/ci");
+  const lines=data.check_runs.map(x=>x.name+" · "+
+    x.status+" / "+(x.conclusion||"chưa kết luận"));
+  const legacy=data.commit_statuses.map(x=>x.context+" · "+x.state);
+  const meaning={
+   failed_observed:"CÓ BÀI KIỂM THỬ LỖI — KHÔNG NGHIỆM THU",
+   checks_running:"CI ĐANG CHẠY — CHƯA NGHIỆM THU",
+   observed_checks_green:"CÁC CHECK QUAN SÁT ĐỀU XANH — CHƯA XÁC MINH REQUIRED CHECKS",
+   unverified:"CHƯA ĐỦ BẰNG CHỨNG CI — KHÔNG COI LÀ PASS",
+   pr_not_open:"PR ĐÃ ĐÓNG/MERGE — KHÔNG CÒN LÀ PR ĐANG CHỜ"
+  };
+  output.textContent="GitHub PR #"+data.pr_number+
+    "\nTrạng thái: "+(meaning[data.verdict]||data.verdict)+
+    "\nCommit: "+data.head_sha+
+    "\nChecks đầy đủ trong snapshot: "+(data.check_runs_complete?"có":"KHÔNG")+
+    "\nCheck-runs:\n"+(lines.join("\n")||"Chưa tìm thấy")+
+    "\nCommit statuses:\n"+(legacy.join("\n")||"Không có")+
+    "\nKhông tự merge/deploy; chưa chứng minh required checks hoặc review được duyệt."+
+    "\nPR: "+data.pr_url;
+ }catch(e){
+  output.textContent="Chưa xác minh được GitHub PR CI: "+e.message+
+   "\nKhông được coi là PASS khi thiếu bằng chứng.";
  }finally{btn.disabled=false}
 };
 el("repairReject").onclick=async()=>{
