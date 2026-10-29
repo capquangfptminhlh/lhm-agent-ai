@@ -310,17 +310,55 @@ async def approve_pr_revision(ws: str,agent_id: str,repair_id: str,revision_id: 
                 c.execute("UPDATE repo_agent_pr_revisions SET status='stale',error=?,updated_at=? WHERE id=?",
                   ("File trong PR đã thay đổi kể từ khi AI đọc",now(),revision_id))
             raise HTTPException(409,"Nội dung file đã thay đổi; không áp dụng bản cũ")
+        # Git Data API CAS: build commit on the exact reviewed PR HEAD,
+        # then PATCH the branch ref without force. A concurrent branch push
+        # makes this update non-fast-forward and is rejected by GitHub.
         encoded=base64.b64encode(new_content.encode("utf-8")).decode("ascii")
-        url=_api(repo,"contents/"+"/".join(quote(x,safe="") for x in data["path"].split("/")))
+        safe_branch="/".join(quote(p,safe="") for p in branch.split("/"))
         async with httpx.AsyncClient(timeout=15,follow_redirects=False,
                                      trust_env=False) as client:
-            response=await _request(client,"PUT",url,write=True,
-                json={"message":"fix: owner-reviewed CI follow-up on PR #"+str(data["pr_number"]),
-                      "content":encoded,"sha":data["blob_sha"],"branch":branch})
-        commit=response.get("commit") if isinstance(response.get("commit"),dict) else {}
-        sha=commit.get("sha")
-        if not isinstance(sha,str) or not _SHA.fullmatch(sha):
-            raise HTTPException(502,"GitHub PUT không xác nhận commit; cần đối soát PR")
+            original_commit=await _request(
+                client,"GET",_api(repo,"git/commits/"+data["head_sha"]))
+            tree=original_commit.get("tree") if isinstance(
+                original_commit.get("tree"),dict) else {}
+            tree_sha=tree.get("sha")
+            if not isinstance(tree_sha,str) or not _SHA.fullmatch(tree_sha):
+                raise HTTPException(502,"GitHub không cung cấp tree SHA hợp lệ")
+            original_tree=await _request(client,"GET",
+                _api(repo,"git/trees/"+tree_sha),params={"recursive":"1"})
+            if original_tree.get("truncated") is True or not isinstance(
+                    original_tree.get("tree"),list):
+                raise HTTPException(409,"Git tree quá lớn/thiếu dữ liệu; không sửa file")
+            matches=[x for x in original_tree["tree"] if isinstance(x,dict)
+                     and x.get("path")==data["path"] and x.get("type")=="blob"]
+            if len(matches)!=1 or matches[0].get("sha")!=data["blob_sha"] or (
+                    matches[0].get("mode") not in ("100644","100755")):
+                raise HTTPException(409,"Không xác minh được mode/blob của file trên PR")
+            mode=matches[0]["mode"]
+            new_blob=await _request(client,"POST",_api(repo,"git/blobs"),
+                write=True,json={"content":encoded,"encoding":"base64"})
+            blob_sha=new_blob.get("sha")
+            if not isinstance(blob_sha,str) or not _SHA.fullmatch(blob_sha):
+                raise HTTPException(502,"GitHub chưa xác nhận new blob")
+            new_tree=await _request(client,"POST",_api(repo,"git/trees"),
+                write=True,json={"base_tree":tree_sha,"tree":[
+                    {"path":data["path"],"mode":mode,"type":"blob","sha":blob_sha}]})
+            new_tree_sha=new_tree.get("sha")
+            if not isinstance(new_tree_sha,str) or not _SHA.fullmatch(new_tree_sha):
+                raise HTTPException(502,"GitHub chưa xác nhận new tree")
+            commit=await _request(client,"POST",_api(repo,"git/commits"),
+                write=True,json={
+                    "message":"fix: owner-reviewed CI follow-up on PR #"+str(data["pr_number"]),
+                    "tree":new_tree_sha,"parents":[data["head_sha"]]})
+            sha=commit.get("sha")
+            if not isinstance(sha,str) or not _SHA.fullmatch(sha):
+                raise HTTPException(502,"GitHub chưa xác nhận commit, cần đối soát")
+            ref=await _request(client,"PATCH",
+                _api(repo,"git/refs/heads/"+safe_branch),write=True,
+                json={"sha":sha,"force":False})
+            ref_object=ref.get("object") if isinstance(ref.get("object"),dict) else {}
+            if ref.get("ref")!="refs/heads/"+branch or ref_object.get("sha")!=sha:
+                raise HTTPException(502,"GitHub chưa xác nhận cập nhật PR branch")
         with db() as c:
             c.execute("BEGIN IMMEDIATE")
             c.execute("""UPDATE repo_agent_pr_revisions SET
