@@ -288,8 +288,11 @@ class PostVerifyTests(unittest.TestCase):
             if tool == "windows_click":
                 return {"clicked": True, "hwnd": 7}
             if tool == "windows_snapshot":
-                return {"hwnd": 7, "title": "Untitled - Notepad",
-                        "children": [{"n": 1}, {"n": 2}, {"n": 3}]}
+                return {"window": {"hwnd": 7, "title": "Untitled - Notepad"},
+                        "controls": [
+                            {"type": "Button", "label": "Save", "automation_id": "save"},
+                            {"type": "Text", "label": "Status", "automation_id": "status"},
+                            {"type": "Edit", "label": "", "automation_id": "editor"}]}
             raise AssertionError(tool)
 
         async def fake_runner(run, called_tool, called_args):
@@ -322,11 +325,13 @@ class PostVerifyTests(unittest.TestCase):
         self.assertEqual(result["_verification"]["post"]["controls"], 3)
         self.assertEqual(result["_verification"]["post"]["title"], "Untitled - Notepad")
         self.assertIsNone(result["_verification"]["ok"])
+        self.assertFalse(result["_verification"]["observed_change"])
+        self.assertEqual(len(result["_verification"]["pre"]["uia_fingerprint"]), 20)
 
 
 class ExecutorRegistryTests(unittest.TestCase):
     def test_new_tools_registered_and_fail_closed_off_windows(self):
-        for tool in ("windows_drag", "windows_desktop_click",
+        for tool in ("windows_drag", "windows_click_element", "windows_desktop_click",
                      "windows_desktop_drag", "windows_desktop_scroll"):
             self.assertIn(tool, executor.WINDOWS_TOOLS)
             self.assertIn(tool, executor.ALLOWED_TOOLS)
