@@ -285,9 +285,10 @@ class PostVerifyTests(unittest.TestCase):
 
     def test_semantic_click_end_to_end_waits_for_owner_and_observes_new_ui(self):
         """Model action -> approval -> runner click -> fresh UIA pair, not remote success."""
-        r=self.client.post("/workspaces/demo/computer/runs",json={
-            "role":"research","objective":"Bấm nút Lưu của Notepad bằng UI Automation",
-            "mode":"trusted","max_steps":8,"idempotency_key":"uia-e2e-20261029"})
+        with patch.dict(os.environ,{"LHM_COMPUTER_TRUSTED_ENABLED":"1"}):
+            r=self.client.post("/workspaces/demo/computer/runs",json={
+                "role":"research","objective":"Bấm nút Lưu của Notepad bằng UI Automation",
+                "mode":"trusted","max_steps":8,"idempotency_key":"uia-e2e-20261029"})
         self.assertEqual(r.status_code,201,r.text)
         rid=r.json()["id"]
         url="/computer/runs/"+rid+"/tick"
