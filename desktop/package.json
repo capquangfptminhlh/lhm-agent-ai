@@ -67,5 +67,8 @@
     },
     "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}",
     "afterPack": "scripts/ensure-opencli-bundle.cjs"
+  },
+  "overrides": {
+    "@electron-internal/extract-zip": "1.0.6"
   }
 }

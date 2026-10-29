@@ -38,6 +38,7 @@ on:
       - 'openrouter_provider.py'
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_uia_gui_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -75,6 +76,7 @@ on:
       - 'openrouter_provider.py'
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_uia_gui_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -110,6 +112,11 @@ jobs:
         env:
           LHM_DB_PATH: lhm-ci-native-unit.sqlite3
         run: python -m unittest discover -s tests -p "test_*native.py" -v
+
+      - name: Run real Windows UI Automation click acceptance (isolated fixture)
+        shell: pwsh
+        timeout-minutes: 3
+        run: python scripts/windows_uia_gui_e2e.py
 
       - name: Run Python runtime import test
         env:
