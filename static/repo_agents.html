@@ -56,13 +56,20 @@ Không tự merge. Trình tạo PR yêu cầu token riêng trên backend và ph�
 <button id="prTriage" type="button" hidden>Giao Agent phân tích CI lỗi của PR</button>
 <button id="prTriageRead" type="button" class="secondary" hidden>Xem báo cáo chẩn đoán PR</button>
 <div id="prTriageResult" class="notice" hidden role="status" aria-live="polite"></div>
+<button id="prRevise" type="button" hidden>AI đề xuất sửa tiếp cùng PR</button>
+<button id="prRevisionRead" type="button" class="secondary" hidden>Xem diff sửa PR của AI</button>
+<button id="prRevisionApprove" type="button" hidden>Duyệt commit vào cùng PR</button>
+<button id="prRevisionReject" type="button" class="secondary" hidden>Từ chối bản vá PR</button>
+<div id="prRevisionResult" class="notice" role="status" aria-live="polite" hidden></div>
+<pre id="prRevisionDiff" hidden></pre>
 </section>
 </main>
 <script>
 "use strict";
 const agents=document.getElementById("agents"),result=document.getElementById("result");
 let selectedRepairAgent=null,selectedRepair=null,pendingKey=null,
- selectedSuggestion=null,pendingAIKey=null;
+ selectedSuggestion=null,pendingAIKey=null,
+ selectedRevision=null,pendingRevisionKey=null;
 const el=id=>document.getElementById(id);
 const repairUrl=()=>"/workspaces/"+encodeURIComponent(el("workspace").value.trim())+
   "/repo-agents/"+encodeURIComponent(selectedRepairAgent.id)+"/repairs";
@@ -82,16 +89,26 @@ function displayRepair(d){
  el("prCIResult").hidden=true;
  el("prTriage").hidden=true;
  el("prTriageRead").hidden=d.status!=="pr_created";
+ el("prRevise").hidden=d.status!=="pr_created";
+ el("prRevisionRead").hidden=d.status!=="pr_created";
+ el("prRevisionApprove").hidden=true;
+ el("prRevisionReject").hidden=true;
+ el("prRevisionResult").hidden=true;
+ el("prRevisionDiff").hidden=true;
 }
 function chooseRepair(item){
  selectedRepairAgent=item;selectedRepair=null;pendingKey=null;
- selectedSuggestion=null;pendingAIKey=null;el("aiStage").hidden=true;
+ selectedSuggestion=null;pendingAIKey=null;
+ selectedRevision=null;pendingRevisionKey=null;el("aiStage").hidden=true;
  el("aiDiff").hidden=true;el("aiStatus").textContent="AI chưa phân tích file này.";
  el("repairBox").hidden=false;
  el("repairRepo").textContent=item.repository+" / "+item.id;
  el("patchDiff").hidden=true;el("repairApprove").hidden=true;el("repairReject").hidden=true;
  el("prCheck").hidden=true;el("prCIResult").hidden=true;
  el("prTriage").hidden=true;el("prTriageRead").hidden=true;el("prTriageResult").hidden=true;
+ el("prRevise").hidden=true;el("prRevisionRead").hidden=true;
+ el("prRevisionApprove").hidden=true;el("prRevisionReject").hidden=true;
+ el("prRevisionResult").hidden=true;el("prRevisionDiff").hidden=true;
  repairMessage("Đọc file chính xác từ nhánh main, sửa nội dung, rồi tạo đề xuất. Chỉ khi bấm duyệt mới gửi GitHub.");
  el("repairBox").scrollIntoView({behavior:"smooth",block:"start"});
 }
@@ -402,6 +419,92 @@ el("prTriageRead").onclick=async()=>{
     "\n\nCác test của repo đích cần kiểm tra độc lập; không tự merge.";
  }catch(e){
   output.textContent="Chưa đọc được báo cáo PR: "+e.message;
+ }finally{btn.disabled=false}
+};
+const revisionsUrl=()=>repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/revisions";
+function presentRevision(d){
+ selectedRevision=d;
+ const status=el("prRevisionResult");status.hidden=false;
+ status.textContent="PR #"+d.pr_number+" · "+d.repository+"\nFile: "+d.path+
+  "\nHEAD ban đầu: "+d.head_sha+
+  "\nWorker: "+d.task_status+" · Bản vá: "+d.status+
+  "\nĐầu ra AI hợp lệ: "+(d.ai_valid?"CÓ":"CHƯA")+
+  (d.explanation?"\nLý do: "+d.explanation:"")+
+  (d.tests?"\nTest CẦN chạy: "+d.tests:"")+
+  (d.commit_sha?"\nCommit đã xác nhận: "+d.commit_sha:"")+
+  (d.error?"\nCẢNH BÁO: "+d.error:"")+
+  "\nChưa tự merge hoặc chứng minh CI PASS. Xem diff và chỉ duyệt khi đồng ý.";
+ el("prRevisionDiff").hidden=!d.diff_preview;
+ el("prRevisionDiff").textContent=d.diff_preview||"";
+ el("prRevisionApprove").hidden=!d.can_approve;
+ el("prRevisionReject").hidden=d.status!=="proposed";
+}
+el("prRevise").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="pr_created")return;
+ if(!confirm("Đồng ý gửi file nguồn trong PR hiện tại và báo cáo Agent CI lỗi cho model AI để đề xuất 1 bản vá?\nCó thể dùng OpenRouter Free. Chưa có thao tác ghi GitHub."))return;
+ const btn=el("prRevise");btn.disabled=true;
+ const output=el("prRevisionResult");output.hidden=false;
+ output.textContent="Đang xác minh PR và báo cáo Worker trên commit mới nhất...";
+ try{
+  const triages=await request(repairUrl()+"/"+encodeURIComponent(selectedRepair.id)+"/triages");
+  const ready=triages.triages.find(x=>x.task_status==="completed"&&x.report);
+  if(!ready)throw Error("Chưa có chẩn đoán PR đã hoàn thành. Bấm Giao Agent phân tích CI lỗi của PR rồi xem báo cáo.");
+  if(!pendingRevisionKey)pendingRevisionKey="pr-next-"+(globalThis.crypto?.randomUUID?.()||
+      String(Date.now())+"-"+Math.random().toString(36).slice(2));
+  const d=await request(revisionsUrl(),{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({triage_id:ready.id,idempotency_key:pendingRevisionKey})
+  });
+  presentRevision(d);
+  output.textContent+="\nĐã giao Worker tạo gợi ý. Chọn Xem diff sửa PR của AI để kiểm tra kết quả.";
+ }catch(e){
+  output.textContent="Chưa xác nhận tạo đề xuất: "+e.message+
+    "\nKiểm tra các đề xuất đã lưu trước khi thử lại để tránh trùng.";
+ }finally{btn.disabled=false}
+};
+el("prRevisionRead").onclick=async()=>{
+ if(!selectedRepair||selectedRepair.status!=="pr_created")return;
+ const btn=el("prRevisionRead");btn.disabled=true;
+ try{
+  const list=await request(revisionsUrl());
+  if(!list.revisions.length){
+   el("prRevisionResult").hidden=false;
+   el("prRevisionResult").textContent="Chưa có đề xuất sửa tiếp trên PR này.";return;
+  }
+  presentRevision(list.revisions[0]);
+ }catch(e){
+  el("prRevisionResult").hidden=false;
+  el("prRevisionResult").textContent="Không xem được đề xuất: "+e.message;
+ }finally{btn.disabled=false}
+};
+el("prRevisionApprove").onclick=async()=>{
+ if(!selectedRevision?.can_approve)return;
+ if(!confirm("ĐÃ XEM diff và đồng ý COMMIT bản vá lên nhánh của PR #"+
+   selectedRevision.pr_number+"?\nĐây là một thay đổi GitHub THẬT; không tự merge, không tự deploy.\nNếu GitHub lỗi giữa chừng phải đối soát trước khi thử lại."))return;
+ const btn=el("prRevisionApprove");btn.disabled=true;
+ try{
+  const d=await request(revisionsUrl()+"/"+encodeURIComponent(selectedRevision.id)+"/approve",
+                        {method:"POST"});
+  presentRevision(d);
+  el("prRevisionResult").textContent+="\nSau commit phải KIỂM TRA LẠI CI tại GitHub; không giả định đã sửa xong.";
+ }catch(e){
+  el("prRevisionResult").hidden=false;
+  el("prRevisionResult").textContent="Không xác minh được thao tác ghi: "+e.message+
+    "\nXEM LẠI PR/GitHub trước khi thao tác khác; không retry mù quáng.";
+  el("prRevisionApprove").hidden=true;
+ }finally{btn.disabled=false}
+};
+el("prRevisionReject").onclick=async()=>{
+ if(!selectedRevision||selectedRevision.status!=="proposed")return;
+ if(!confirm("Hủy đề xuất sửa PR này? Không ghi GitHub."))return;
+ const btn=el("prRevisionReject");btn.disabled=true;
+ try{
+  const d=await request(revisionsUrl()+"/"+encodeURIComponent(selectedRevision.id)+"/reject",
+                        {method:"POST"});
+  presentRevision(d);
+ }catch(e){
+  el("prRevisionResult").hidden=false;
+  el("prRevisionResult").textContent="Không hủy được: "+e.message;
  }finally{btn.disabled=false}
 };
 el("repairReject").onclick=async()=>{
