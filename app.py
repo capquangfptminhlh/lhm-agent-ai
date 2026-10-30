@@ -17,6 +17,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from office_api import router as office_router
 from office3d_api import router as office3d_router
+from agent_office_bridge import router as agent_office_bridge_router
 from tool_hub import router as tool_hub_router
 from workflow_builder import router as workflow_builder_router
 from computer_agent import router as computer_router
@@ -47,6 +48,7 @@ ACTIVE_WORKSPACE = os.getenv("LHM_ACTIVE_WORKSPACE", "demo")
 app = FastAPI(title="LHM Agent Operating System", version="1.1.0")
 app.include_router(office_router)
 app.include_router(office3d_router)
+app.include_router(agent_office_bridge_router)
 app.include_router(tool_hub_router)
 app.include_router(workflow_builder_router)
 app.include_router(computer_router)

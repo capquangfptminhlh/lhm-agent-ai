@@ -18,6 +18,7 @@ const BACKEND_ORIGIN = "http://127.0.0.1:7770";
 const NATIVE_ORIGIN = "http://127.0.0.1:7782";
 const ROUTES = Object.freeze({
   "Văn phòng 3D":"/office3d",
+  "Agent Office Bridge":"/agent-office",
   "Đội Agent trao đổi":"/team-chat",
   "Việc cố định Agent":"/agent-work",
   "Công cụ 16 phòng ban":"/agents/departments/ui",
