@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py core.py office_api.py tool_hub.py worker.py openrouter_provider.py publication_gate.py workflow_builder.py office3d_api.py agent_tool_providers.py computer_agent.py computer_executor.py robot_vision.py robot_sandbox.py team_collaboration.py agent_work_orders.py repo_agent_bindings.py repo_agent_repair.py repo_agent_ai_patch.py repo_agent_pr_ci.py repo_agent_pr_triage.py repo_agent_pr_revision.py repo_agent_pr_annotations.py repo_agent_pr_rerun.py department_tools.py agent_runtime_pilot.py postiz_verifier.py github_tool_stack.py agent_reach_bridge.py opencli_windows_bridge.py opencli_diagnostics.py dashboard.html ./
+COPY app.py core.py office_api.py tool_hub.py worker.py openrouter_provider.py publication_gate.py workflow_builder.py office3d_api.py agent_tool_providers.py computer_agent.py computer_executor.py robot_vision.py robot_sandbox.py team_collaboration.py agent_work_orders.py repo_agent_bindings.py repo_agent_repair.py repo_agent_ai_patch.py repo_agent_pr_ci.py repo_agent_pr_triage.py repo_agent_pr_revision.py repo_agent_pr_annotations.py repo_agent_pr_rerun.py department_tools.py agent_runtime_pilot.py postiz_verifier.py github_tool_stack.py agent_reach_bridge.py agent_office_bridge.py opencli_windows_bridge.py opencli_diagnostics.py dashboard.html ./
 COPY static ./static
 COPY templates ./templates
 RUN mkdir -p /data && useradd --system --uid 10001 --create-home lhm && chown 10001:10001 /data
