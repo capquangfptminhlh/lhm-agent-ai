@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LHM · Agent Office Bridge</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,Segoe UI,Arial,sans-serif;background:#081323;color:#e6eefc}
+*{box-sizing:border-box}body{margin:0}main{max-width:1120px;margin:0 auto;padding:32px 20px 70px}
+a{color:#96bcff}.bar{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+h1{font-size:clamp(24px,4vw,37px);margin:18px 0 6px}p{color:#aebed5;line-height:1.6}
+.kicker{color:#8baafa;letter-spacing:2px;font-size:11px;font-weight:800}
+.pill{border:1px solid #405774;border-radius:40px;padding:7px 11px;color:#b5c8e8;font-size:12px}
+.panel{background:#102039;border:1px solid #2b415f;border-radius:18px;padding:20px;margin:20px 0}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+button,.link{background:#1e65dd;color:white;padding:10px 16px;border:0;border-radius:10px;cursor:pointer;font-size:14px;text-decoration:none}
+button:focus-visible,a:focus-visible{outline:2px solid white;outline-offset:2px}
+.link{background:#253a56;color:#dce9ff}.metrics{display:flex;gap:20px;flex-wrap:wrap;margin-top:14px}
+.metric{min-width:140px}.metric b{display:block;font-size:24px}.metric span{color:#9fb3d2;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:14px}
+.worker{background:#142844;border:1px solid #344969;padding:17px;border-radius:15px;overflow-wrap:anywhere}
+.worker h3{margin:0 0 7px;font-size:17px}.worker small{color:#96b2d6}
+.worker .state{font-size:12px;display:inline-block;margin:7px 0;padding:4px 8px;border-radius:30px;background:#263e5b}
+.worker .state.working{background:#164f41;color:#b4ffe6}
+.worker .state.needs_input{background:#664c1e;color:#ffe5ad}
+.worker .state.error{background:#662c36;color:#ffd2da}
+.task{margin-top:10px;color:#d3e1f4;font-size:13px;line-height:1.5}
+#message{white-space:pre-line}.fine{font-size:12px;color:#94a9c9}
+</style>
+</head>
+<body>
+<main>
+ <div class="bar"><div class="kicker">LHM AGENT AI / CONNECTED DEVELOPER WORKERS</div>
+ <a href="/office3d">← Văn phòng 3D LHM</a></div>
+ <h1>Agent Office · Worker Bridge</h1>
+ <p>Quan sát nhân viên coding AI đang chạy trên Agent Office. Đây là kết nối <strong>chỉ đọc</strong> với một tầng dự án được cấp quyền, không tự thuê agent, chạy lệnh hay tiêu token.</p>
+ <section class="panel" aria-live="polite">
+  <div class="bar"><strong id="status">Đang kiểm tra kết nối…</strong><span class="pill">READ ONLY · LOCAL</span></div>
+  <p id="message">Chưa nhận dữ liệu.</p>
+  <div class="metrics"><div class="metric"><b id="total">—</b><span>Worker quan sát</span></div><div class="metric"><b id="working">—</b><span>Đang làm việc</span></div><div class="metric"><b id="waiting">—</b><span>Cần phản hồi</span></div></div>
+  <div class="actions" style="margin-top:22px"><button type="button" id="refresh">↻ Kiểm tra lại</button><a class="link" href="/agent-work">Quản lý 16 Agent LHM</a></div>
+  <p class="fine" id="updated">Chưa có bản đọc thành công.</p>
+ </section>
+ <section><h2>Nhân viên từ Agent Office</h2><div id="workers" class="grid" aria-live="polite"></div></section>
+ <section class="panel"><strong>Điều kiện để kết nối</strong><p>Agent Office phải đang chạy trên cùng máy, có một worker được ủy quyền và ba biến cấu hình nội bộ dành cho tiến trình LHM. Token chỉ đặt tại môi trường máy chủ; không nhập qua trình duyệt, không lưu trên giao diện. Khi thiếu cấu hình hoặc Agent Office tắt, màn hình sẽ báo rõ thay vì hiển thị dữ liệu giả.</p>
+ <a href="https://github.com/AgentSystemLabs/agent-office" target="_blank" rel="noopener noreferrer">Mã nguồn Agent Office (MIT)</a>
+ </section>
+</main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let current=0;
+const states={
+ not_configured:"Chưa cấu hình",incomplete_configuration:"Thiếu cấu hình nội bộ",
+ invalid_configuration:"Cấu hình không an toàn hoặc không hợp lệ",
+ authorization_failed:"Agent Office từ chối quyền đọc",
+ unavailable:"Agent Office chưa phản hồi",invalid_response:"Dữ liệu Agent Office không hợp lệ"
+};
+function add(parent,tag,text,cls){
+ const el=document.createElement(tag);if(cls)el.className=cls;el.textContent=String(text||"");parent.appendChild(el);return el;
+}
+async function refresh(){
+ const seq=++current;
+ $("status").textContent="Đang kiểm tra…";
+ try{
+  const resp=await fetch("/api/agent-office/workers",{cache:"no-store"});
+  if(!resp.ok)throw new Error("LHM API không khả dụng ("+resp.status+")");
+  const data=await resp.json();
+  if(seq!==current)return;
+  $("workers").replaceChildren();
+  if(data.state!=="connected"){
+   $("status").textContent=states[data.state]||"Không kết nối";
+   $("message").textContent="Không có dữ liệu live. Hãy kiểm tra dịch vụ, token riêng của worker và tài liệu tích hợp.";
+   $("total").textContent=$("working").textContent=$("waiting").textContent="—";
+   $("updated").textContent="Không xác minh được trạng thái; không coi worker là đang rảnh.";
+   return;
+  }
+  const workers=Array.isArray(data.workers)?data.workers:[];
+  $("status").textContent="● Đã kết nối — "+(data.floor?.name||"Dự án");
+  $("message").textContent="Repo: "+(data.floor?.repo||"không rõ")+" · Nhánh: "+(data.floor?.branch||"không rõ")+". Dữ liệu tách biệt khỏi 16 agent LHM.";
+  $("total").textContent=workers.length+(data.truncated?"+":"");
+  $("working").textContent=workers.filter(w=>w.status==="working").length;
+  $("waiting").textContent=workers.filter(w=>w.status==="needs_input").length;
+  if(workers.length===0)add($("workers"),"p","Chưa có worker trên tầng Agent Office này.");
+  for(const w of workers){
+   const card=add($("workers"),"article","","worker");
+   add(card,"h3",w.name||"Worker");
+   add(card,"small",[w.provider,w.model,w.desk].filter(Boolean).join(" · "));
+   add(card,"div",w.status||"unknown","state "+(w.status||""));
+   if(w.task)add(card,"div",w.task,"task");
+   if(w.activity)add(card,"div","Đang xử lý: "+w.activity,"task");
+   if(w.pull_request)add(card,"div","PR #"+w.pull_request,"task");
+  }
+  $("updated").textContent="Đọc thành công lúc "+new Date().toLocaleTimeString("vi-VN")+". Không có quyền thao tác worker.";
+ }catch(error){
+  if(seq!==current)return;
+  $("status").textContent="Lỗi kết nối LHM";
+  $("message").textContent=error.message||"Không rõ lỗi";
+  $("workers").replaceChildren();
+ }
+}
+$("refresh").addEventListener("click",refresh);
+refresh();setInterval(()=>{if(!document.hidden)refresh();},12000);
+</script>
+</body>
+</html>
