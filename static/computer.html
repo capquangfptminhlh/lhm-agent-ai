@@ -144,7 +144,12 @@ function renderSelected(){
 }
 async function approval(id,yes){
  const r=runs.find(x=>x.id===selected),step=r?.steps.find(x=>x.id===id);if(!r||!step)return;
- if(yes&&!confirm("Cho phép "+step.tool+" với chính xác tham số đang hiển thị? Hành động này có thể thay đổi file hoặc website."))return;
+ if(yes){
+ const message=step.tool==="android_mcp_tap"
+   ? "Chạm MỘT LẦN trên máy Android ảo? LHM sẽ quét lại nút đã chọn. Hành động có thể gửi dữ liệu trong ứng dụng, không có hoàn tác tự động. Sau khi chạm, anh phải đối soát kết quả trên AVD."
+   : "Cho phép "+step.tool+" với chính xác tham số đang hiển thị? Hành động này có thể thay đổi file hoặc website.";
+ if(!confirm(message))return;
+}
  try{await api("/computer/runs/"+encodeURIComponent(r.id)+"/steps/"+encodeURIComponent(id)+"/"+(yes?"approve":"reject"),{method:"POST"});
  report(yes?"Đã duyệt bước. Worker tiếp tục thực thi.":"Đã từ chối bước; Agent sẽ chọn giải pháp khác.");
  await loadRuns()

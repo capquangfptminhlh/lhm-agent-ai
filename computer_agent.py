@@ -28,7 +28,8 @@ from openrouter_provider import call_free_model, is_free_model, local_free_quota
 router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
   "android_mcp_devices":"Read ONLY operator-allowlisted Android device status via local Windows MCP. No screenshots or control; {}.",
-  "android_mcp_inspect":"Read sanitized Android UI roles, safe hints and geometry on an operator-allowlisted device; {serial: exact device serial from android_mcp_devices}. Never a tap or write.",
+  "android_mcp_inspect":"Read sanitized Android UI roles, safe hints and geometry on an operator-allowlisted emulator; returns short-lived observation_id when owner enabled tapping; {serial: exact serial from android_mcp_devices}.",
+  "android_mcp_tap":"ONE operator-approved tap on a previously observed UI widget of a dedicated test emulator ONLY; {serial: exact emulator serial, observation_id: exact token from android_mcp_inspect, index: numeric observed widget index}. ALWAYS needs human approval. Fails if UI changed or token expired; then owner must reconcile actual result.",
   "opencli_open":"Open a HTTPS URL in owner-approved dedicated Chrome profile; {url: https://allowed.host/path}",
   "opencli_state":"Read the current allowlisted browser URL and numbered DOM elements; {}",
   "opencli_click":"Click one numeric [ref] from current OpenCLI state with exact observed URL and label; {ref: integer, url: string, label: string}; always requires owner approval",
@@ -64,7 +65,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -75,7 +76,7 @@ SENSITIVE_TOOLS={"opencli_click","opencli_fill","sandbox_run","run_command","bro
 # post content and a fill can place data into an external form — the
 # decision's "send/post data out" category — and the two cannot be told
 # apart from routine clicks in advance, so the whole surface stays gated.
-ALWAYS_APPROVAL_TOOLS={"opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_click_element",
+ALWAYS_APPROVAL_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_click_element",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
                        "browser_click","browser_fill"}
@@ -280,11 +281,11 @@ def acknowledge_computer_reconciliation(rid: str):
         c.execute("BEGIN IMMEDIATE")
         r=_get(c,rid)
         if r["status"]!="awaiting_reconciliation":
-            raise HTTPException(409,"Phiên không có thao tác OpenCLI cần đối soát")
+            raise HTTPException(409,"Phiên không có thao tác cần đối soát")
         step=c.execute("SELECT * FROM computer_steps WHERE run_id=? ORDER BY number DESC LIMIT 1",
                        (rid,)).fetchone()
-        if not step or step["tool"]!="opencli_click" or step["status"]!="needs_review":
-            raise HTTPException(409,"Không có click OpenCLI đã ghi nhận để đối soát")
+        if not step or step["tool"] not in ("opencli_click","android_mcp_tap") or step["status"]!="needs_review":
+            raise HTTPException(409,"Không có thao tác Android/OpenCLI đã ghi nhận để đối soát")
         try:
             receipt=json.loads(step["result_json"] or "{}")
         except ValueError:
@@ -299,7 +300,7 @@ def acknowledge_computer_reconciliation(rid: str):
         c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",
                   (now(),rid))
         audit(c,r["workspace_id"],"computer.reconciliation_acknowledged",
-              "Owner reviewed OpenCLI click; provider effect remains UNVERIFIED",rid)
+              "Owner reviewed external effect; provider/app outcome remains UNVERIFIED",rid)
         return _view(c,_get(c,rid))
 
 
@@ -331,7 +332,7 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
         raise HTTPException(503,"LHM_COMPUTER_RUNNER_TOKEN chưa được cấu hình")
     # OpenCLI runs state-before -> approved action -> state-after as separate
     # Browser Bridge calls; default 32s would prematurely abandon real writes.
-    timeout=125 if tool.startswith("opencli_") else 32
+    timeout=125 if tool.startswith("opencli_") else 85 if tool=="android_mcp_tap" else 32
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=5),trust_env=False) as client:
         response=await client.post(_runner_base()+"/v1/tool",
            headers={"Authorization":"Bearer "+token},
@@ -360,9 +361,11 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
             not os.environ.get("LHM_OPENCLI_PROFILE")):
         allowed=allowed-{"opencli_open","opencli_state","opencli_click","opencli_fill"}
     from android_mcp_bridge import configured as android_mcp_configured
+    from android_mcp_actions import tap_enabled as android_tap_enabled
     enabled=((k,v) for k,v in TOOLS.items()
              if k in allowed
-             if (not k.startswith("android_mcp_") or android_mcp_configured(role))
+             if (not k.startswith("android_mcp_") or (android_mcp_configured(role)
+                  and (k!="android_mcp_tap" or android_tap_enabled())))
              if (native or not k.startswith("windows_"))
              and not (native and k=="run_command")
              and (k not in ("windows_desktop_click","windows_desktop_drag","windows_desktop_scroll")
@@ -702,13 +705,14 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # The CLI confirming a Chrome click is NOT evidence that a provider
         # accepted a post, order or message. Pause the loop before the LLM
         # can propose another action or claim an external success.
-        if tool=="opencli_click":
+        if tool in ("opencli_click","android_mcp_tap"):
             if (result.get("confirmed_by_cli") is not True
                     or result.get("requires_owner_reconciliation") is not True
                     or result.get("external_effect_verified") is not False):
                 raise HTTPException(502,"OpenCLI click receipt incomplete; owner inspection required")
             clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
-            detail="Chrome click executed; inspect the provider before continuing. Not verified published."
+            detail=("Android emulator tap sent; inspect the Android screen before continuing. Outcome NOT verified." if tool=="android_mcp_tap" else
+                    "Chrome click executed; inspect the provider before continuing. Not verified published.")
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
                 c.execute("UPDATE computer_steps SET status='needs_review',result_json=?,error=?,updated_at=? WHERE id=?",
@@ -716,7 +720,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 c.execute("UPDATE computer_runs SET status='awaiting_reconciliation',error=?,updated_at=? WHERE id=?",
                           (detail,now(),rid))
                 audit(c,run["workspace_id"],"computer.external_reconciliation_required",
-                      "OpenCLI click observed, provider effect unverified; owner must inspect",rid)
+                      tool+" action sent, external effect unverified; owner must inspect",rid)
             return {"status":"awaiting_reconciliation","id":rid,
                     "last_tool":tool,"step_status":"needs_review"}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]

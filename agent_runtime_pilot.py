@@ -24,11 +24,11 @@ router = APIRouter(tags=["Agent Runtime Pilot"])
 
 PILOT_TOOLS = {
     # Browser writes are still always manually approved by Computer Agent.
-    "content": frozenset({"android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
+    "content": frozenset({"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot","browser_click","browser_fill"}),
-    "sales": frozenset({"android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","list_files","read_file","browser_open","browser_snapshot",
+    "sales": frozenset({"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","list_files","read_file","browser_open","browser_snapshot",
                          "browser_scroll","browser_screenshot"}),
-    "quality": frozenset({"android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
+    "quality": frozenset({"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot"}),
 }
 PILOT_HOST_ENV = {role: "LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS" for role in PILOT_TOOLS}

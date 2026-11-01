@@ -20,6 +20,7 @@ function mockFs(exists=true){
 }
 const cfg={
  androidMcpEnabled:true,
+ androidMcpTapEnabled:true,
  androidMcpRepo:'C:\\LHM\\ggminh',
  androidMcpSerials:'emulator-5554,emulator-5556',
  androidMcpRoles:'research,quality'
@@ -30,6 +31,7 @@ test('off by default with no devices or roles',()=>{
  assert.deepEqual(c.androidMcpSerials,[]);
  const env=androidMcpEnv({},{platform:'linux'});
  assert.equal(env.LHM_ANDROID_MCP_ENABLED,'0');
+ assert.equal(env.LHM_ANDROID_MCP_TAP_ENABLED,'0');
  assert.equal(env.LHM_ANDROID_MCP_ALLOWED_SERIALS,'');
 });
 test('explicit roles and devices yield exactly one safe source entry',()=>{
@@ -39,6 +41,7 @@ test('explicit roles and devices yield exactly one safe source entry',()=>{
  const env=androidMcpEnv(cfg,{platform:'win32',fs:mockFs(),
   packaged:true,resourcesPath:'C:\\Program Files\\LHM\\resources'});
  assert.equal(env.LHM_ANDROID_MCP_ENABLED,'1');
+ assert.equal(env.LHM_ANDROID_MCP_TAP_ENABLED,'1');
  assert(env.LHM_ANDROID_MCP_ENTRY.endsWith('\\bin\\lhm-android-mcp.js'));
  assert(env.LHM_ANDROID_MCP_NODE.endsWith('node.exe'));
  assert.equal(env.LHM_ANDROID_MCP_ALLOWED_ROLES,'research,quality');
@@ -50,6 +53,8 @@ test('reject unsafe repo, missing bridge, wildcard serials and roles',()=>{
   {androidMcpRepo:'\\\\server\\share\\ggminh'},
   {androidMcpRepo:'../ggminh'},
   {androidMcpRepo:'C:\\LHM\\ggminh',androidMcpSerials:'emulator-*'},
+  {androidMcpEnabled:false,androidMcpTapEnabled:true},
+  {androidMcpEnabled:true,androidMcpTapEnabled:true,androidMcpSerials:'PHYSICAL123'},
   {androidMcpRepo:'C:\\LHM\\ggminh',androidMcpRoles:'all'},
   {androidMcpRepo:'C:\\LHM\\ggminh',androidMcpRoles:''},
   {androidMcpRepo:'C:\\LHM\\ggminh',androidMcpSerials:''}

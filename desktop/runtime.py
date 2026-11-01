@@ -51,6 +51,7 @@ def main(argv=None):
         import computer_executor
         import agent_runtime_pilot
         import agent_reach_bridge
+        import android_mcp_actions
         import android_mcp_bridge
         import opencli_windows_bridge
         import opencli_diagnostics
