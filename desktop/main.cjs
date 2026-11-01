@@ -464,6 +464,21 @@ function settingsIPC(){
               detail:"Windows controller not ready or OpenCLI status unavailable"};
     }
   });
+  ipcMain.handle("settings:android-mcp-status",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try {
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/android-mcp/status",runnerToken);
+      if(response.status!==200)throw Error("Android MCP status unavailable");
+      const data=JSON.parse(response.text);
+      if(typeof data.ready!=="boolean" || !Array.isArray(data.allowedRoles))
+        throw Error("Invalid MCP status");
+      return data;
+    } catch {
+      return {ready:false,enabled:false,allowedRoles:[],
+        allowedDeviceCount:0,detail:"Android MCP status unavailable"};
+    }
+  });
   ipcMain.handle("settings:test-openrouter",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
