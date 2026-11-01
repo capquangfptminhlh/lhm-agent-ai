@@ -369,6 +369,20 @@ async def health(authorization: str | None = Header(None)):
             "agent_reach_cli_installed":bool(shutil.which("agent-reach")),
             "tools":sorted(ALLOWED_TOOLS)}
 
+@runner.get("/v1/android-mcp/status")
+async def android_mcp_status(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from android_mcp_bridge import allowed_roles, allowed_serials, configured
+    roles=sorted(allowed_roles())
+    enabled=os.getenv("LHM_ANDROID_MCP_ENABLED")=="1"
+    ready=bool(enabled and roles and allowed_serials() and
+               any(configured(r) for r in roles))
+    return {"enabled":enabled,"ready":ready,"allowedRoles":roles,
+            "allowedDeviceCount":len(allowed_serials()),
+            "detail":("Configured and local MCP entry exists" if ready
+                      else "Disabled, unconfigured or MCP entry unavailable")}
+
+
 @runner.get("/v1/opencli/status")
 async def opencli_status(authorization: str | None = Header(None)):
     _auth(authorization)
