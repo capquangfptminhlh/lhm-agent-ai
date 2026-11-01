@@ -38,8 +38,12 @@ def allowed_serials() -> set[str]:
         return set()
     return set(values)
 
+def native_desktop() -> bool:
+    return os.name == "nt" and os.getenv("LHM_DESKTOP_NATIVE") == "1"
+
+
 def configured(role: str) -> bool:
-    if os.name != "nt" or os.getenv("LHM_DESKTOP_NATIVE") != "1":
+    if not native_desktop():
         return False
     if os.getenv("LHM_ANDROID_MCP_ENABLED") != "1":
         return False
@@ -97,12 +101,12 @@ def clean_result(tool: str, result: dict) -> dict:
         if coords["width"] == 0 or coords["height"] == 0:continue
         clean.append({
             "index":element.get("index") if type(element.get("index")) is int else 0,
-            "role":element.get("role") if element.get("role") in roles else "interactive-view",
-            "hint":element.get("hint") if element.get("hint") in hint_allow else None,
+            "role":element.get("role") if isinstance(element.get("role"),str) and element.get("role") in roles else "interactive-view",
+            "hint":element.get("hint") if isinstance(element.get("hint"),str) and element.get("hint") in hint_allow else None,
             "bounds":coords
         })
     return {"privacy":"geometry-only","read_only":True,
-            "totalNodes":min(max(int(result.get("totalNodes",0)),0),3000),
+            "totalNodes":min(max(result.get("totalNodes",0) if type(result.get("totalNodes")) is int else 0,0),3000),
             "elements":clean}
 
 async def execute(role: str, tool: str, args: dict[str, Any]) -> dict:
