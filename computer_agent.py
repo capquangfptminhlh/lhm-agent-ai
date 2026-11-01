@@ -281,11 +281,11 @@ def acknowledge_computer_reconciliation(rid: str):
         c.execute("BEGIN IMMEDIATE")
         r=_get(c,rid)
         if r["status"]!="awaiting_reconciliation":
-            raise HTTPException(409,"Phiên không có thao tác OpenCLI cần đối soát")
+            raise HTTPException(409,"Phiên không có thao tác cần đối soát")
         step=c.execute("SELECT * FROM computer_steps WHERE run_id=? ORDER BY number DESC LIMIT 1",
                        (rid,)).fetchone()
         if not step or step["tool"] not in ("opencli_click","android_mcp_tap") or step["status"]!="needs_review":
-            raise HTTPException(409,"Không có click OpenCLI đã ghi nhận để đối soát")
+            raise HTTPException(409,"Không có thao tác Android/OpenCLI đã ghi nhận để đối soát")
         try:
             receipt=json.loads(step["result_json"] or "{}")
         except ValueError:
@@ -300,7 +300,7 @@ def acknowledge_computer_reconciliation(rid: str):
         c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",
                   (now(),rid))
         audit(c,r["workspace_id"],"computer.reconciliation_acknowledged",
-              "Owner reviewed OpenCLI click; provider effect remains UNVERIFIED",rid)
+              "Owner reviewed external effect; provider/app outcome remains UNVERIFIED",rid)
         return _view(c,_get(c,rid))
 
 
