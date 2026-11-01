@@ -19,6 +19,7 @@ READ_TOOLS = {
     "android_mcp_devices": "android_list_devices",
     "android_mcp_inspect": "android_inspect_ui",
 }
+TAP_TOOL="android_mcp_tap"
 ALL_ROLES = {
     "director", "research", "strategy", "lead", "content", "ads",
     "crm", "sales", "quality", "analytics", "operations", "finance",
@@ -55,14 +56,29 @@ def configured(role: str) -> bool:
                 entry.is_file() and not entry.is_symlink())
 
 def validate(role: str, tool: str, args: dict[str, Any]) -> None:
-    if tool not in READ_TOOLS:
-        raise HTTPException(422, "Android MCP tool is not read-only/allowlisted")
+    if tool not in READ_TOOLS and tool!=TAP_TOOL:
+        raise HTTPException(422, "Unsupported Android MCP operation")
     if not configured(role):
         raise HTTPException(403, "Android MCP chưa bật cho vai trò hoặc máy này")
     if not isinstance(args, dict):
         raise HTTPException(422, "Android MCP arguments must be an object")
     if tool == "android_mcp_devices":
         if args: raise HTTPException(422, "android_mcp_devices does not take arguments")
+    elif tool==TAP_TOOL:
+        from android_mcp_actions import tap_enabled, EMULATOR
+        if not tap_enabled():
+            raise HTTPException(403,"Android tap is disabled by owner")
+        if set(args)!={"serial","observation_id","index"}:
+            raise HTTPException(422,"Use only inspected Android UI target")
+        if (not isinstance(args.get("serial"),str)
+                or not EMULATOR.fullmatch(args["serial"])
+                or args["serial"] not in allowed_serials()):
+            raise HTTPException(403,"Only owner-allowed test emulators can receive taps")
+        if (not isinstance(args.get("observation_id"),str)
+                or not re.fullmatch(r"[0-9a-f]{32}",args["observation_id"])
+                or type(args.get("index")) is not int
+                or not 1<=args["index"]<=120):
+            raise HTTPException(422,"Invalid Android target token or index")
     else:
         if set(args) != {"serial"} or not isinstance(args.get("serial"), str):
             raise HTTPException(422, "Specify an allowed Android serial")
@@ -109,8 +125,16 @@ def clean_result(tool: str, result: dict) -> dict:
             "totalNodes":min(max(result.get("totalNodes",0) if type(result.get("totalNodes")) is int else 0,0),3000),
             "elements":clean}
 
-async def execute(role: str, tool: str, args: dict[str, Any]) -> dict:
+async def execute(role: str, tool: str, args: dict[str, Any],
+                  run_id: str | None = None) -> dict:
     validate(role,tool,args)
+    if tool==TAP_TOOL:
+        from android_mcp_actions import perform
+        # Re-read through the SAME read-only ggminh MCP bridge, rather than
+        # granting any write methods to the external MCP server.
+        return await perform(role,run_id,args,lambda serial: execute(
+            role,"android_mcp_inspect",{"serial":serial},run_id=None))
+
     node=os.environ["LHM_ANDROID_MCP_NODE"]
     entry=os.environ["LHM_ANDROID_MCP_ENTRY"]
     env={key:os.environ[key] for key in (
@@ -156,4 +180,11 @@ async def execute(role: str, tool: str, args: dict[str, Any]) -> dict:
     except HTTPException:raise
     except (ValueError,KeyError,TypeError,IndexError,StopIteration,AttributeError):
         raise HTTPException(502,"Android MCP returned an invalid protocol response")
-    return clean_result(tool,data)
+    result=clean_result(tool,data)
+    if tool=="android_mcp_inspect":
+        from android_mcp_actions import prepare
+        observation=prepare(role,run_id,args["serial"],result)
+        if observation:
+            result["observation_id"]=observation
+            result["expires_in_seconds"]=300
+    return result
