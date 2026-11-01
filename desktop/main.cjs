@@ -149,6 +149,7 @@ function settingsForUI() {
     opencliProfile:c.opencliProfile||"",
     opencliHosts:Array.isArray(c.opencliHosts)?c.opencliHosts.join(","):"",
     androidMcpEnabled:c.androidMcpEnabled===true,
+    androidMcpTapEnabled:c.androidMcpTapEnabled===true,
     androidMcpRepo:typeof c.androidMcpRepo==="string"?c.androidMcpRepo:"",
     androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
     androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):"",
@@ -172,6 +173,7 @@ function envForRuntime() {
     LHM_WINDOWS_REACH_ENABLED:c.reachEnabled===true?"1":"0",
     ...androidMcpEnv({
       androidMcpEnabled:c.androidMcpEnabled===true,
+    androidMcpTapEnabled:c.androidMcpTapEnabled===true,
       androidMcpRepo:c.androidMcpRepo||"",
       androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
       androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):""
@@ -216,7 +218,7 @@ function nativeEnv(runtimeEnv) {
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
     "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
-    "LHM_ANDROID_MCP_ENABLED","LHM_ANDROID_MCP_ENTRY","LHM_ANDROID_MCP_NODE",
+    "LHM_ANDROID_MCP_ENABLED","LHM_ANDROID_MCP_TAP_ENABLED","LHM_ANDROID_MCP_ENTRY","LHM_ANDROID_MCP_NODE",
     "LHM_ANDROID_MCP_ALLOWED_SERIALS","LHM_ANDROID_MCP_ALLOWED_ROLES",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
     "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS","LHM_COMPUTER_SALES_ALLOWED_HOSTS",
