@@ -18,6 +18,10 @@ async function load(){
   $("opencliEnabled").checked=x.opencliEnabled===true;
   $("opencliProfile").value=x.opencliProfile||"";
   $("opencliHosts").value=x.opencliHosts||"";
+  $("androidMcpEnabled").checked=x.androidMcpEnabled===true;
+  $("androidMcpRepo").value=x.androidMcpRepo||"";
+  $("androidMcpSerials").value=x.androidMcpSerials||"";
+  $("androidMcpRoles").value=x.androidMcpRoles||"";
   $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("openTest").disabled=!x.hasOpenrouterKey || !x.secureStorage;
@@ -42,6 +46,10 @@ $("save").onclick=async()=>{
     opencliEnabled:$("opencliEnabled").checked,
     opencliProfile:$("opencliProfile").value,
     opencliHosts:$("opencliHosts").value,
+    androidMcpEnabled:$("androidMcpEnabled").checked,
+    androidMcpRepo:$("androidMcpRepo").value,
+    androidMcpSerials:$("androidMcpSerials").value,
+    androidMcpRoles:$("androidMcpRoles").value,
     agentParallelism:Number($("agentParallelism").value),
     openrouterKey:$("openKey").value,
     clearOpenrouter:$("clearOpenrouter").checked
@@ -107,6 +115,21 @@ $("opencliCheck").onclick=async()=>{
     s.ready?"Sẵn sàng thao tác theo quyền được cấp":"Chưa sẵn sàng: "+(s.detail||"kiểm tra cấu hình")
   ].join("\n");
  }catch(err){panel.textContent="Không kiểm tra được: "+(err.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
+$("androidMcpCheck").onclick=async()=>{
+ const button=$("androidMcpCheck"),panel=$("androidMcpCheckResult");
+ button.disabled=true;panel.textContent="Đang kiểm tra cấu hình Android MCP đã lưu…";
+ try {
+   const data=await window.lhmSettings.androidMcpStatus();
+   panel.textContent=[
+     (data.enabled?"✓":"✕")+" Android MCP "+(data.enabled?"đã bật":"chưa bật"),
+     "Vai trò được cấp: "+(data.allowedRoles?.join(", ")||"chưa có"),
+     "Số serial được cấp: "+(data.allowedDeviceCount||0),
+     data.ready?"Sẵn sàng cho Agent đọc dữ liệu Android (chưa chứng minh thiết bị đang kết nối).":
+       "Chưa sẵn sàng: "+(data.detail||"kiểm tra cấu hình")
+   ].join("\n");
+ } catch(error){panel.textContent="Không kiểm tra được Android MCP: "+(error?.message||"lỗi kết nối");}
  finally{button.disabled=false;}
 };
 $("quickStart").onclick=()=>{
