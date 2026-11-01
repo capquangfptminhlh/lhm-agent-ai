@@ -22,6 +22,7 @@ function csv(raw) {
 }
 function parseAndroidMcp(input,options={}) {
   const enabled=input?.androidMcpEnabled===true;
+  const tapEnabled=input?.androidMcpTapEnabled===true;
   const root=String(input?.androidMcpRepo||"").trim();
   const serials=csv(input?.androidMcpSerials||"");
   const roles=csv(input?.androidMcpRoles||"");
@@ -30,6 +31,9 @@ function parseAndroidMcp(input,options={}) {
   if(roles.some(r=>!ROLE_SET.has(r)))
     throw Error("Vai trò Android MCP không nằm trong danh sách 16 Agent được hỗ trợ.");
   if(root.length>500)throw Error("Đường dẫn mã nguồn Android MCP quá dài.");
+  if(tapEnabled && !enabled)throw Error("Phải bật Android MCP trước khi cấp quyền chạm.");
+  if(tapEnabled && !serials.some(x=>/^emulator-[0-9]{4,5}$/.test(x)))
+    throw Error("Chỉ cấp quyền chạm cho Android ảo có serial emulator-xxxx.");
   if(enabled) {
     if((options.platform||process.platform)!=="win32")
       throw Error("Android MCP chỉ được bật trên Windows Desktop.");
@@ -50,6 +54,7 @@ function parseAndroidMcp(input,options={}) {
   }
   return {
     androidMcpEnabled:enabled,
+    androidMcpTapEnabled:tapEnabled,
     androidMcpRepo:root,
     androidMcpSerials:serials,
     androidMcpRoles:roles
@@ -72,6 +77,7 @@ function androidMcpEnv(config,options={}) {
   });
   if(!parsed.androidMcpEnabled) return {
     LHM_ANDROID_MCP_ENABLED:"0",
+    LHM_ANDROID_MCP_TAP_ENABLED:"0",
     LHM_ANDROID_MCP_ENTRY:"",
     LHM_ANDROID_MCP_NODE:"",
     LHM_ANDROID_MCP_ALLOWED_SERIALS:"",
@@ -81,6 +87,7 @@ function androidMcpEnv(config,options={}) {
   if(!node)throw Error("Bản Windows thiếu Node runtime đóng gói cho Android MCP.");
   return {
     LHM_ANDROID_MCP_ENABLED:"1",
+    LHM_ANDROID_MCP_TAP_ENABLED:parsed.androidMcpTapEnabled?"1":"0",
     LHM_ANDROID_MCP_ENTRY:path.win32.join(parsed.androidMcpRepo,"bin","lhm-android-mcp.js"),
     LHM_ANDROID_MCP_NODE:node,
     LHM_ANDROID_MCP_ALLOWED_SERIALS:parsed.androidMcpSerials.join(","),
