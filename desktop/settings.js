@@ -128,6 +128,7 @@ $("androidMcpCheck").onclick=async()=>{
      (data.enabled?"✓":"✕")+" Android MCP "+(data.enabled?"đã bật":"chưa bật"),
      "Vai trò được cấp: "+(data.allowedRoles?.join(", ")||"chưa có"),
      "Số serial được cấp: "+(data.allowedDeviceCount||0),
+     "Chạm Android ảo: "+(data.tapEnabled?"đã bật (từng bước cần duyệt)":"tắt"),
      data.ready?"Sẵn sàng cho Agent đọc dữ liệu Android (chưa chứng minh thiết bị đang kết nối).":
        "Chưa sẵn sàng: "+(data.detail||"kiểm tra cấu hình")
    ].join("\n");
