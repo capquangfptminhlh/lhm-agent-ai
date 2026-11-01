@@ -12,6 +12,7 @@ const {spawn} = require("node:child_process");
 const http = require("node:http");
 const {requestFreeCompletion} = require("./openrouter-free-test.cjs");
 const {readiness} = require("./readiness.cjs");
+const {parseAndroidMcp,androidMcpEnv} = require("./android-mcp-config.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const BACKEND_ORIGIN = "http://127.0.0.1:7770";
@@ -76,6 +77,7 @@ function saveSettings(input) {
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
   }
+  const androidMcp=parseAndroidMcp(input);
   const opencliEnabled=input.opencliEnabled===true;
   const opencliProfile=String(input.opencliProfile||"").trim();
   const opencliHosts=String(input.opencliHosts||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
@@ -106,6 +108,7 @@ function saveSettings(input) {
     sandboxEnabled:input.sandboxEnabled===true,
     reachEnabled:input.reachEnabled===true,
     opencliEnabled,opencliProfile,opencliHosts:[...new Set(opencliHosts)],
+    ...androidMcp,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
     deepseekKey:""
@@ -145,6 +148,10 @@ function settingsForUI() {
     opencliEnabled:c.opencliEnabled===true,
     opencliProfile:c.opencliProfile||"",
     opencliHosts:Array.isArray(c.opencliHosts)?c.opencliHosts.join(","):"",
+    androidMcpEnabled:c.androidMcpEnabled===true,
+    androidMcpRepo:typeof c.androidMcpRepo==="string"?c.androidMcpRepo:"",
+    androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
+    androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):"",
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
@@ -163,6 +170,13 @@ function envForRuntime() {
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
     LHM_WINDOWS_REACH_ENABLED:c.reachEnabled===true?"1":"0",
+    ...androidMcpEnv({
+      androidMcpEnabled:c.androidMcpEnabled===true,
+      androidMcpRepo:c.androidMcpRepo||"",
+      androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
+      androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):""
+    },{packaged:app.isPackaged,resourcesPath:process.resourcesPath,
+       projectRoot:PROJECT_ROOT,platform:process.platform}),
     LHM_OPENCLI_ENABLED:c.opencliEnabled===true?"1":"0",
     LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
     LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
@@ -194,6 +208,7 @@ function nativeEnv(runtimeEnv) {
   // Deliberately never pass AI provider credentials to the native runner.
   const safeKeys=["SYSTEMROOT","WINDIR","PATH","PATHEXT","TEMP","TMP",
     "APPDATA","LOCALAPPDATA","USERPROFILE","HOMEDRIVE","HOMEPATH",
+    "ANDROID_SDK_ROOT","ANDROID_HOME",
     "PROGRAMFILES","PROGRAMFILES(X86)","COMMONPROGRAMFILES","COMSPEC"];
   const env={};
   for(const key of safeKeys) if(process.env[key]) env[key]=process.env[key];
@@ -201,6 +216,8 @@ function nativeEnv(runtimeEnv) {
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
     "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
+    "LHM_ANDROID_MCP_ENABLED","LHM_ANDROID_MCP_ENTRY","LHM_ANDROID_MCP_NODE",
+    "LHM_ANDROID_MCP_ALLOWED_SERIALS","LHM_ANDROID_MCP_ALLOWED_ROLES",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
     "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS","LHM_COMPUTER_SALES_ALLOWED_HOSTS",
     "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS",
