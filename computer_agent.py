@@ -27,6 +27,8 @@ from openrouter_provider import call_free_model, is_free_model, local_free_quota
 
 router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
+  "android_mcp_devices":"Read ONLY operator-allowlisted Android device status via local Windows MCP. No screenshots or control; {}.",
+  "android_mcp_inspect":"Read sanitized Android UI roles, safe hints and geometry on an operator-allowlisted device; {serial: exact device serial from android_mcp_devices}. Never a tap or write.",
   "opencli_open":"Open a HTTPS URL in owner-approved dedicated Chrome profile; {url: https://allowed.host/path}",
   "opencli_state":"Read the current allowlisted browser URL and numbered DOM elements; {}",
   "opencli_click":"Click one numeric [ref] from current OpenCLI state with exact observed URL and label; {ref: integer, url: string, label: string}; always requires owner approval",
@@ -357,8 +359,10 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
             os.environ.get("LHM_OPENCLI_ENABLED")!="1" or
             not os.environ.get("LHM_OPENCLI_PROFILE")):
         allowed=allowed-{"opencli_open","opencli_state","opencli_click","opencli_fill"}
+    from android_mcp_bridge import configured as android_mcp_configured
     enabled=((k,v) for k,v in TOOLS.items()
              if k in allowed
+             if (not k.startswith("android_mcp_") or android_mcp_configured(role))
              if (native or not k.startswith("windows_"))
              and not (native and k=="run_command")
              and (k not in ("windows_desktop_click","windows_desktop_drag","windows_desktop_scroll")
@@ -624,6 +628,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
             from agent_runtime_pilot import assert_pilot_action
             assert_pilot_action(run,tool,args,steps)
+            if tool.startswith("android_mcp_"):
+                from android_mcp_bridge import validate as validate_android_mcp
+                validate_android_mcp(run["role"],tool,args)
             if tool.startswith("opencli_"):
                 from opencli_windows_bridge import validate as validate_opencli
                 validate_opencli(run["role"],tool,args)
@@ -653,6 +660,9 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # Bound pilot policy is enforced again for previously-approved steps.
         from agent_runtime_pilot import assert_pilot_action
         assert_pilot_action(run,tool,args)
+        if tool.startswith("android_mcp_"):
+            from android_mcp_bridge import validate as validate_android_mcp
+            validate_android_mcp(run["role"],tool,args)
         if tool.startswith("opencli_"):
             from opencli_windows_bridge import validate as validate_opencli
             validate_opencli(run["role"],tool,args)

@@ -1,3 +1,11 @@
+## Android MCP cho Windows — đọc thiết bị theo quyền từng Agent
+
+LHM Robot Desktop có mục **Android MCP** trong Thiết lập Robot. Anh chọn thư mục `ggminh` trên Windows, serial ADB đã cho phép và các vai trò trong 16 Agent được đọc metadata Android. Computer Agent được cấp quyền có thể gọi `android_mcp_devices` / `android_mcp_inspect`; không có quyền chạm, gõ, cài APK hoặc gửi ảnh. Mặc định tắt, không cấp quyền cho Agent hoặc thiết bị nào. Công cụ cần Android SDK/ADB và phiên bản ggminh có MCP.
+
+Hướng dẫn: [docs/ANDROID_MCP_WINDOWS_AGENT.md](docs/ANDROID_MCP_WINDOWS_AGENT.md). Chưa có nghiệm thu Android emulator thực trên Windows nên không tuyên bố chức năng Android hoàn thiện.
+
+---
+
 ## OpenCLI cho Windows — thao tác Chrome profile riêng, có phê duyệt
 
 Bản Computer Agent có thêm OpenCLI Browser Bridge **tùy chọn** để mở

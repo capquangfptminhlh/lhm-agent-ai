@@ -32,7 +32,7 @@ WINDOWS_TOOLS = {"windows_list","windows_snapshot","windows_screenshot",
                  "windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
-ALLOWED_TOOLS = {"opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
+ALLOWED_TOOLS = {"android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
 PAUSED = False
 MUTATIONS = {"opencli_click","opencli_fill","write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
@@ -49,7 +49,7 @@ class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
     run_id: str | None = Field(default=None,pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    tool: Literal["opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
+    tool: Literal["android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
                   "windows_list","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_click_element","windows_type","windows_scroll",
@@ -250,6 +250,9 @@ async def perform(req: ToolRequest) -> dict:
             raise HTTPException(503,"Windows native control is not available")
         return __native_tool(tool,args)
     _home(ws,role)
+    if tool.startswith("android_mcp_"):
+        from android_mcp_bridge import execute as android_mcp_execute
+        return await android_mcp_execute(role,tool,args)
     if tool.startswith("opencli_"):
         from opencli_windows_bridge import execute as opencli_execute
         return await opencli_execute(ws,role,tool,args,run_id=req.run_id)
@@ -365,6 +368,20 @@ async def health(authorization: str | None = Header(None)):
             "agent_isolation":"directories_not_vms",
             "agent_reach_cli_installed":bool(shutil.which("agent-reach")),
             "tools":sorted(ALLOWED_TOOLS)}
+
+@runner.get("/v1/android-mcp/status")
+async def android_mcp_status(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from android_mcp_bridge import allowed_roles, allowed_serials, configured
+    roles=sorted(allowed_roles())
+    enabled=os.getenv("LHM_ANDROID_MCP_ENABLED")=="1"
+    ready=bool(enabled and roles and allowed_serials() and
+               any(configured(r) for r in roles))
+    return {"enabled":enabled,"ready":ready,"allowedRoles":roles,
+            "allowedDeviceCount":len(allowed_serials()),
+            "detail":("Configured and local MCP entry exists" if ready
+                      else "Disabled, unconfigured or MCP entry unavailable")}
+
 
 @runner.get("/v1/opencli/status")
 async def opencli_status(authorization: str | None = Header(None)):
