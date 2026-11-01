@@ -9,6 +9,8 @@ on:
       - 'computer_executor.py'
       - 'computer_agent.py'
       - 'android_mcp_bridge.py'
+      - 'android_mcp_actions.py'
+      - 'tests/test_android_mcp_actions.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
       - 'repo_agent_bindings.py'
@@ -54,6 +56,8 @@ on:
       - 'computer_executor.py'
       - 'computer_agent.py'
       - 'android_mcp_bridge.py'
+      - 'android_mcp_actions.py'
+      - 'tests/test_android_mcp_actions.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
       - 'repo_agent_bindings.py'
@@ -122,7 +126,9 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*native.py" -v
 
       - name: Verify Android MCP deny-by-default policies and subprocess safety
-        run: python -m unittest discover -s tests -p "test_android_mcp_bridge.py" -v
+        run: |
+          python -m unittest discover -s tests -p "test_android_mcp_bridge.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_actions.py" -v
 
       - name: Run real Windows UI Automation click acceptance (isolated fixture)
         shell: pwsh
@@ -183,7 +189,7 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --hidden-import opencli_windows_bridge --hidden-import opencli_diagnostics --hidden-import android_mcp_bridge --collect-all agent_reach --collect-all yt_dlp --hidden-import windows_public_video --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --hidden-import opencli_windows_bridge --hidden-import opencli_diagnostics --hidden-import android_mcp_bridge --hidden-import android_mcp_actions --collect-all agent_reach --collect-all yt_dlp --hidden-import windows_public_video --collect-submodules pywinauto desktop/runtime.py
 
       - name: Verify Windows Agent-Reach real public GitHub search using source runtime
         shell: pwsh
