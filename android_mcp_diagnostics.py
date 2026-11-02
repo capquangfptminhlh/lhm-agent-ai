@@ -18,7 +18,7 @@ async def inspect_status() -> dict:
     roles=sorted(allowed_roles())
     serials=allowed_serials()
     enabled=os.getenv("LHM_ANDROID_MCP_ENABLED")=="1"
-    permitted=next((role for role in roles if configured(role)),None)
+    permitted=next((role for role in roles if configured(role)),None) if enabled else None
     result={
         "enabled":enabled,
         "configured":bool(permitted),
