@@ -185,6 +185,12 @@ async def execute(role: str, tool: str, args: dict[str, Any],
         from android_mcp_actions import prepare
         observation=prepare(role,run_id,args["serial"],result)
         if observation:
-            result["observation_id"]=observation
-            result["expires_in_seconds"]=300
+            # Computer Agent keeps only the first 1800 chars of each prior
+            # result in its LLM context. Put the one-time token FIRST, before
+            # any long list of UI nodes, or approved taps cannot be proposed.
+            result={
+                "observation_id":observation,
+                "expires_in_seconds":300,
+                **result
+            }
     return result
