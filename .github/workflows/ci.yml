@@ -23,6 +23,8 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
+      - name: Validate manual live Team Chat entrypoint without calling API
+        run: python -m py_compile scripts/team_chat_live_acceptance.py
       - name: Run tests (no production credentials)
         env:
           LHM_DB_PATH: ${{ runner.temp }}/lhm-agent-os-test.sqlite3
