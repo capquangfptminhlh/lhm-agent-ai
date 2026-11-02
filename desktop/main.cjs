@@ -470,15 +470,18 @@ function settingsIPC(){
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
     try {
-      const response=await backendFetch(NATIVE_ORIGIN+"/v1/android-mcp/status",runnerToken);
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/android-mcp/status",runnerToken,"GET",null,65000);
       if(response.status!==200)throw Error("Android MCP status unavailable");
       const data=JSON.parse(response.text);
-      if(typeof data.ready!=="boolean" || !Array.isArray(data.allowedRoles))
+      if(typeof data.ready!=="boolean" || !Array.isArray(data.allowedRoles) ||
+         typeof data.connectionChecked!=="boolean" || !Array.isArray(data.devices))
         throw Error("Invalid MCP status");
       return data;
     } catch {
-      return {ready:false,enabled:false,allowedRoles:[],
-        allowedDeviceCount:0,detail:"Android MCP status unavailable"};
+      return {ready:false,configured:false,enabled:false,connectionChecked:false,
+        mcpConnected:false,avdConnected:false,uiReadable:false,uiActionableCount:0,
+        devices:[],allowedRoles:[],allowedDeviceCount:0,
+        detail:"runner-unavailable-or-timeout"};
     }
   });
   ipcMain.handle("settings:test-openrouter",async event=>{
