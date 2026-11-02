@@ -186,6 +186,11 @@ def create_computer_run(ws: str, inp: ComputerRunIn):
             raise HTTPException(403,"Trusted mode is not enabled on this installation")
     elif inp.max_steps>MAX_STEPS:
         raise HTTPException(422,"Supervised runs are limited to 15 steps; longer runs require trusted mode")
+    # Match the fixed Work Order policy: Free-only desktops must never
+    # create a Computer Run pointing at a paid/default DeepSeek model.
+    from openrouter_provider import validate_model
+    selected_model = "openrouter/free" if os.environ.get("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
+    validate_model(selected_model)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if not workspace(c,ws):
@@ -201,7 +206,7 @@ def create_computer_run(ws: str, inp: ComputerRunIn):
         c.execute("""INSERT INTO computer_runs
           (id,workspace_id,role,objective,model,status,max_steps,created_at,updated_at,idempotency_key,mode)
           VALUES(?,?,?,?,?,'queued',?,?,?,?,?)""",
-          (rid,ws,inp.role,inp.objective,MODEL,inp.max_steps,now(),now(),inp.idempotency_key,inp.mode))
+          (rid,ws,inp.role,inp.objective,selected_model,inp.max_steps,now(),now(),inp.idempotency_key,inp.mode))
         audit(c,ws,"computer.started",f"{inp.role}: sandbox computer task created ({inp.mode})",rid)
         return {**_view(c,_get(c,rid)),"deduplicated":False}
 
