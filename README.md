@@ -91,6 +91,19 @@ Toàn bộ 16 Agent cố định đã có thể tạo Computer Run từ một Wo
 `/agents/runtime-pilot/ui`. Mỗi Agent chia sẻ **một lõi Computer Runner**, nhưng
 mỗi lượt được ràng buộc chặt với đúng vai trò và Work Order gốc.
 
+**Giao diện sử dụng dễ hơn:** mở `/agent-work` trong Robot, giao một nhiệm
+vụ cố định rồi bấm **Cho Agent làm tiếp bằng Computer (giám sát)**. Nút này
+tạo một Computer Run dùng lại chính Work Order và idempotency ở backend; bấm
+lại không tạo lượt thứ hai. **Xem tiến độ Computer** đọc trạng thái thật,
+hiện các bước công cụ và khi cần phê duyệt/đối soát. Liên kết **Mở Computer
+để duyệt** dẫn tới màn giám sát hành động. Ở chiến dịch 16 Agent, anh chọn
+nút **Mở <vai trò>** để xem riêng nhiệm vụ và khởi tạo Computer từng người;
+không tự động bật 16 Computer Run cùng lúc.
+
+CI chạy Chrome thật với API/SQLite tạm, không có model key: tạo Work Order,
+bấm Computer, xác nhận dedupe và chọn từng Agent của Fleet. Kiểm thử này
+**không** chứng minh API/Chrome/Android thực sự kết nối với tài khoản của anh.
+
 - **Content / Sales / Quality:** giữ bộ công cụ trình duyệt đã có, bắt buộc
   whitelist host riêng; click/fill có kiểm soát và những thao tác nhạy cảm
   vẫn đợi người quản trị phê duyệt.

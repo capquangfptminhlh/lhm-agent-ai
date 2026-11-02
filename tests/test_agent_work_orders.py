@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -165,6 +168,49 @@ class FixedAgentWorkTests(unittest.TestCase):
                          json={"objective":"abc","idempotency_key":"demo-long-key"}).status_code,422)
         self.assertEqual(self.client.get("/workspaces/demo/agent-work-orders/bad").status_code,404)
 
+    def test_work_order_to_computer_direct_ui_backend_without_llm_or_writes(self):
+        body={"objective":"Director phân tích kế hoạch cửa hàng giả lập có ràng buộc",
+              "context":"Chỉ dữ liệu giả lập",
+              "idempotency_key":"director-computer-ui-2026"}
+        source=self.client.post("/workspaces/demo/agents/director/work-orders",json=body)
+        self.assertEqual(source.status_code,201,source.text)
+        oid=source.json()["id"]
+        url="/workspaces/demo/agent-work-orders/"+oid
+        first=self.client.post(url+"/computer-pilot",json={"max_steps":10})
+        self.assertEqual(first.status_code,201,first.text)
+        run=first.json()
+        self.assertEqual(run["role"],"director")
+        self.assertEqual(run["model"],"openrouter/free")
+        self.assertEqual(run["status"],"queued")
+        self.assertEqual(run["work_order_id"],oid)
+        view=self.client.get(url+"/execution")
+        self.assertEqual(view.status_code,200,view.text)
+        self.assertEqual(view.json()["computer_run_id"],run["id"])
+        self.assertEqual(view.json()["computer_status"],"queued")
+        self.assertFalse(view.json()["verified_external_completion"])
+        repeat=self.client.post(url+"/computer-pilot",json={"max_steps":10})
+        self.assertEqual(repeat.status_code,201,repeat.text)
+        self.assertEqual(repeat.json()["id"],run["id"])
+        self.assertTrue(repeat.json()["deduplicated"])
+        with core.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM computer_runs").fetchone()[0],1)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM computer_steps").fetchone()[0],0)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0],0)
+
+    def test_agent_work_inline_javascript_syntax(self):
+        node=shutil.which("node")
+        if not node:
+            self.skipTest("Node runtime is unavailable")
+        content=self.client.get("/agent-work").text
+        script=re.search(r"<script>(.*?)</script>",content,re.S)
+        self.assertIsNotNone(script)
+        with tempfile.TemporaryDirectory(prefix="lhm-js-check-") as directory:
+            path=Path(directory)/"agent-work.js"
+            path.write_text(script.group(1),encoding="utf-8")
+            result=subprocess.run([node,"--check",str(path)],
+                                  capture_output=True,text=True,timeout=15)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_html_is_local_no_source_repos_executed(self):
         r=self.client.get("/agent-work")
         self.assertEqual(r.status_code,200)
@@ -172,6 +218,12 @@ class FixedAgentWorkTests(unittest.TestCase):
         self.assertIn('id="submit"',text)
         self.assertIn('id="role"',text)
         self.assertIn('id="wpDraft"',text)
+        self.assertIn('id="computerStart"',text)
+        self.assertIn('id="computerRefresh"',text)
+        self.assertIn('id="computerStatus"',text)
+        self.assertIn('id="fleetOrders"',text)
+        self.assertIn("/computer-pilot",text)
+        self.assertIn("/execution",text)
         self.assertIn("wordpress.create_post",text)
         self.assertNotIn("eval(",text)
         self.assertNotIn("innerHTML",text)
