@@ -51,6 +51,7 @@ def main(argv=None):
         import computer_executor
         import agent_runtime_pilot
         import agent_reach_bridge
+        from agent_reach.runtime.cli import main as agent_reach_main
         import android_mcp_actions
         import android_mcp_bridge
         import opencli_windows_bridge
@@ -67,7 +68,12 @@ def main(argv=None):
         assert "vision_observe" in computer_agent.TOOLS
         assert "vision_locate" in computer_agent.TOOLS
         assert "sandbox_run" in computer_agent.TOOLS
-        print("LHM Windows runtime imports PASS",flush=True)
+        # Offline check: the real packaged third-party CLI is importable and
+        # our channel/argument contract accepts the public search operation.
+        # Live GitHub availability is tested separately in an advisory CI probe.
+        assert callable(agent_reach_main)
+        assert agent_reach_bridge.validate("research", {"channel": "github", "query": "agent tools"}) == ("github", "agent tools")
+        print("LHM Windows runtime imports and Agent-Reach CLI contract PASS",flush=True)
         return
     if mode=="api":
         import uvicorn
