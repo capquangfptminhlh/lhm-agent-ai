@@ -12,6 +12,8 @@ on:
       - 'android_mcp_actions.py'
       - 'tests/test_android_mcp_actions.py'
       - 'tests/test_android_mcp_approval.py'
+      - 'scripts/android_agent_live_acceptance.py'
+      - 'tests/test_android_agent_live_acceptance.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
       - 'repo_agent_bindings.py'
@@ -63,6 +65,8 @@ on:
       - 'android_mcp_actions.py'
       - 'tests/test_android_mcp_actions.py'
       - 'tests/test_android_mcp_approval.py'
+      - 'scripts/android_agent_live_acceptance.py'
+      - 'tests/test_android_agent_live_acceptance.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
       - 'repo_agent_bindings.py'
@@ -138,6 +142,7 @@ jobs:
           python -m unittest discover -s tests -p "test_android_mcp_bridge.py" -v
           python -m unittest discover -s tests -p "test_android_mcp_actions.py" -v
           python -m unittest discover -s tests -p "test_android_mcp_approval.py" -v
+          python -m unittest discover -s tests -p "test_android_agent_live_acceptance.py" -v
 
       - name: Run real Windows UI Automation click acceptance (isolated fixture)
         shell: pwsh
