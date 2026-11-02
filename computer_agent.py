@@ -138,9 +138,69 @@ def _steps(c: sqlite3.Connection, rid: str) -> list[dict[str,Any]]:
         out.append(d)
     return out
 
+def _android_tap_preview(args: dict, steps: list[dict]) -> dict:
+    """Only authorize a tap with a real prior UI inspection IN THIS RUN.
+
+    The preview is geometry/role only; MCP intentionally never leaks labels.
+    It is used in both the proposal/approved-step gates and human UI.
+    """
+    if not isinstance(args,dict) or set(args)!={"serial","observation_id","index"}:
+        raise HTTPException(422,"Android tap requires exact observed serial, token and index")
+    serial=args["serial"]
+    token=args["observation_id"]
+    index=args["index"]
+    if (not isinstance(serial,str) or
+            not re.fullmatch(r"emulator-[0-9]{4,5}",serial) or
+            not isinstance(token,str) or not re.fullmatch(r"[0-9a-f]{32}",token) or
+            type(index) is not int or not 1<=index<=120):
+        raise HTTPException(422,"Invalid Android observed target")
+    for step in reversed(steps):
+        if (step.get("tool")!="android_mcp_inspect" or
+                step.get("status")!="completed" or
+                (step.get("args") or {}).get("serial")!=serial):
+            continue
+        result=step.get("result")
+        if (not isinstance(result,dict) or
+                result.get("observation_id")!=token or
+                result.get("privacy")!="geometry-only" or
+                result.get("read_only") is not True):
+            continue
+        elements=result.get("elements")
+        if not isinstance(elements,list):
+            break
+        for element in elements:
+            if not isinstance(element,dict) or element.get("index")!=index:
+                continue
+            bounds=element.get("bounds")
+            if not isinstance(bounds,dict) or set(bounds)!={"x","y","width","height"}:
+                break
+            if (any(type(bounds.get(key)) is not int or
+                    not 0<=bounds[key]<=8192 for key in bounds) or
+                    bounds["width"]==0 or bounds["height"]==0):
+                break
+            role=element.get("role")
+            if role not in ("button","text-input","toggle","picker","slider",
+                            "interactive-view"):
+                role="interactive-view"
+            hint=element.get("hint")
+            if hint not in ("back","home","search","menu","close","next"):
+                hint=None
+            return {"serial":serial,"index":index,"role":role,
+                    "hint":hint,"bounds":bounds,
+                    "label_available":False,"requires_owner_review":True}
+        break
+    raise HTTPException(409,"Android tap needs a matching prior UI inspection in this Computer run")
+
+
 def _view(c, row) -> dict[str,Any]:
     out=dict(row)
     out["steps"]=_steps(c,row["id"])
+    for step in out["steps"]:
+        if step["tool"]=="android_mcp_tap":
+            try:
+                step["tap_preview"]=_android_tap_preview(step["args"],out["steps"])
+            except HTTPException:
+                step["tap_preview"]=None
     out["runner_configured"]=bool(os.getenv("LHM_COMPUTER_RUNNER_TOKEN",""))
     return out
 
@@ -639,6 +699,8 @@ async def computer_tick(rid: str) -> dict[str,Any]:
             if tool.startswith("android_mcp_"):
                 from android_mcp_bridge import validate as validate_android_mcp
                 validate_android_mcp(run["role"],tool,args)
+                if tool=="android_mcp_tap":
+                    _android_tap_preview(args,steps)
             if tool.startswith("opencli_"):
                 from opencli_windows_bridge import validate as validate_opencli
                 validate_opencli(run["role"],tool,args)
@@ -671,6 +733,8 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         if tool.startswith("android_mcp_"):
             from android_mcp_bridge import validate as validate_android_mcp
             validate_android_mcp(run["role"],tool,args)
+            if tool=="android_mcp_tap":
+                _android_tap_preview(args,steps)
         if tool.startswith("opencli_"):
             from opencli_windows_bridge import validate as validate_opencli
             validate_opencli(run["role"],tool,args)
