@@ -195,10 +195,10 @@ def _android_tap_preview(args: dict, steps: list[dict]) -> dict:
 def _view(c, row) -> dict[str,Any]:
     out=dict(row)
     out["steps"]=_steps(c,row["id"])
-    for step in out["steps"]:
+    for position,step in enumerate(out["steps"]):
         if step["tool"]=="android_mcp_tap":
             try:
-                step["tap_preview"]=_android_tap_preview(step["args"],out["steps"])
+                step["tap_preview"]=_android_tap_preview(step["args"],out["steps"][:position])
             except HTTPException:
                 step["tap_preview"]=None
     out["runner_configured"]=bool(os.getenv("LHM_COMPUTER_RUNNER_TOKEN",""))
@@ -308,6 +308,9 @@ def approve_computer_step(rid: str,sid: str):
         step=c.execute("SELECT * FROM computer_steps WHERE id=? AND run_id=?",(sid,rid)).fetchone()
         if not step or step["status"]!="awaiting_approval" or r["status"]!="awaiting_approval":
             raise HTTPException(409,"Không có lệnh phù hợp đang chờ duyệt")
+        if step["tool"]=="android_mcp_tap":
+            prior=[x for x in _steps(c,rid) if x["number"]<step["number"]]
+            _android_tap_preview(json.loads(step["args_json"]),prior)
         c.execute("UPDATE computer_steps SET status='approved',updated_at=? WHERE id=?",(now(),sid))
         c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.step_approved",f"{step['tool']} approved for sandbox runner",rid)
