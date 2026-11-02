@@ -71,6 +71,18 @@ class ComputerAgentTests(unittest.TestCase):
         self.assertEqual(conflict.status_code,409)
         self.assertEqual(len(self.client.get("/workspaces/demo/computer/runs").json()["runs"]),1)
 
+    def test_free_only_computer_run_uses_openrouter_free_model(self):
+        # Regression: Work Orders and their Computer Runs must agree on
+        # Free-only policy even when the default MODEL is DeepSeek.
+        with patch.dict(os.environ, {"LHM_OPENROUTER_FREE_ONLY": "1",
+                                     "OPENROUTER_API_KEY": "offline-test-key"}):
+            run=self.create(role="director",
+                            objective="Đọc dữ liệu có sẵn và trả báo cáo kiểm tra",
+                            key="computer-free-only-model-001")
+            self.assertEqual(run["model"], "openrouter/free")
+            saved=self.client.get("/computer/runs/"+run["id"]).json()
+            self.assertEqual(saved["model"], "openrouter/free")
+
     def test_llm_observation_action_approval_execution_and_finish(self):
         r=self.create()
         url="/computer/runs/"+r["id"]+"/tick"
