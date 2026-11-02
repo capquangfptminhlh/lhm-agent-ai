@@ -72,13 +72,18 @@ def _claim(role: str,run_id: str | None,args: dict) -> dict:
     return {"serial":serial,"index":index,"snapshot":record["snapshot"]}
 
 def _adb_binary() -> str:
-    sdk=os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
-    if not sdk or not Path(sdk).is_absolute():
-        raise HTTPException(503,"Android SDK location must be configured on Windows")
-    binary=Path(sdk)/"platform-tools"/"adb.exe"
-    if not binary.is_file() or binary.is_symlink():
-        raise HTTPException(503,"Android SDK adb.exe not installed or not a regular file")
-    return str(binary)
+    """Find one real SDK ADB binary, never a model-supplied command/PATH hit."""
+    candidates=[os.environ.get("ANDROID_SDK_ROOT"),os.environ.get("ANDROID_HOME")]
+    local=os.environ.get("LOCALAPPDATA")
+    if local:
+        candidates.append(str(Path(local)/"Android"/"Sdk"))
+    for sdk in candidates:
+        if not sdk or not Path(sdk).is_absolute():
+            continue
+        binary=Path(sdk)/"platform-tools"/"adb.exe"
+        if binary.is_file() and not binary.is_symlink():
+            return str(binary)
+    raise HTTPException(503,"Android SDK adb.exe not found in configured or standard Windows SDK locations")
 
 async def _send_tap(serial: str,x: int,y: int) -> None:
     executable=_adb_binary()
