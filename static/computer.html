@@ -133,11 +133,21 @@ function renderSelected(){
  $("steps").innerHTML=r?.steps?.length?r.steps.map(step=>{
  const approval=step.status==="awaiting_approval";
  const args=step.args||{};
+ const tap=step.tool==="android_mcp_tap";
+ const preview=tap?step.tap_preview:null;
+ const heading=tap?'<p class="meta" style="color:#aa3e4d"><strong>Android: hành động có thể không hoàn tác.</strong> MCP đã ẩn nội dung chữ. Trước khi duyệt, anh phải nhìn AVD thật và xác nhận đúng vị trí nút.</p>':'';
+ const previewHtml=tap?(preview?
+   '<div class="meta">Đã đối chiếu bước quét UI trước đó · Máy ảo '+esc(preview.serial)+
+   ' · Nút #'+esc(preview.index)+' · Loại '+esc(preview.role)+
+   ' · Gợi ý '+esc(preview.hint||"không có")+
+   ' · Tâm ('+esc(preview.bounds.x)+', '+esc(preview.bounds.y)+')</div>':
+   '<p class="meta" style="color:#aa3e4d">Không tìm thấy bằng chứng nút từ lần quét UI trước của chính phiên này. Không thể duyệt thao tác.</p>'):'';
  return '<div class="step '+(approval?"approval":"")+'"><div class="line between"><strong>#'+step.number+' · '+esc(step.tool)+'</strong>'+status(step.status)+'</div>'+
+ heading+previewHtml+
  '<details open><summary class="meta">Tham số lệnh (chỉ thực thi trong sandbox)</summary><pre>'+bytes(args)+'</pre></details>'+
  (step.result?'<details><summary class="meta">Kết quả thực</summary><pre>'+bytes(step.result)+'</pre></details>':'')+
  (step.error?'<p style="color:#aa3e4d">'+esc(step.error)+'</p>':'')+
- (approval?'<div class="line"><button class="btn" data-approve="'+esc(step.id)+'">✓ Duyệt thao tác</button><button class="btn danger" data-reject="'+esc(step.id)+'">✕ Từ chối</button></div>':'')+'</div>'
+ (approval?'<div class="line"><button class="btn" data-approve="'+esc(step.id)+'"'+(tap&&!preview?' disabled':'')+'>✓ Duyệt thao tác</button><button class="btn danger" data-reject="'+esc(step.id)+'">✕ Từ chối</button></div>':'')+'</div>'
  }).join(""):'<div class="empty">Chưa chạy công cụ nào</div>';
  $("steps").querySelectorAll("[data-approve]").forEach(x=>x.onclick=()=>approval(x.dataset.approve,true));
  $("steps").querySelectorAll("[data-reject]").forEach(x=>x.onclick=()=>approval(x.dataset.reject,false));
@@ -145,8 +155,15 @@ function renderSelected(){
 async function approval(id,yes){
  const r=runs.find(x=>x.id===selected),step=r?.steps.find(x=>x.id===id);if(!r||!step)return;
  if(yes){
- const message=step.tool==="android_mcp_tap"
-   ? "Chạm MỘT LẦN trên máy Android ảo? LHM sẽ quét lại nút đã chọn. Hành động có thể gửi dữ liệu trong ứng dụng, không có hoàn tác tự động. Sau khi chạm, anh phải đối soát kết quả trên AVD."
+ const tap=step.tool==="android_mcp_tap";
+ if(tap&&!step.tap_preview){report("Không có bằng chứng nút Android từ bước quét trước.",true);return;}
+ const preview=step.tap_preview;
+ const message=tap
+   ? "Anh đã đối chiếu trên AVD thật?\\nMáy: "+preview.serial+"\\nNút #"+preview.index+
+     " / "+preview.role+" / "+(preview.hint||"không rõ nội dung")+
+     " / tọa độ ("+preview.bounds.x+", "+preview.bounds.y+")"+
+     "\\nNội dung nút không được MCP tiết lộ; thao tác có thể thay đổi dữ liệu trong ứng dụng."+
+     "\\nXác nhận chạm MỘT LẦN, sau đó PHẢI đối soát kết quả? (Mã quan sát có thể hết hạn)"
    : "Cho phép "+step.tool+" với chính xác tham số đang hiển thị? Hành động này có thể thay đổi file hoặc website.";
  if(!confirm(message))return;
 }
@@ -165,7 +182,14 @@ $("oneTick").onclick=async()=>{
 $("stop").onclick=async()=>{if(!selected||!confirm("Hủy phiên làm việc này?"))return;try{await api("/computer/runs/"+encodeURIComponent(selected)+"/cancel",{method:"POST"});await loadRuns()}catch(e){report(e.message,true)}};
 $("checkpoint").onclick=async()=>{if(!selected||!confirm("Đã xem lại tiến độ phiên Tin cậy này? Duyệt checkpoint sẽ cho Agent chạy tiếp."))return;try{await api("/computer/runs/"+encodeURIComponent(selected)+"/checkpoint/approve",{method:"POST"});report("Đã duyệt checkpoint. Worker sẽ chạy tiếp.");await loadRuns()}catch(e){report(e.message,true)}};
 $("reconcile").onclick=async()=>{
- if(!selected||!confirm("Anh đã mở Chrome profile riêng, đối chiếu kết quả thao tác trên website thực tế? Thao tác xác nhận này CHỈ cho Agent chạy tiếp, KHÔNG xác minh đã đăng/gửi thành công. Không bấm nếu chưa kiểm tra."))return;
+ if(!selected)return;
+ const current=runs.find(x=>x.id===selected);
+ const last=current?.steps?.[current.steps.length-1];
+ const android=last?.tool==="android_mcp_tap";
+ const prompt=android
+   ? "Anh đã kiểm tra lại AVD thật sau cú chạm? Xác nhận chỉ cho Agent chạy tiếp, KHÔNG chứng minh nút đã thực hiện thành công. Nếu chưa kiểm tra, chọn Hủy."
+   : "Anh đã mở Chrome profile riêng, đối chiếu kết quả thao tác trên website thực tế? Thao tác xác nhận này CHỈ cho Agent chạy tiếp, KHÔNG xác minh đã đăng/gửi thành công. Không bấm nếu chưa kiểm tra.";
+ if(!confirm(prompt))return;
  try{await api("/computer/runs/"+encodeURIComponent(selected)+"/reconciliation/acknowledge",{method:"POST"});
  report("Đã ghi nhận người quản trị kiểm tra. Hiệu lực trên website vẫn CHƯA XÁC MINH.");await loadRuns()}
  catch(e){report(e.message,true)}
