@@ -76,10 +76,10 @@ class SharedAgentPilotTests(unittest.TestCase):
             json={"channel_ids":channels or ["channel-1"],"mode":mode,
                   "idempotency_key":key})
 
-    def test_three_profiles_have_disjoint_tool_scopes_and_no_verified_claim(self):
+    def test_sixteen_profiles_keep_least_privilege_and_no_verified_claim(self):
         r=self.client.get("/agents/runtime-pilot")
         self.assertEqual(r.status_code,200,r.text)
-        self.assertEqual({x["role"] for x in r.json()["roles"]},{"content","sales","quality"})
+        self.assertEqual({x["role"] for x in r.json()["roles"]},set(core.ROLES))
         self.assertFalse(r.json()["tenant_isolation_proven"])
         self.assertFalse(r.json()["verified_live"])
         profiles={x["role"]:x for x in r.json()["roles"]}
@@ -88,6 +88,56 @@ class SharedAgentPilotTests(unittest.TestCase):
         self.assertNotIn("write_file",profiles["content"]["tools"])
         self.assertTrue(all(x["memory_scope"]=="workspace/role" for x in profiles.values()))
         self.assertNotIn("mock-postiz-key",r.text)
+        self.assertEqual(profiles["content"]["execution_scope"],"supervised_browser")
+        for role in set(core.ROLES)-{"content","sales","quality"}:
+            self.assertEqual(profiles[role]["execution_scope"],"read_only_workspace")
+            self.assertTrue({"list_files","read_file"} <= set(profiles[role]["tools"]))
+            self.assertFalse({"browser_open","browser_click","browser_fill",
+                              "opencli_click","opencli_fill","android_mcp_tap",
+                              "run_command","write_file","windows_click"} &
+                             set(profiles[role]["tools"]))
+            self.assertFalse(profiles[role]["verified_live"])
+
+    def test_all_16_fixed_roles_bind_real_computer_runs_with_role_fence(self):
+        # Actual API/database bind for every role. Neither a model nor a
+        # provider is called merely because the Work Order was created.
+        for role in core.ROLES:
+            with self.subTest(role=role):
+                order=self.create_order(role,key="pilot-readonly-"+role+"-2026")
+                url="/workspaces/demo/agent-work-orders/"+order["id"]+"/computer-pilot"
+                response=self.client.post(url,json={"max_steps":5})
+                self.assertEqual(response.status_code,201,response.text)
+                run=response.json()
+                self.assertEqual(run["role"],role)
+                self.assertEqual(run["work_order_id"],order["id"])
+                self.assertEqual(pilot.pilot_role_for_run(run["id"]),role)
+                self.assertEqual(self.client.post(url,json={"max_steps":5}).json()["id"],run["id"])
+                pilot.assert_pilot_action(run,"list_files",{"path":"."})
+                if role not in ("content","sales","quality"):
+                    for forbidden,args in (
+                        ("browser_open",{"url":"https://example.com"}),
+                        ("browser_click",{"selector":"button"}),
+                        ("android_mcp_tap",{"serial":"emulator-5554"}),
+                        ("windows_click",{"hwnd":1,"x":10,"y":10}),
+                        ("write_file",{"path":"data.txt","content":"changed"}),
+                    ):
+                        with self.assertRaises(Exception):
+                            pilot.assert_pilot_action(run,forbidden,args)
+        with core.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM pilot_computer_runs").fetchone()[0],16)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0],0)
+
+    def test_new_read_only_specialist_denied_before_runner_is_called(self):
+        order=self.create_order("director",key="pilot-director-deny-2026")
+        run=self.client.post("/workspaces/demo/agent-work-orders/"+order["id"]+
+                             "/computer-pilot",json={"max_steps":5}).json()
+        with patch.object(computer,"_next_action",new=AsyncMock(return_value=(
+                "browser_click",{"selector":"#submit"}))):
+            with patch.object(computer,"runner_call",new=AsyncMock()) as runner:
+                result=self.client.post("/computer/runs/"+run["id"]+"/tick")
+                self.assertEqual(result.status_code,200,result.text)
+                self.assertEqual(result.json()["status"],"needs_review")
+                runner.assert_not_awaited()
 
     def test_computer_work_order_binding_and_real_rbac_on_executor(self):
         order=self.create_order()
