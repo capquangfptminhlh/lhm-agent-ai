@@ -60,6 +60,16 @@ jobs:
         run: python -m scripts.smoke_computer_browser
       - name: Smoke-test real Team Chat in headless Chrome
         run: python scripts/smoke_team_chat.py
+      - name: Smoke-test real Agent Work to Computer Pilot UI (no model key)
+        run: python scripts/smoke_agent_work_computer.py
+      - name: Upload Agent Work Computer screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-work-computer-chrome-screenshot
+          path: agent-work-computer-browser-smoke.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload Team Chat screenshot for visual QA
         if: always()
         uses: actions/upload-artifact@v4
