@@ -50,6 +50,18 @@ Chỉ khi MCP/ADB trả dữ liệu thành công, AVD đã kết nối và có n
 
 Nếu anh vừa thay đổi thư mục `ggminh`, serial, role hoặc quyền chạm, hãy **lưu cấu hình và khởi động lại** Robot trước khi kiểm tra. Kết quả thực tế sẽ khác nhau tùy máy Windows và Android SDK. CI mặc định chỉ mô phỏng đường gọi MCP; vẫn cần chạy nút này trên AVD thật.
 
+## Kiểm tra giao thức thật Python ↔ Node trên GitHub Windows
+
+Windows CI có job **android-mcp-real-node-contract**. Khác với unittest mock, job này checkout bản `ggminh` đã cố định commit, chạy **Node MCP stdio thật** và gửi JSON-RPC từ Python Robot vào tiến trình Node. Nó kiểm tra handshake, danh sách tools chỉ đọc, phản hồi danh sách thiết bị và từ chối tool tap. Bộ thử dùng một serial sentinel không thuộc thiết bị thật, không khởi động AVD, không chạy tap hay nhận nội dung màn hình.
+
+Phân biệt ba mức bằng chứng:
+
+- **CI unittest/mock:** kiểm tra chính sách và luồng duyệt, không chứng minh giao thức thực.
+- **CI real-node-contract:** kiểm tra tiến trình Python ↔ Node MCP thật trên Windows, nhưng **không chứng minh ADB/AVD online**.
+- **Manual AVD acceptance:** workflow riêng `android-agent-live-windows.yml`, chỉ trên Windows self-hosted có Android SDK/virtualization và một AVD kiểm thử sạch, mới có thể chứng minh UI Android thực. Tùy chọn chạm Back là **NO mặc định**; chọn YES mới cho phép đúng một thao tác Back an toàn. Đó là quyết định chấp thuận theo từng lần chạy workflow, không phải hộp duyệt Computer Console.
+
+Không tuyên bố AVD thật đã PASS khi mới có kết quả CI Node MCP.
+
 ## Nghiệm thu Android thật từ LHM Robot qua ggminh MCP (mới)
 
 Đây là **bài test Android runtime thật**, không phải ảnh demo hay mock. Cần một **máy Windows self-hosted** được gắn nhãn GitHub Actions `android-sdk`, cài Android SDK, ADB, Node 22 và có AVD **kiểm thử riêng, không đăng nhập tài khoản thật**, đang chạy sẵn. Quy trình này **không tạo AVD**, không chạm hay thay đổi nội dung Android; nó chỉ đọc:

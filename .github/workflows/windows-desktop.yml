@@ -21,6 +21,7 @@ on:
       - 'tests/test_android_agent_live_acceptance.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
+      - 'tests/test_android_mcp_real_node.py'
       - 'repo_agent_bindings.py'
       - 'repo_agent_repair.py'
       - 'repo_agent_ai_patch.py'
@@ -84,6 +85,7 @@ on:
       - 'tests/test_android_agent_live_acceptance.py'
       - 'agent_runtime_pilot.py'
       - 'tests/test_android_mcp_bridge.py'
+      - 'tests/test_android_mcp_real_node.py'
       - 'repo_agent_bindings.py'
       - 'repo_agent_repair.py'
       - 'repo_agent_ai_patch.py'
@@ -130,6 +132,34 @@ permissions:
   contents: read
 
 jobs:
+  android-mcp-real-node-contract:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout LHM Robot under test
+        uses: actions/checkout@v4
+      - name: Checkout pinned ggminh MCP implementation
+        uses: actions/checkout@v4
+        with:
+          repository: capquangfptminhlh/ggminh
+          ref: ee68f681c63ffd2e077179a374bd02c32c81426a
+          path: ggminh
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install bridge protocol dependency only
+        run: python -m pip install "fastapi>=0.110,<1"
+      - name: Real Python-to-Node MCP stdio acceptance with zero device access
+        env:
+          LHM_TEST_GGMINH_DIR: ${{ github.workspace }}/ggminh
+        run: python -m unittest discover -s tests -p "test_android_mcp_real_node.py" -v
+
   build-windows-electron:
     runs-on: windows-latest
     timeout-minutes: 45
