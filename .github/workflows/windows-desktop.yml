@@ -157,7 +157,7 @@ jobs:
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Real Python-to-Node MCP stdio acceptance with zero device access
         env:
-          LHM_TEST_GGMINH_DIR: ${{ github.workspace }}\\ggminh
+          LHM_TEST_GGMINH_DIR: ${{ github.workspace }}/ggminh
         run: python -m unittest discover -s tests -p "test_android_mcp_real_node.py" -v
 
   build-windows-electron:
