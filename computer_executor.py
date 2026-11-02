@@ -372,17 +372,10 @@ async def health(authorization: str | None = Header(None)):
 @runner.get("/v1/android-mcp/status")
 async def android_mcp_status(authorization: str | None = Header(None)):
     _auth(authorization)
-    from android_mcp_bridge import allowed_roles, allowed_serials, configured
-    from android_mcp_actions import tap_enabled
-    roles=sorted(allowed_roles())
-    enabled=os.getenv("LHM_ANDROID_MCP_ENABLED")=="1"
-    ready=bool(enabled and roles and allowed_serials() and
-               any(configured(r) for r in roles))
-    return {"enabled":enabled,"ready":ready,"tapEnabled":tap_enabled(),
-            "allowedRoles":roles,
-            "allowedDeviceCount":len(allowed_serials()),
-            "detail":("Configured and local MCP entry exists" if ready
-                      else "Disabled, unconfigured or MCP entry unavailable")}
+    from android_mcp_diagnostics import inspect_status
+    # Real bounded MCP stdio/ADB reads on this Windows PC, never just
+    # an existence check for the Node script. No writes or screenshots.
+    return await inspect_status()
 
 
 @runner.get("/v1/opencli/status")
