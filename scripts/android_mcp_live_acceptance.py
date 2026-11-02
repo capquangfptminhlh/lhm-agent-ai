@@ -13,8 +13,14 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Awaitable, Callable
+
+# Running "python scripts/..." must work outside an editable pip install.
+ROOT=Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0,str(ROOT))
 
 from android_mcp_actions import _adb_binary
 from android_mcp_bridge import execute as mcp_execute, validate as mcp_validate
