@@ -139,6 +139,34 @@ class SharedAgentPilotTests(unittest.TestCase):
                 self.assertEqual(result.json()["status"],"needs_review")
                 runner.assert_not_awaited()
 
+    def test_read_only_director_computer_executes_observation_then_finishes_unverified(self):
+        # End-to-end API -> one real stored Computer step -> model finish.
+        # The runner response is mocked; no network call or external effect.
+        order=self.create_order("director",key="pilot-director-observation-2026")
+        run=self.client.post("/workspaces/demo/agent-work-orders/"+order["id"]+
+                             "/computer-pilot",json={"max_steps":5}).json()
+        tick="/computer/runs/"+run["id"]+"/tick"
+        observation={"entries":[{"name":"source-brief.txt","type":"file"}]}
+        with patch.object(computer,"_next_action",new=AsyncMock(
+                return_value=("list_files",{"path":"."}))):
+            with patch.object(computer,"runner_call",new=AsyncMock(
+                    return_value=observation)) as runner:
+                first=self.client.post(tick)
+                self.assertEqual(first.status_code,200,first.text)
+                self.assertEqual(first.json()["last_tool"],"list_files")
+                runner.assert_awaited_once()
+        with patch.object(computer,"_next_action",new=AsyncMock(
+                return_value=("finish",{"summary":"Đã xem danh sách file; cần chủ xác minh."}))):
+            finished=self.client.post(tick)
+            self.assertEqual(finished.status_code,200,finished.text)
+            self.assertEqual(finished.json()["status"],"completed_unverified")
+        stored=self.client.get("/computer/runs/"+run["id"]).json()
+        self.assertEqual(stored["steps"][0]["result"],observation)
+        self.assertEqual(stored["status"],"completed_unverified")
+        state=self.client.get("/workspaces/demo/agent-work-orders/"+order["id"]+
+                              "/execution").json()
+        self.assertFalse(state["verified_external_completion"])
+
     def test_computer_work_order_binding_and_real_rbac_on_executor(self):
         order=self.create_order()
         url="/workspaces/demo/agent-work-orders/"+order["id"]+"/computer-pilot"
