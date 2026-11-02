@@ -216,7 +216,7 @@ async function loadFleet(){
    button.type="button";button.textContent="Mở "+entry.role;
    button.style.margin="4px";
    button.onclick=async()=>{
-    selectedOrder=entry.work_order_id;selectedRecord=null;selectedComputer=null;
+    selectedOrder=entry.order_id;selectedRecord=null;selectedComputer=null;
     $("role").value=entry.role;showProfession();
     await loadResult();
     $("report").scrollIntoView({behavior:"smooth",block:"center"});
