@@ -95,6 +95,43 @@ class AgentCollaborationTests(unittest.TestCase):
             self.assertEqual(c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],2)
             self.assertEqual(c.execute("SELECT COUNT(*) FROM team_messages").fetchone()[0],2)
 
+    def test_free_only_team_chat_uses_verified_free_model_across_handoffs(self):
+        # In Free-only installations, the static imported MODEL may still be
+        # DeepSeek. A real team session must not queue that paid-model default.
+        with patch.dict(os.environ, {"LHM_OPENROUTER_FREE_ONLY": "1",
+                                     "OPENROUTER_API_KEY": "offline-test-key"}):
+            with patch.object(team, "MODEL", "deepseek-flash"):
+                session=self.start(roles=["director","research","quality"],
+                                   idem="free-only-team-2026")
+                self.assertEqual(session["model"], "openrouter/free")
+                self.assertEqual(session["status"], "running")
+                with core.db() as c:
+                    first=c.execute("SELECT model,role,status FROM tasks WHERE id=?",
+                                    (session["active_task_id"],)).fetchone()
+                    self.assertEqual((first["model"],first["role"],first["status"]),
+                                     ("openrouter/free","director","queued"))
+                self.finish_task(session["active_task_id"],to="research")
+                followup=team.sync_team_session(session["id"])
+                self.assertEqual(followup["active_task"]["role"], "research")
+                with core.db() as c:
+                    second=c.execute("SELECT model,role FROM tasks WHERE id=?",
+                                     (followup["active_task_id"],)).fetchone()
+                    self.assertEqual((second["model"],second["role"]),
+                                     ("openrouter/free","research"))
+                    self.assertEqual(c.execute("SELECT COUNT(*) FROM tool_jobs").fetchone()[0],0)
+
+    def test_reject_invalid_default_model_before_team_session_is_inserted(self):
+        with patch.dict(os.environ, {"LHM_OPENROUTER_FREE_ONLY": "0"}):
+            with patch.object(team, "MODEL", "openrouter/example-paid"):
+                response=self.client.post("/workspaces/demo/team/sessions",json={
+                    "objective":"Phân tích kế hoạch trước khi bắt đầu công việc",
+                    "roles":["director","research"],
+                    "idempotency_key":"invalid-team-model-2026"})
+        self.assertEqual(response.status_code,422,response.text)
+        with core.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM team_sessions").fetchone()[0],0)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM tasks").fetchone()[0],0)
+
     def test_roles_invalid_and_untrusted_handoffs_cannot_escape_group(self):
         for roles in (["director"],["research","research"],["fake","quality"]):
             r=self.client.post("/workspaces/demo/team/sessions",json={
