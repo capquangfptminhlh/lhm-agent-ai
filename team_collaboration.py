@@ -9,6 +9,7 @@ through chat instructions.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -194,6 +195,12 @@ def team_chat_page():
 @router.post("/workspaces/{ws}/team/sessions",status_code=201)
 def create_team_session(ws: str, inp: TeamStartIn):
     prepare_db()
+    # A Team Chat is a real queued LLM workflow. Honor the same Free-only
+    # policy as Work Orders and Computer Runs, including model validation
+    # before inserting any session or paid-model task into SQLite.
+    from openrouter_provider import validate_model
+    model = "openrouter/free" if os.environ.get("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
+    validate_model(model)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         _validate_workspace(c,ws)
@@ -210,7 +217,7 @@ def create_team_session(ws: str, inp: TeamStartIn):
             (id,workspace_id,objective,context,roles_json,model,status,max_turns,
              idempotency_key,created_at,updated_at)
             VALUES(?,?,?,?,?,?,'running',?,?,?,?)""",
-            (sid,ws,inp.objective,inp.context,json.dumps(inp.roles),MODEL,
+            (sid,ws,inp.objective,inp.context,json.dumps(inp.roles),model,
              inp.max_turns,inp.idempotency_key,now(),now()))
         c.execute("""INSERT INTO team_messages
             (id,session_id,workspace_id,sender_role,recipient_role,kind,content,created_at)

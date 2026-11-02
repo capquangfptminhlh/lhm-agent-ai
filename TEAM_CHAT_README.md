@@ -93,6 +93,30 @@ The create route accepts `objective`, `roles`, optional `context`,
 `sync_ready_team_sessions()` once per cycle, including when no client
 has the page open.
 
+## Free-only model policy and live acceptance
+
+- Team Chat now persists `openrouter/free` for **every new session and
+  subsequent coworker task** when `LHM_OPENROUTER_FREE_ONLY=1`.
+  It never silently queues the default DeepSeek model in this mode.
+- Existing sessions keep their previously persisted model and are not
+  silently rewritten; start a new Team Chat if an old one was blocked
+  with a paid/default model. Check the session's `model` field.
+- GitHub Actions has a manual workflow **Team Chat Free-only live handoff
+  (manual, 2 calls)**. The owner must first configure a dedicated
+  `OPENROUTER_TEST_API_KEY` repository secret and explicitly check the
+  authorization box. No scheduled trigger or automatic live calls.
+- The manual workflow makes **exactly two real model completion attempts**,
+  Director then Quality, through the actual SQLite queue, worker task
+  executor and Team Chat handoff. A temporary isolated database and
+  fictional context are used; no email, browser, social posting, external
+  Tool Hub actions, real customers or production data are involved.
+  On quota, invalid JSON or provider failure the test reports failure,
+  without retry or fallback to a paid model. The output contains only
+  sanitized counts and status, never the API key or model replies.
+- Passing means the two model-driven handoffs were observed and persisted;
+  it does **not** mean all 16 roles passed a live provider test or that
+  work was externally delivered.
+
 ## Test plan
 
 `python -m unittest discover -s tests -v` covers role boundaries,
@@ -101,5 +125,5 @@ limits, stops, failure propagation, first-turn approval, and UI
 JavaScript syntax. CI Docker smoke checks both the chat page and
 team session API. Tests use offline fabricated task results **only
 inside isolated test databases**, never for user-facing production
-messages. Live multi-LLM cooperation with an account API key still
-requires an end-to-end pilot run on the owner's Windows machine.
+messages. A separate Windows-owner end-to-end run remains necessary for
+actual desktop accounts, browser profiles and physical device integration.

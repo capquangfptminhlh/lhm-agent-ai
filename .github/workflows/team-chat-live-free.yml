@@ -1,0 +1,32 @@
+name: Team Chat Free-only live handoff (manual, 2 calls)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_two_free_calls:
+        description: 'Authorize exactly TWO OpenRouter Free completion calls using OPENROUTER_TEST_API_KEY'
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  team-free-live:
+    if: ${{ inputs.confirm_two_free_calls == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify collaboration tests offline first
+        run: python -m unittest discover -s tests -p 'test_team_collaboration.py' -v
+      - name: Run two real Free-only Team Chat turns
+        env:
+          OPENROUTER_TEST_API_KEY: ${{ secrets.OPENROUTER_TEST_API_KEY }}
+        run: python scripts/team_chat_live_acceptance.py
