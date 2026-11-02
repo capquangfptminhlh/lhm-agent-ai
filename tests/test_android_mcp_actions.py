@@ -3,6 +3,8 @@ import asyncio
 import os
 import time
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException
@@ -127,6 +129,26 @@ class AndroidTapTests(unittest.TestCase):
         self.assertTrue(computer_agent._approval_required("android_mcp_tap",
                         {"mode":"trusted"}))
         self.assertEqual(bridge.TAP_TOOL,"android_mcp_tap")
+
+    def test_find_adb_from_standard_localappdata_sdk(self):
+        with tempfile.TemporaryDirectory(prefix="android-sdk-test-") as root:
+            adb=Path(root)/"Android"/"Sdk"/"platform-tools"/"adb.exe"
+            adb.parent.mkdir(parents=True)
+            adb.write_bytes(b"not-a-real-adb-fixture")
+            with patch.dict(os.environ,{
+                "ANDROID_SDK_ROOT":"",
+                "ANDROID_HOME":"",
+                "LOCALAPPDATA":root
+            }):
+                self.assertEqual(action._adb_binary(),str(adb))
+            adb.unlink()
+            with patch.dict(os.environ,{
+                "ANDROID_SDK_ROOT":"",
+                "ANDROID_HOME":"",
+                "LOCALAPPDATA":root
+            }):
+                with self.assertRaises(HTTPException):
+                    action._adb_binary()
 
     def test_bridge_validate_must_gate_tap(self):
         # Native Windows is mocked; actual hardware is separately required.
