@@ -110,7 +110,7 @@ def main() -> None:
                             const data=await (await fetch('/workspaces/demo/agent-fleets')).json();
                             return data.fleets[0];
                         }""")
-                        target=fleet["orders"][0]["work_order_id"]
+                        target=fleet["orders"][0]["order_id"]
                         assert target and target!=rid
                         page.locator("#fleetOrders button").first.click()
                         page.wait_for_function(
