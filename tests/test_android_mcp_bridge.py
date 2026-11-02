@@ -121,9 +121,9 @@ class AndroidBridgeTests(unittest.TestCase):
         fake=FakeProcess({"totalNodes":120,"elements":elements,
                           "privacy":"geometry-only","secret":text})
         async def spawn(*args,**kwargs):return fake
-        with patch.object(bridge,"native_desktop",return_value=True), \\
-             patch.object(bridge.asyncio,"create_subprocess_exec",side_effect=spawn), \\
-             patch.dict(os.environ,{"LHM_ANDROID_MCP_TAP_ENABLED":"1"}), \\
+        with patch.object(bridge,"native_desktop",return_value=True), \
+             patch.object(bridge.asyncio,"create_subprocess_exec",side_effect=spawn), \
+             patch.dict(os.environ,{"LHM_ANDROID_MCP_TAP_ENABLED":"1"}), \
              patch("android_mcp_actions.prepare",
                    return_value="a"*32):
             result=asyncio.run(bridge.execute("research","android_mcp_inspect",
