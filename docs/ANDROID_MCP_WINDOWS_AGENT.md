@@ -37,6 +37,29 @@ Lệnh tap này chạy trong **native Windows Runner**, không mở thêm công 
 - `cd desktop && npm test` — cấu hình, validation Windows, nguồn Node cố định và kiểm tra khác của Electron.
 - Kiểm thử trên GitHub chỉ chứng minh mã/đóng gói với mock. **Chưa được coi là Android thật hoạt động** khi workflow AVD tự-host `ggminh` chưa PASS.
 
+## Nghiệm thu Android thật từ LHM Robot qua ggminh MCP (mới)
+
+Đây là **bài test Android runtime thật**, không phải ảnh demo hay mock. Cần một **máy Windows self-hosted** được gắn nhãn GitHub Actions `android-sdk`, cài Android SDK, ADB, Node 22 và có AVD **kiểm thử riêng, không đăng nhập tài khoản thật**, đang chạy sẵn. Quy trình này **không tạo AVD**, không chạm hay thay đổi nội dung Android; nó chỉ đọc:
+
+- Xác minh ADB serial `emulator-XXXX` trùng đúng **tên AVD** được chọn.
+- Xác minh AVD đã khởi động hoàn tất qua `sys.boot_completed`.
+- Dùng **Python bridge thật của Robot → Node MCP thật của ggminh → ADB thật** để đọc danh sách thiết bị và cây UI đã xóa nội dung riêng tư.
+- Xác nhận chỉ serial được phép xuất hiện, serial khác bị từ chối và kết quả UI không chứa text/resource IDs/password.
+- Báo PASS chỉ khi có nút tương tác thật từ giao diện Android. Không chạy chạm Android, không chụp ảnh, không xuất raw UI XML và không upload dữ liệu thiết bị.
+
+Trên GitHub: mở **Actions → Android MCP Real Windows Acceptance (manual test AVD) → Run workflow** và nhập `avd_name` và `serial` đúng AVD đang chạy. Workflow không tự chạy trên GitHub-hosted Windows vì không thể coi môi trường mock là thiết bị Android đã nghiệm thu. Nếu thiếu self-hosted runner có nhãn `android-sdk`, job sẽ nằm trong hàng chờ, **không phải PASS**.
+
+Cũng có thể chạy thủ công trong bản clone LHM Robot Desktop (PowerShell):
+
+```powershell
+python -m pip install "fastapi>=0.110,<1"
+python scripts/android_mcp_live_acceptance.py --serial emulator-5554 --avd-name LHM_CI_Test --ggminh "C:\LHM\ggminh"
+```
+
+`--avd-name` phải là tên AVD đã được tạo/chạy, không phải tên giả. Khi PASS, kết quả chỉ chứa cờ kiểm chứng, số nút và `permissions=read-only`. Tất cả kết quả mock trong CI Windows bình thường vẫn chỉ chứng minh **bộ kiểm tra chính xác**, không phải trạng thái AVD thật.
+
+**Sau bài test này vẫn cần một lượt nghiệm thu thao tác tap có người duyệt** trên một ứng dụng kiểm thử chuyên biệt, và thử nhiều AVD song song. Chưa bật tự động điều khiển Android chỉ vì bài đọc MCP thành công.
+
 ## Giới hạn hiện tại
 
 Đây là tích hợp **Computer Agent** cho các vai trò được chọn, không có nghĩa cả 16 Agent được cấp quyền mặc định hoặc mỗi Agent có một VM Android riêng. Không có AI semantic vision, luồng phê duyệt hành động MCP, tự cài Android SDK, test GPU đa máy hoặc kiểm chứng thương mại. Cần test thực tế trên Windows 10/11 sau khi cấp quyền.
