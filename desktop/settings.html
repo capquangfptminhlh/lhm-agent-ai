@@ -85,8 +85,9 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <label>Agent được cấp quyền đọc (mã vai trò, cách nhau dấu phẩy)
 <input type="text" id="androidMcpRoles" autocomplete="off" placeholder="research,quality"></label>
 <p>Vai trò có thể chọn: director, research, strategy, lead, content, ads, crm, sales, quality, analytics, operations, finance, hr, procurement, support, compliance. Mặc định không cấp quyền. Cần chọn đúng thư mục có <code>bin/lhm-android-mcp.js</code> và Android SDK hoạt động trên Windows.</p>
-<button id="androidMcpCheck" type="button" style="background:#566a7e">Kiểm tra Android MCP</button>
+<button id="androidMcpCheck" type="button" style="background:#566a7e">Kiểm tra ADB + MCP + Android thật</button>
 <p id="androidMcpCheckResult" role="status" aria-live="polite" style="white-space:pre-line"></p>
+<p>Kiểm tra sử dụng cấu hình <b>đã lưu và khởi động lại</b>. Chỉ đọc một AVD đang online được cho phép. Không chạm, vuốt, chụp ảnh hoặc gửi dữ liệu Android sang AI trong phép kiểm tra này.</p>
 <p class="notice">MCP cung cấp khả năng xem danh sách ADB và hình học giao diện đã loại bỏ nội dung chữ. Khi bật quyền chạm riêng, Robot mới được đề xuất chạm trên AVD kiểm thử, vẫn phải phê duyệt và kiểm tra lại nút trước khi thực hiện. Dữ liệu này có thể được gửi cho AI khi Agent dùng công cụ. Không gửi ảnh, tin nhắn hay mật khẩu. Chạm, vuốt, nhập liệu và cài APK KHÔNG có trong MCP; chỉ thực hiện trong LHM Browser khi anh duyệt.</p>
 </div>
 </details>
