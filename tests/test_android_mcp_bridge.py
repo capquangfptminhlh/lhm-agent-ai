@@ -111,6 +111,29 @@ class AndroidBridgeTests(unittest.TestCase):
         request=json.loads(process.received.splitlines()[-1])
         self.assertEqual(request["params"]["name"],"android_list_devices")
 
+    def test_observation_token_is_first_in_bounded_computer_history(self):
+        # A full page can have 120 nodes; the Computer LLM only sees
+        # 1800 chars of previous results. Token must be ahead of elements.
+        text="irrelevant private text should not be exposed"
+        elements=[{"index":i,"role":"button","hint":"back",
+                   "bounds":{"x":i,"y":i,"width":100,"height":50}}
+                  for i in range(1,121)]
+        fake=FakeProcess({"totalNodes":120,"elements":elements,
+                          "privacy":"geometry-only","secret":text})
+        async def spawn(*args,**kwargs):return fake
+        with patch.object(bridge,"native_desktop",return_value=True), \
+             patch.object(bridge.asyncio,"create_subprocess_exec",side_effect=spawn), \
+             patch.dict(os.environ,{"LHM_ANDROID_MCP_TAP_ENABLED":"1"}), \
+             patch("android_mcp_actions.prepare",
+                   return_value="a"*32):
+            result=asyncio.run(bridge.execute("research","android_mcp_inspect",
+                {"serial":"emulator-5554"},run_id="12345678-1234-4123-8123-123456789abc"))
+        self.assertEqual(list(result)[:2],["observation_id","expires_in_seconds"])
+        summary=str(result)[:1800]
+        self.assertIn("a"*32,summary)
+        self.assertNotIn(text,str(result))
+        self.assertEqual(len(result["elements"]),120)
+
     def test_no_config_and_bad_response_fail_closed(self):
         fake=FakeProcess({"devices":[]})
         fake.returncode=1

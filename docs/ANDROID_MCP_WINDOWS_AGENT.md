@@ -14,8 +14,8 @@ Luồng tích hợp thật: `LHM Robot Desktop` (Electron cấu hình) → `comp
 Từ Thiết lập Robot, bật thêm **Cho phép đề xuất chạm nút trên Android ảo kiểm thử** (mặc định TẮT). Anh vẫn phải chỉ định serial `emulator-xxxx` và vai trò Agent. Luồng:
 
 1. Agent gọi `android_mcp_devices`, sau đó `android_mcp_inspect` trên AVD được phép. Windows Runner tạo một `observation_id` ngẫu nhiên dùng một lần, giới hạn 5 phút, ràng buộc vào Computer run + vai trò + serial + cấu trúc nút đã quan sát.
-2. Agent có thể đề xuất `android_mcp_tap` với **serial, observation_id và index từ lần quét**, không nhận tọa độ tùy ý, không gọi ADB shell do AI tạo.
-3. Robot dừng ở `awaiting_approval`. Anh xem chi tiết ở **Máy tính Agent / Computer Console**, chọn Duyệt hoặc Từ chối.
+2. Agent có thể đề xuất `android_mcp_tap` với **serial, observation_id và index từ lần quét**, không nhận tọa độ tùy ý, không gọi ADB shell do AI tạo. Robot chỉ nhận đề xuất nếu có **bước `android_mcp_inspect` hoàn thành trước đó trong cùng Computer Run**, với serial, mã quan sát, index và hình học nút khớp chính xác. Không có bước quét hợp lệ thì không mở hộp thoại duyệt. Mã dùng một lần được đặt trước danh sách nút để không bị cắt khỏi lịch sử AI.
+3. Robot dừng ở `awaiting_approval`. **Máy tính Agent / Computer Console** hiển thị riêng serial AVD, index nút, loại nút, gợi ý an toàn và tọa độ tâm từ bằng chứng quét trước. Nội dung chữ của nút được MCP chủ động ẩn, vì vậy **anh phải nhìn màn hình AVD thật** trước khi chọn Duyệt; không được suy đoán hành động chỉ từ tọa độ. Nếu thiếu bằng chứng quét, nút Duyệt bị vô hiệu và server cũng từ chối.
 4. Khi đã duyệt, Windows Runner tiêu thụ mã một lần, **đọc lại toàn bộ nút tương tác và so sánh với lần quan sát**, sau đó chỉ gửi `adb -s SERIAL shell input tap X Y` với tọa độ lấy từ bản quét đáng tin. Bất kỳ thay đổi, hết hạn, mất kết nối đều từ chối, không gửi tap.
 5. Sau khi gửi, Runner kiểm tra lại UI nhưng **không kết luận hành động trong ứng dụng đã thành công**. Computer Agent dừng ở `awaiting_reconciliation` và yêu cầu anh xem lại máy Android trước khi tiếp tục. Không tự gửi lại lệnh trong trường hợp kết quả không rõ.
 

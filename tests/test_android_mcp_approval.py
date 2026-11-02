@@ -21,6 +21,15 @@ import android_mcp_bridge as bridge
 RUN_TOKEN="0123456789abcdef0123456789abcdef"
 SERIAL="emulator-5554"
 ARGS={"serial":SERIAL,"observation_id":RUN_TOKEN,"index":1}
+INSPECT_ARGS={"serial":SERIAL}
+INSPECT_RESULT={
+    "observation_id":RUN_TOKEN,"expires_in_seconds":300,
+    "privacy":"geometry-only","read_only":True,
+    "totalNodes":2,"elements":[
+        {"index":1,"role":"button","hint":"back",
+         "bounds":{"x":100,"y":220,"width":90,"height":60}}
+    ]
+}
 
 
 class AndroidAgentApprovalTests(unittest.TestCase):
@@ -65,8 +74,20 @@ class AndroidAgentApprovalTests(unittest.TestCase):
     def tick(self,rid):
         return self.client.post("/computer/runs/"+rid+"/tick")
 
+    def seed_inspection(self,rid):
+        """MCP must have actually returned the observed index/token in this run."""
+        with patch.object(agent,"_next_action",AsyncMock(return_value=(
+            "android_mcp_inspect",INSPECT_ARGS))),patch.object(
+            agent,"runner_call",AsyncMock(return_value=INSPECT_RESULT)) as read:
+            observed=self.tick(rid)
+        self.assertEqual(observed.status_code,200,observed.text)
+        self.assertEqual(observed.json()["status"],"queued")
+        read.assert_awaited_once()
+        return observed
+
     def test_approval_required_and_then_owner_reconciliation(self):
         rid=self.create()
+        self.seed_inspection(rid)
         with patch.object(agent,"_next_action",AsyncMock(return_value=(
             "android_mcp_tap",ARGS))),patch.object(agent,"runner_call",
             AsyncMock()) as tool:
@@ -103,8 +124,55 @@ class AndroidAgentApprovalTests(unittest.TestCase):
         self.assertEqual(self.client.post("/computer/runs/"+rid+"/reconciliation/acknowledge").status_code,409)
         self.assertEqual(self.client.get("/computer/runs/"+rid).json()["steps"][-1]["status"],"reviewed_unverified")
 
+    def test_missing_inspection_fails_closed_without_approval(self):
+        rid=self.create("approved-android-action-04")
+        with patch.object(agent,"_next_action",AsyncMock(return_value=(
+                "android_mcp_tap",ARGS))),patch.object(
+                agent,"runner_call",AsyncMock()) as runner:
+            rejected=self.tick(rid)
+        self.assertEqual(rejected.status_code,200,rejected.text)
+        self.assertEqual(rejected.json()["status"],"needs_review")
+        runner.assert_not_awaited()
+        view=self.client.get("/computer/runs/"+rid).json()
+        self.assertFalse(any(x["tool"]=="android_mcp_tap" and
+                             x["status"]=="awaiting_approval"
+                             for x in view["steps"]))
+
+    def test_forged_target_index_and_token_never_queued_for_approval(self):
+        for offset,args in enumerate((
+            {**ARGS,"observation_id":"1"*32},
+            {**ARGS,"index":2},
+            {**ARGS,"serial":"emulator-5556"},
+        )):
+            rid=self.create("approved-android-invalid-%d"%offset)
+            self.seed_inspection(rid)
+            with patch.object(agent,"_next_action",AsyncMock(return_value=(
+                    "android_mcp_tap",args))),patch.object(
+                    agent,"runner_call",AsyncMock()) as runner:
+                result=self.tick(rid)
+            self.assertEqual(result.json()["status"],"needs_review")
+            runner.assert_not_awaited()
+
+    def test_owner_receives_bounded_non_sensitive_preview(self):
+        rid=self.create("approved-android-action-05")
+        self.seed_inspection(rid)
+        with patch.object(agent,"_next_action",AsyncMock(return_value=(
+            "android_mcp_tap",ARGS))):
+            waiting=self.tick(rid).json()
+        self.assertEqual(waiting["status"],"awaiting_approval")
+        step=self.client.get("/computer/runs/"+rid).json()["steps"][-1]
+        self.assertEqual(step["tap_preview"]["serial"],SERIAL)
+        self.assertEqual(step["tap_preview"]["index"],1)
+        self.assertEqual(step["tap_preview"]["role"],"button")
+        self.assertEqual(step["tap_preview"]["bounds"]["x"],100)
+        self.assertFalse(step["tap_preview"]["label_available"])
+        self.assertNotIn(RUN_TOKEN,str(step["tap_preview"]))
+        self.assertEqual(self.client.post(
+            "/computer/runs/"+rid+"/steps/"+step["id"]+"/approve").status_code,200)
+
     def test_reject_does_not_execute(self):
         rid=self.create("approved-android-action-02")
+        self.seed_inspection(rid)
         with patch.object(agent,"_next_action",AsyncMock(return_value=(
             "android_mcp_tap",ARGS))),patch.object(agent,"runner_call",AsyncMock()) as tool:
             waiting=self.tick(rid)
@@ -119,6 +187,7 @@ class AndroidAgentApprovalTests(unittest.TestCase):
 
     def test_revocation_before_approved_execution_fails_closed(self):
         rid=self.create("approved-android-action-03")
+        self.seed_inspection(rid)
         with patch.object(agent,"_next_action",AsyncMock(return_value=(
             "android_mcp_tap",ARGS))):
             waiting=self.tick(rid).json()
