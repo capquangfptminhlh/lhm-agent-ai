@@ -28,6 +28,9 @@ on:
       - 'tests/test_repo_agent_pr_ci.py'
       - 'tests/test_repo_agent_ai_patch.py'
       - 'tests/test_repo_agent_repair.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_agent_runtime_pilot.py'
+      - 'static/agent_pilot.html'
       - 'agent_work_orders.py'
       - 'static/agent_work.html'
       - 'tests/test_agent_fleet.py'
@@ -76,6 +79,9 @@ on:
       - 'tests/test_repo_agent_pr_ci.py'
       - 'tests/test_repo_agent_ai_patch.py'
       - 'tests/test_repo_agent_repair.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_agent_runtime_pilot.py'
+      - 'static/agent_pilot.html'
       - 'agent_work_orders.py'
       - 'static/agent_work.html'
       - 'tests/test_agent_fleet.py'
@@ -135,7 +141,7 @@ jobs:
 
       - name: Run real Windows UI Automation click acceptance (isolated fixture)
         shell: pwsh
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: python scripts/windows_uia_gui_e2e.py
 
       - name: Real multi-step Computer Agent acceptance (approval, Runner, UIA, SQLite)
