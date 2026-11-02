@@ -106,11 +106,17 @@ def main() -> None:
                         page.wait_for_function(
                             "() => document.querySelectorAll('#fleetOrders button').length===16",
                             timeout=20000)
+                        fleet=page.evaluate("""async () => {
+                            const data=await (await fetch('/workspaces/demo/agent-fleets')).json();
+                            return data.fleets[0];
+                        }""")
+                        target=fleet["orders"][0]["work_order_id"]
+                        assert target and target!=rid
                         page.locator("#fleetOrders button").first.click()
                         page.wait_for_function(
-                            "() => document.querySelector('#report').textContent.includes('Trạng thái Worker: queued')",
-                            timeout=15000)
-                        assert "Work Order" in page.locator("#computerStatus").inner_text()
+                            "(id) => document.querySelector('#computerStatus').textContent.includes('Work Order: '+id)",
+                            arg=target,timeout=15000)
+                        assert "Computer Run: chưa tạo" in page.locator("#computerStatus").inner_text()
                         assert "Lỗi" not in page.locator("#computerStatus").inner_text()
                         assert not errors, "Chrome JS errors: "+str(errors)
                         page.screenshot(path=str(SCREENSHOT),full_page=True)
