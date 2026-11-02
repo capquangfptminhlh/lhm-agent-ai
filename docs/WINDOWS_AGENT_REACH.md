@@ -52,8 +52,15 @@ là worker tìm kiếm read-only, **không phải điều khiển máy tính to�
 
 - Unit test Windows giả lập chứng minh toggle mặc định tắt, bảo vệ token,
   whitelist channel và lựa chọn worker command cố định.
-- GitHub Windows CI chạy cài wheel từ release, kiểm source runtime
-  `reach-worker` và worker đóng băng trong `lhm-runtime.exe`, tiếp theo
-  kiểm runtime API, đóng gói installer và GUI.
-- Chỉ sau khi Linux/Windows kiểm thử thành công và được merge vào main,
-  bản EXE mới được coi là đã đóng gói chức năng này.
+- GitHub Windows CI tải wheel đã xác minh SHA-256, sau đó kiểm offline
+  `agent_reach.runtime.cli` có thể import trong cả mã nguồn và
+  `lhm-runtime.exe`. Kiểm tra Windows UIA, packaged runtime API, giao diện
+  Electron và file cài đặt **vẫn bắt buộc thành công**.
+- Truy vấn GitHub công khai thực tế của `reach-worker` (source và frozen)
+  được kiểm riêng bằng bước **advisory / continue-on-error**, có ghi thông
+  tin lỗi rút gọn và cảnh báo. Lỗi mạng, giới hạn API hoặc lỗi upstream
+  không làm mất bộ cài; **không được coi tính năng tìm kiếm là đạt nghiệm
+  thu thực tế** khi bước này còn lỗi.
+- Chỉ sau khi các bài kiểm thử bắt buộc thành công, PR được merge vào
+  `main` và có artifact chính xác từ commit tương ứng, mới xác nhận đã
+  đóng gói được EXE. Khả năng tìm kiếm trực tuyến vẫn phải kiểm tra riêng.
