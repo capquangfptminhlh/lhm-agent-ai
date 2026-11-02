@@ -18,13 +18,13 @@ pre{background:#eef3f8;padding:13px;white-space:pre-wrap;word-break:break-word;o
 <a href="/agents/departments/ui">16 phòng ban</a> ·
 <a href="/agent-work">Giao việc</a> · <a href="/tool-hub">Tool Hub</a></header>
 <main><h1>Work Order → Computer → Công cụ → Verify</h1>
-<p class="hint">3 vai trò thử nghiệm: Content, Sales, QA. Chỉ dùng URL được quản trị viên cấp quyền. Trạng thái “đã gửi” không phải “đã đăng”. Lệnh nhạy cảm luôn phải duyệt.</p>
+<p class="hint">16 Agent đều có thể dùng Computer qua Work Order. Content, Sales, QA giữ công cụ trình duyệt được giám sát; 13 Agent còn lại chỉ đọc dữ liệu workspace và một số vai trò được tìm kiếm công khai. Không tự đăng, gửi tin hay thay đổi hệ thống.</p>
 <div class="rail"><span>1 · Giao việc</span><span>2 · Computer / Worker</span><span>3 · QA</span><span>4 · Duyệt công cụ</span><span>5 · Provider verification</span></div>
 <div class="grid"><div>
 <section class="panel">
 <h2>1. Nhiệm vụ cố định</h2>
 <label for="workspace">Workspace</label><input id="workspace" value="demo" maxlength="48">
-<label for="role">Agent</label><select id="role"><option value="content">Content / Social</option><option value="sales">Sales</option><option value="quality">QA</option></select>
+<label for="role">Agent</label><select id="role"><option value="content">Nội dung &amp; sáng tạo</option></select>
 <label for="objective">Yêu cầu</label><textarea id="objective">Soạn nội dung giới thiệu BESI, nêu rõ những thông tin cần kiểm chứng, không tự đăng.</textarea>
 <button id="create">Tạo Work Order</button>
 <button class="alt" id="inspect">Xem trạng thái</button>
@@ -32,7 +32,7 @@ pre{background:#eef3f8;padding:13px;white-space:pre-wrap;word-break:break-word;o
 </section>
 <section class="panel">
 <h2>2. Computer Agent được giới hạn quyền</h2>
-<p class="hint">Chạy cùng một lõi Computer. Quyền browser/file, hostname và bộ nhớ tách theo vai trò. Chrome click/fill và thao tác nhạy cảm phải duyệt trong màn hình Computer.</p>
+<p class="hint">Chạy cùng lõi Computer. 13 vai trò mới chỉ đọc file workspace và tìm kiếm công khai khi được bật; quyền trình duyệt của Content/Sales/QA giữ nguyên. Thao tác có tác động phải duyệt trong Computer.</p>
 <div class="row"><button id="computer">Khởi tạo Computer Run</button><a href="/computer">Mở Computer</a></div>
 <p id="profile" class="hint"></p>
 </section>
@@ -106,7 +106,18 @@ $("verify").onclick=()=>doIt(async()=>{const s=await call(jobUrl()+"/verify",{me
  show(s.verification?.verified?"Postiz xác nhận trạng thái PUBLISHED và release URL":"Chưa có đủ bằng chứng bài đã đăng",s);
 });
 (async()=>{try{const d=await call("/agents/runtime-pilot");
-$("profile").textContent=d.roles.map(x=>x.role+": "+x.tools.join(", ")+
-(x.browser_host_allowlist_configured?" (host whitelist có cấu hình)":" (chưa có whitelist host)")).join("\n");
+const select=$("role"),current=select.value;
+select.replaceChildren();
+for(const agent of d.roles){
+ const option=document.createElement("option");
+ option.value=agent.role;
+ option.textContent=agent.name||agent.role;
+ select.appendChild(option);
+}
+if([...select.options].some(x=>x.value===current))select.value=current;
+$("profile").textContent=d.roles.map(x=>(x.name||x.role)+": "+
+(x.execution_scope==="read_only_workspace"?"chỉ đọc":"trình duyệt có giám sát")+
+" · "+x.tools.join(", ")+
+(x.tools.includes("browser_open")?(x.browser_host_allowlist_configured?" (host được phép)":" (chưa có host được phép)"):"")).join("\n");
 $("profile").style.whiteSpace="pre-wrap";}catch(e){$("profile").textContent=e.message}})();
 </script></body></html>

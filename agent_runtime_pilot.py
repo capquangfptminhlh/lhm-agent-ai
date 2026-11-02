@@ -1,8 +1,11 @@
 """Shared Computer Agent pilot: immutable Work Order bindings, role RBAC, and API-first social handoff.
 
-Only Content, Sales and Quality are admitted to this pilot. The existing
-Computer runner stays shared; this is logical role scoping, NOT a security
-boundary between tenants or a proven live social/CRM deployment.
+All 16 fixed-role Work Orders can bind to the shared Computer runner.
+Content, Sales and Quality retain their supervised browser capabilities.
+Other roles get only local workspace reads and, where already authorized,
+public Agent-Reach search. No new Windows, browser-write, publishing or
+provider permissions are granted. This is logical scoping, NOT tenant isolation
+or a proven live integration.
 """
 from __future__ import annotations
 
@@ -16,7 +19,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from core import audit, db, now
+from core import ROLES, audit, db, now
 from agent_work_orders import prepare_db as prepare_orders
 from computer_agent import ComputerRunIn, create_computer_run
 
@@ -31,6 +34,22 @@ PILOT_TOOLS = {
     "quality": frozenset({"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","agent_reach_search","list_files","read_file","browser_open","browser_snapshot",
                            "browser_scroll","browser_screenshot"}),
 }
+# Previously only three roles could bind a Computer Run. Extend the same
+# immutable Work Order -> Computer pathway to the remaining specialists,
+# without expanding their privileges to browser navigation or mutations.
+# The search tool itself separately checks SEARCH_ROLES and Windows opt-in.
+READ_ONLY_WORKSPACE_TOOLS = frozenset({"list_files", "read_file"})
+PUBLIC_SEARCH_ROLES = frozenset({"research", "strategy", "lead",
+                                 "ads", "analytics", "compliance"})
+assert PUBLIC_SEARCH_ROLES <= set(ROLES)
+PILOT_TOOLS.update({
+    role: READ_ONLY_WORKSPACE_TOOLS | (
+        frozenset({"agent_reach_search"}) if role in PUBLIC_SEARCH_ROLES
+        else frozenset()
+    )
+    for role in ROLES if role not in PILOT_TOOLS
+})
+assert set(PILOT_TOOLS) == set(ROLES)
 PILOT_HOST_ENV = {role: "LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS" for role in PILOT_TOOLS}
 PILOT_RETRIES = 2  # read-only observation retries only; NEVER resend a post on ambiguity
 
@@ -66,7 +85,9 @@ def _origin_allowed(role: str, url: str) -> bool:
 def profile(role: str) -> dict[str,Any]:
     if role not in PILOT_TOOLS:
         raise HTTPException(404,"Agent chưa tham gia thử nghiệm")
-    return {"role":role,"tools":sorted(PILOT_TOOLS[role]),
+    return {"role":role,"name":ROLES[role][0],
+            "execution_scope":"supervised_browser" if role in ("content","sales","quality") else "read_only_workspace",
+            "tools":sorted(PILOT_TOOLS[role]),
             "memory_scope":"workspace/role","browser_profile_scope":"workspace/role",
             "browser_host_allowlist_configured":bool(allowed_hosts(role)),
             "external_credential_access":False,
@@ -274,7 +295,7 @@ def pilot_metrics(workspace_id: str = "demo"):
     prepare_db()
     with db() as c:
         rows=c.execute("""SELECT id,role,task_id,qa_task_id FROM agent_work_orders
-            WHERE workspace_id=? AND role IN ('content','sales','quality')
+            WHERE workspace_id=?
             ORDER BY rowid DESC LIMIT 400""",(workspace_id,)).fetchall()
         task_ids=[task for row in rows for task in (row["task_id"],row["qa_task_id"]) if task]
         cost=0.0

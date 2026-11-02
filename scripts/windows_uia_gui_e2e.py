@@ -77,7 +77,10 @@ def main() -> None:
             "/reference:System.Windows.Forms.dll",
             "/reference:System.Drawing.dll",
             "/out:" + str(binary), str(source),
-        ], check=True, timeout=50, capture_output=True, text=True)
+        # Hosted Windows runners sometimes cold-start .NET Framework csc.exe
+        # for over 50 seconds even when the same real UIA test passes on retry.
+        # Keep compilation mandatory, but allow a bounded cold-start budget.
+        ], check=True, timeout=100, capture_output=True, text=True)
 
         prior_native = os.environ.get("LHM_DESKTOP_NATIVE")
         prior_apps = os.environ.get("LHM_DESKTOP_ALLOWED_APPS")

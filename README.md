@@ -85,6 +85,35 @@ hình, các giới hạn và điều kiện nghiệm thu trên Windows thật.
 
 ---
 
+## 16 Agent chuyên môn → Work Order → Computer (quyền tối thiểu)
+
+Toàn bộ 16 Agent cố định đã có thể tạo Computer Run từ một Work Order tại
+`/agents/runtime-pilot/ui`. Mỗi Agent chia sẻ **một lõi Computer Runner**, nhưng
+mỗi lượt được ràng buộc chặt với đúng vai trò và Work Order gốc.
+
+- **Content / Sales / Quality:** giữ bộ công cụ trình duyệt đã có, bắt buộc
+  whitelist host riêng; click/fill có kiểm soát và những thao tác nhạy cảm
+  vẫn đợi người quản trị phê duyệt.
+- **13 vai trò khác:** chỉ được `list_files`, `read_file` trong thư mục
+  workspace/role; Research, Strategy, Lead, Ads, Analytics và Compliance
+  được đề xuất `agent_reach_search` (tìm kiếm công khai, cần bật và kết nối
+  thật). **Không được** mở trình duyệt, ghi file, thực thi lệnh, điều khiển
+  chuột Windows, chạm Android hay xuất bản bằng Computer Pilot.
+- Sau mỗi lượt Computer, trạng thái `completed_unverified` chỉ chứng minh
+  AI đã tạo báo cáo từ các bước công cụ đã lưu; **không có nghĩa** đã hoàn
+  thành thao tác ngoài hệ thống. Postiz/Tool Hub vẫn cần QA, phê duyệt và
+  biên nhận từ provider.
+- Các kiểm thử offline dùng API và SQLite thật, mô phỏng phản hồi model/
+  runner để kiểm tra mọi vai trò cùng giới hạn quyền. Chúng không chứng minh
+  16 Agent đang hoạt động thực tế trên máy của người dùng.
+
+Đây là nâng cấp từng phần, không phải 16 VM/PC riêng, cũng không phải tự
+kết nối tất cả website. Không cần cấu hình Chrome cho 13 vai trò chỉ đọc.
+Với tìm kiếm Agent-Reach, người quản trị cần bật công cụ riêng trong
+thiết lập Windows.
+
+---
+
 ## Agent-to-Agent Team Chat — nhân viên AI tự trao đổi
 
 **Mở `/team-chat`** để tạo nhóm 2–8 Agent, đặt mục tiêu và giới hạn
