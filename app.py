@@ -188,10 +188,22 @@ def fetch_workspace_or_404(c: sqlite3.Connection, ws: str):
     return item
 
 
-def task_record(c, ws, role, instruction, context, approval=False, model=MODEL, not_before=0,
+def active_model() -> str:
+    """Effective new-task model for the current installation's billing policy."""
+    model = "openrouter/free" if os.getenv("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
+    validate_model(model)
+    return model
+
+
+def task_record(c, ws, role, instruction, context, approval=False, model=None, not_before=0,
                 idem=None, depends_on=None):
     if role not in ROLES:
         raise HTTPException(422, "Vai trò Agent không hợp lệ")
+    # Central policy for campaigns, Workflows, Builder and Hermes3D chat.
+    # An explicitly requested paid model is rejected in Free-only mode.
+    # Existing persisted tasks are NEVER silently rewritten.
+    model = active_model() if model is None else model
+    validate_model(model)
     if idem:
         old = c.execute("SELECT id,status FROM tasks WHERE workspace_id=? AND idempotency_key=?", (ws, idem)).fetchone()
         if old:
@@ -245,8 +257,9 @@ def dashboard():
 
 @app.get("/health")
 def health():
-    return {"ok": True, "status": "ready" if model_configured(MODEL) else "waiting_for_key",
-            "llm_provider": provider_for_model(MODEL), "active_model": MODEL,
+    model=active_model()
+    return {"ok": True, "status": "ready" if model_configured(model) else "waiting_for_key",
+            "llm_provider": provider_for_model(model), "active_model": model,
             "openrouter_configured": bool(os.getenv("OPENROUTER_API_KEY")),
             "deepseek_configured": bool(os.getenv("DEEPSEEK_API_KEY")),
             "runtime": "LHM Universal Agent OS", "database": "sqlite", "mode": "local_mvp"}
@@ -255,10 +268,11 @@ def health():
 @app.get("/llm/providers")
 def llm_providers():
     # Reports local observed attempts only, not the provider's account-wide quota.
+    model=active_model()
     with db() as c:
         quota = local_free_quota(c, now())
-    return {"active_model": MODEL, "provider": provider_for_model(MODEL),
-            "configured": model_configured(MODEL),
+    return {"active_model": model, "provider": provider_for_model(model),
+            "configured": model_configured(model),
             "providers": {"openrouter": {"configured": bool(os.getenv("OPENROUTER_API_KEY")),
                                          "free_router": "openrouter/free",
                                          "local_quota": quota},
@@ -503,6 +517,7 @@ def list_leads(ws:str):
 # switched by changing LHM_ACTIVE_WORKSPACE and restarting the process.
 @app.get("/state")
 def state():
+    model=active_model()
     with db() as c:
         ws = workspace(c, ACTIVE_WORKSPACE)
         if ws is None:
@@ -511,17 +526,18 @@ def state():
         finance = financials(c,ACTIVE_WORKSPACE)
     return {"profileName":f"LHM Agent OS — {ws['name']}",
             "runtime":{"name":"LHM Universal Agent OS","version":"1.0.0","vendor":"LHM",
-                       "status":"ready" if model_configured(MODEL) else "degraded", "active_model":MODEL},
-            "identity":{"name":"AI Director","role":"director","lane":"director","model_id":MODEL},
-            "active":{r:MODEL for r in ROLES},
+                       "status":"ready" if model_configured(model) else "degraded", "active_model":model},
+            "identity":{"name":"AI Director","role":"director","lane":"director","model_id":model},
+            "active":{r:model for r in ROLES},
             "agent_states":{r:"working" if r in running else "idle" for r in ROLES},
             "business":{"workspace_id":ACTIVE_WORKSPACE,"industry":ws["industry"],"budget":finance}}
 
 
 @app.get("/registry")
 def registry():
-    return {"models":{MODEL:{"provider":provider_for_model(MODEL),
-                              "label":"OpenRouter Free" if is_free_model(MODEL) else "DeepSeek"}},
+    model=active_model()
+    return {"models":{model:{"provider":provider_for_model(model),
+                              "label":"OpenRouter Free" if is_free_model(model) else "DeepSeek"}},
             "roles":{k:{"name":v[0],"description":v[1]} for k,v in ROLES.items()},"industries":list(CATALOG.keys())}
 
 
@@ -673,7 +689,8 @@ async def custom_chat(inp:ChatIn):
     """Hermes3D custom runtime contract with spend cap; no pretend streaming."""
     if inp.stream:
         raise HTTPException(422,"Streaming chưa hỗ trợ")
-    if not model_configured(MODEL):
+    model=active_model()
+    if not model_configured(model):
         raise HTTPException(503,"Chưa cấu hình API key cho model hiện tại")
     role=inp.role or inp.lane or "director"
     if role not in ROLES: role="director"
@@ -684,9 +701,9 @@ async def custom_chat(inp:ChatIn):
     instruction="\n".join(("USER: " if m.role=="user" else "ASSISTANT: ")+str(m.content)[:2500] for m in messages[-5:])[:8000]
     with db() as c:
         fetch_workspace_or_404(c,ACTIVE_WORKSPACE)
-        task=task_record(c,ACTIVE_WORKSPACE,role,instruction,"Hermes3D interactive chat")
+        task=task_record(c,ACTIVE_WORKSPACE,role,instruction,"Hermes3D interactive chat",model=model)
     result=await execute_task(task["id"])
-    return {"id":result["id"],"object":"chat.completion","created":now(),"model":MODEL,
+    return {"id":result["id"],"object":"chat.completion","created":now(),"model":model,
             "choices":[{"index":0,"message":{"role":"assistant","content":result["result"]},"finish_reason":"stop"}]}
 
 
