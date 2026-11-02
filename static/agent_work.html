@@ -28,6 +28,10 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 <button id="submit">Giao việc cho Agent</button> <button id="refresh" style="background:#637b93">Kiểm tra kết quả</button>
 <button id="qa" style="background:#7353a1" hidden>Chuyển Quality kiểm duyệt bài</button>
 <button id="wpDraft" style="background:#306b55" hidden>Chuyển bản nháp sang WordPress (cần duyệt)</button>
+<p><button id="computerStart" type="button">Cho Agent làm tiếp bằng Computer (giám sát)</button>
+<button id="computerRefresh" type="button" style="background:#637b93">Xem tiến độ Computer</button>
+<a href="/computer" id="computerOpen">Mở Computer để duyệt</a></p>
+<div id="computerStatus" class="notice" role="status" aria-live="polite">Chưa liên kết Computer Run. Chọn một Work Order trước.</div>
 <p id="feedback" role="status" aria-live="polite"></p>
 <div id="report" class="notice">Chưa có nhiệm vụ.</div>
 <pre id="draft" hidden></pre>
@@ -39,6 +43,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 <button id="fleetStart" type="button">Giao cả 16 Agent</button>
 <button id="fleetRefresh" style="background:#637b93" type="button">Xem tiến độ 16 Agent</button>
 <div id="fleetStatus" class="notice" role="status" aria-live="polite">Chưa giao chiến dịch 16 Agent.</div>
+<div id="fleetOrders" class="role-row" aria-label="Mở từng Agent trong chiến dịch"></div>
 </section>
 <section class="panel"><h2>Agent chuyên trách 9 dự án GitHub của anh</h2>
 <p class="muted">Mỗi Agent dự án chỉ đọc GitHub Actions của một repo đã gán cố định. Bấm kiểm tra để lấy trạng thái CI thật, rồi có thể giao Worker viết bản chẩn đoán. Không tự sửa mã/PR. Repo riêng tư cần quyền GitHub đọc qua cấu hình cục bộ, không nhập token lên bảng này.</p>
@@ -48,7 +53,7 @@ pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f6fa;padding:14px;
 </main>
 <script>
 "use strict";
-const $=id=>document.getElementById(id);let agents=[],selectedOrder=null,selectedRecord=null,selectedFleet=null;
+const $=id=>document.getElementById(id);let agents=[],selectedOrder=null,selectedRecord=null,selectedFleet=null,selectedComputer=null;
 const req=async(url,options)=>{
   const response=await fetch(url,{...options,cache:"no-store"});
   let data=await response.json().catch(()=>({detail:"Lỗi không đọc được dữ liệu từ backend"}));
@@ -99,8 +104,53 @@ async function loadResult(){
     ((Array.isArray(data.readiness?.blockers) && data.readiness.blockers.length)?"\nCẢNH BÁO: "+data.readiness.blockers.join(" | "):"")+
     "\nBước tiếp: "+data.next_step+(data.error?"\nLỗi: "+data.error:"");
   $("draft").hidden=!data.draft;$("draft").textContent=data.draft||"";
+  await loadExecution();
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
 }
+async function loadExecution(){
+ if(!selectedOrder){$("computerStatus").textContent="Chọn một Work Order trước.";return;}
+ const ws=encodeURIComponent($("ws").value.trim());
+ const root="/workspaces/"+ws+"/agent-work-orders/"+encodeURIComponent(selectedOrder);
+ try{
+  const e=await req(root+"/execution");
+  selectedComputer=e.computer_run_id||null;
+  let details="Work Order: "+selectedOrder+
+   "\nTrạng thái thực: "+e.stage+
+   "\nComputer Run: "+(e.computer_run_id||"chưa tạo")+
+   "\nComputer: "+(e.computer_status||"chưa khởi động")+
+   "\nĐã nghiệm thu bên ngoài: "+(e.verified_external_completion?"CÓ":"CHƯA");
+  if(selectedComputer){
+   const run=await req("/computer/runs/"+encodeURIComponent(selectedComputer));
+   const steps=Array.isArray(run.steps)?run.steps:[];
+   details+="\nSố bước Computer: "+steps.length+
+     "\nCác bước gần nhất: "+steps.slice(-4).map(x=>x.tool+" / "+x.status).join(" | ");
+   if(["awaiting_approval","awaiting_checkpoint","awaiting_reconciliation"].includes(run.status))
+     details+="\nCẦN ANH DUYỆT hoặc đối soát trong màn Computer trước khi chạy tiếp.";
+   if(run.error)details+="\nLỗi: "+run.error;
+  }
+  $("computerStatus").textContent=details;
+ }catch(error){
+  $("computerStatus").textContent="Không kiểm tra được tiến độ Computer: "+error.message;
+ }
+}
+$("computerRefresh").onclick=loadExecution;
+$("computerStart").onclick=async()=>{
+ if(!selectedOrder){$("computerStatus").textContent="Hãy giao hoặc chọn một Work Order trước.";return;}
+ if(!confirm("Khởi tạo Computer Run có giám sát cho Agent này? Có thể gọi AI qua API. Các thao tác có tác động vẫn phải được duyệt riêng; 13 Agent chuyên môn chỉ đọc."))return;
+ const btn=$("computerStart");btn.disabled=true;
+ try{
+  const ws=encodeURIComponent($("ws").value.trim());
+  const result=await req("/workspaces/"+ws+"/agent-work-orders/"+
+    encodeURIComponent(selectedOrder)+"/computer-pilot",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({max_steps:10})});
+  selectedComputer=result.id;
+  await loadExecution();
+ }catch(error){
+  $("computerStatus").textContent="Chưa xác nhận khởi tạo Computer: "+error.message+
+   "\nNếu kết nối timeout, bấm Xem tiến độ Computer để đối soát; đừng tạo nhiệm vụ trùng.";
+ }finally{btn.disabled=false;}
+};
 $("qa").onclick=async()=>{
  const d=selectedRecord;if(!d || d.role!=="content" || d.task_status!=="completed")return;
  const btn=$("qa");btn.disabled=true;
@@ -143,7 +193,7 @@ $("submit").onclick=async()=>{
     idempotency_key: "ui-"+(globalThis.crypto?.randomUUID?.() || String(Date.now())+"-"+Math.random().toString(36).slice(2))};
   const x=await req("/workspaces/"+encodeURIComponent(ws)+"/agents/"+encodeURIComponent(role)+"/work-orders",
     {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-  selectedOrder=x.id;
+  selectedOrder=x.id;selectedRecord=null;selectedComputer=null;
   $("feedback").textContent="Đã đưa việc vào hàng đợi thật. Worker và OpenRouter cần hoạt động để có bản nháp.";
   await loadResult();
  }catch(e){$("feedback").textContent=e.message;$("feedback").className="danger";}
@@ -156,10 +206,23 @@ async function loadFleet(){
    ? await req(wsRoot()+"/agent-fleets/"+encodeURIComponent(selectedFleet))
    : await req(wsRoot()+"/agent-fleets");
   const fleet=selectedFleet?data:(data.fleets||[])[0];
-  if(!fleet){$("fleetStatus").textContent="Chưa có chiến dịch 16 Agent.";return;}
+  if(!fleet){$("fleetStatus").textContent="Chưa có chiến dịch 16 Agent.";$("fleetOrders").replaceChildren();return;}
   selectedFleet=fleet.id;
   const rows=(fleet.orders||[]).map(x=>x.role+": "+x.task_status+
       (x.error?" ("+x.error+")":"")).join("\n");
+  const fleetButtons=$("fleetOrders");fleetButtons.replaceChildren();
+  for(const entry of (fleet.orders||[])){
+   const button=document.createElement("button");
+   button.type="button";button.textContent="Mở "+entry.role;
+   button.style.margin="4px";
+   button.onclick=async()=>{
+    selectedOrder=entry.work_order_id;selectedRecord=null;selectedComputer=null;
+    $("role").value=entry.role;showProfession();
+    await loadResult();
+    $("report").scrollIntoView({behavior:"smooth",block:"center"});
+   };
+   fleetButtons.append(button);
+  }
   $("fleetStatus").textContent="Mã chiến dịch: "+fleet.id+
     "\nTiến độ: "+fleet.status+" — "+fleet.drafts_ready+"/"+fleet.role_count+" bản nháp"+
     "\nĐang chạy: "+fleet.working+" · Đang chờ: "+fleet.queued+
