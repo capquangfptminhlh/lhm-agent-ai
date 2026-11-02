@@ -66,7 +66,9 @@ def main() -> None:
                         response=page.goto(base+"/agent-work",
                                            wait_until="domcontentloaded",timeout=30000)
                         assert response and response.status==200
-                        page.wait_for_selector("#role option",timeout=15000)
+                        page.wait_for_function(
+                            "() => document.querySelectorAll('#role option').length===16",
+                            timeout=15000)
                         assert page.locator("#role option").count()==16
                         page.locator("#role").select_option("director")
                         page.locator("#objective").fill(
