@@ -181,7 +181,6 @@ async def run_live(host: Any, bridge: Any, name: str, *,
     name = configured_avd(name)
     start = time.monotonic()
     serial = None
-    success = False
     try:
         host.start(name)
         serial = host.wait_boot()
@@ -206,9 +205,15 @@ async def run_live(host: Any, bridge: Any, name: str, *,
         nodes = result["elements"]
         if not nodes or len(nodes) > 120:
             raise RuntimeError("Android Settings produced no bounded interactive UI")
-        prohibited = {"text", "content-desc", "package", "resource-id", "password",
-                      "rawText", "png_base64", "screenshot"}
-        if any(k in node for node in nodes for k in prohibited):
+        # Double-check exact output shape. Future bridge changes must not
+        # accidentally expose app label text, contents or screenshots.
+        safe_keys={"index","role","hint","bounds"}
+        safe_bounds={"x","y","width","height"}
+        if any(not isinstance(node,dict) or
+               not set(node).issubset(safe_keys) or
+               not isinstance(node.get("bounds"),dict) or
+               not set(node["bounds"]).issubset(safe_bounds)
+               for node in nodes):
             raise RuntimeError("Android UI metadata was not fully redacted")
 
         tap = "NOT_REQUESTED"
@@ -231,7 +236,6 @@ async def run_live(host: Any, bridge: Any, name: str, *,
                 raise RuntimeError("LHM Robot tap receipt did not require owner reconciliation")
             tap = "SENT_UNVERIFIED_NEEDS_OWNER_RECONCILIATION"
 
-        success = True
         return {
             "runtime":"REAL_WINDOWS_AVD",
             "read":"PASS",
@@ -261,14 +265,17 @@ def main() -> int:
         if not node:
             raise RuntimeError("Node.js not found on the test runner")
         import android_mcp_bridge as bridge
-        is_write = os.environ.get("LHM_ANDROID_LIVE_BACK_TAP") == "YES"
+        decision=os.environ.get("LHM_ANDROID_LIVE_BACK_TAP","NO")
+        if decision not in ("YES","NO"):
+            raise RuntimeError("Live Android write consent must be explicitly YES or NO")
+        is_write = decision == "YES"
         host = RealWindowsAvd(sdk)
         # Set only the native bridge's fixed local configuration. ADB serial
         # is populated only after the owned emulator is verified at boot.
         async def test():
             from unittest.mock import patch
-            # A separate trusted env map is set after boot via an owning
-            # wrapper to avoid accepting arbitrary ADB serials as input.
+            # The allowlist is injected ONLY after the owned AVD identity and
+            # boot completion have been validated.
             class BoundHost:
                 def start(self, avd):
                     host.start(avd)
