@@ -121,16 +121,33 @@ $("opencliCheck").onclick=async()=>{
 };
 $("androidMcpCheck").onclick=async()=>{
  const button=$("androidMcpCheck"),panel=$("androidMcpCheckResult");
- button.disabled=true;panel.textContent="Đang kiểm tra cấu hình Android MCP đã lưu…";
+ button.disabled=true;panel.textContent="Đang hỏi MCP cục bộ và kiểm tra ADB thật trên Windows…";
  try {
    const data=await window.lhmSettings.androidMcpStatus();
+   const details={
+     "disabled":"Tính năng đang tắt",
+     "configuration-incomplete":"Thiếu cấu hình hoặc thư mục MCP trên Windows",
+     "mcp-device-read-failed":"Không đọc được ADB qua MCP (kiểm tra SDK, quyền và Node)",
+     "no-online-allowed-avd":"Chưa có máy Android ảo được cấp quyền đang online",
+     "mcp-ui-read-failed":"Không quét được giao diện AVD (kiểm tra đã mở khóa và HOME)",
+     "invalid-mcp-device-response":"MCP trả danh sách thiết bị không hợp lệ",
+     "invalid-mcp-ui-response":"MCP trả giao diện không hợp lệ",
+     "avd-ui-not-actionable":"AVD online nhưng chưa thấy nút tương tác",
+     "avd-ui-read-confirmed":"Đã đọc giao diện thật qua MCP trên Windows",
+     "runner-unavailable-or-timeout":"Windows Runner chưa khởi động hoặc hết thời gian đọc ADB"
+   };
+   const devices=Array.isArray(data.devices)?data.devices:[];
    panel.textContent=[
-     (data.enabled?"✓":"✕")+" Android MCP "+(data.enabled?"đã bật":"chưa bật"),
-     "Vai trò được cấp: "+(data.allowedRoles?.join(", ")||"chưa có"),
-     "Số serial được cấp: "+(data.allowedDeviceCount||0),
-     "Chạm Android ảo: "+(data.tapEnabled?"đã bật (từng bước cần duyệt)":"tắt"),
-     data.ready?"Sẵn sàng cho Agent đọc dữ liệu Android (chưa chứng minh thiết bị đang kết nối).":
-       "Chưa sẵn sàng: "+(data.detail||"kiểm tra cấu hình")
+     (data.configured?"✓":"✕")+" Cấu hình MCP: "+(data.configured?"hợp lệ":"chưa hợp lệ"),
+     (data.mcpConnected?"✓":"✕")+" MCP → ADB: "+(data.mcpConnected?"đã phản hồi":"chưa xác nhận"),
+     (data.avdConnected?"✓":"✕")+" Android ảo được phép: "+(data.avdConnected?"đang kết nối":"chưa tìm thấy"),
+     (data.uiReadable?"✓":"✕")+" Đọc giao diện: "+(data.uiReadable?"thành công":"chưa thành công"),
+     "Số nút tương tác: "+(data.uiActionableCount||0),
+     "Thiết bị đã cấp quyền: "+(devices.map(d=>d.serial+" ("+d.status+")").join(", ")||"chưa có thiết bị online"),
+     "Vai trò Agent: "+(data.allowedRoles?.join(", ")||"chưa có"),
+     "Chạm Android ảo: "+(data.tapEnabled?"được cấu hình, luôn cần phê duyệt":"tắt"),
+     data.ready?"✓ Kết nối đọc AVD thật đạt (chưa thử tap).":
+       "✕ "+(details[data.detail]||"Chưa xác minh kết nối Android thật")
    ].join("\n");
  } catch(error){panel.textContent="Không kiểm tra được Android MCP: "+(error?.message||"lỗi kết nối");}
  finally{button.disabled=false;}

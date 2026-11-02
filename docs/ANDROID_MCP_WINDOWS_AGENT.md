@@ -37,6 +37,19 @@ Lệnh tap này chạy trong **native Windows Runner**, không mở thêm công 
 - `cd desktop && npm test` — cấu hình, validation Windows, nguồn Node cố định và kiểm tra khác của Electron.
 - Kiểm thử trên GitHub chỉ chứng minh mã/đóng gói với mock. **Chưa được coi là Android thật hoạt động** khi workflow AVD tự-host `ggminh` chưa PASS.
 
+## Kiểm tra ADB thực tế ngay trong giao diện LHM Robot
+
+Mở **Thiết lập Robot → Android MCP → Kiểm tra ADB + MCP + Android thật**, sau khi lưu và khởi động lại Robot.
+
+Nút này không chỉ nhìn xem file MCP có tồn tại. Windows native Runner thực thi **hai lần đọc MCP stdio thật**:
+
+1. `android_mcp_devices` trả trạng thái ADB của các serial anh đã cấp quyền. Tài khoản, model điện thoại và thông tin ADB khác đều bị lọc.
+2. Nếu có ít nhất một AVD đã cấp quyền và online, `android_mcp_inspect` đọc cấu trúc UI của AVD đó. UI chỉ hiển thị **số nút tương tác**, không xem hoặc lưu nội dung màn hình. Cả hai lần gọi đều có thời hạn giới hạn.
+
+Chỉ khi MCP/ADB trả dữ liệu thành công, AVD đã kết nối và có nút tương tác thì mục **Kết nối đọc AVD thật đạt** mới được bật. Trạng thái rõ ràng cho biết lỗi do cấu hình, MCP/ADB, AVD chưa online hoặc cây UI chưa sẵn sàng. Phép kiểm tra này **không** chạm, vuốt, gửi ảnh cho AI hay xác minh hành động trong app.
+
+Nếu anh vừa thay đổi thư mục `ggminh`, serial, role hoặc quyền chạm, hãy **lưu cấu hình và khởi động lại** Robot trước khi kiểm tra. Kết quả thực tế sẽ khác nhau tùy máy Windows và Android SDK. CI mặc định chỉ mô phỏng đường gọi MCP; vẫn cần chạy nút này trên AVD thật.
+
 ## Nghiệm thu Android thật từ LHM Robot qua ggminh MCP (mới)
 
 Đây là **bài test Android runtime thật**, không phải ảnh demo hay mock. Cần một **máy Windows self-hosted** được gắn nhãn GitHub Actions `android-sdk`, cài Android SDK, ADB, Node 22 và có AVD **kiểm thử riêng, không đăng nhập tài khoản thật**, đang chạy sẵn. Quy trình này **không tạo AVD**, không chạm hay thay đổi nội dung Android; nó chỉ đọc:

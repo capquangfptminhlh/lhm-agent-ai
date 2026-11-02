@@ -54,6 +54,7 @@ def main(argv=None):
         from agent_reach.runtime.cli import main as agent_reach_main
         import android_mcp_actions
         import android_mcp_bridge
+        import android_mcp_diagnostics
         import opencli_windows_bridge
         import opencli_diagnostics
         import github_tool_stack

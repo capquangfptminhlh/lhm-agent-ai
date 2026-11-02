@@ -10,6 +10,8 @@ on:
       - 'computer_agent.py'
       - 'android_mcp_bridge.py'
       - 'android_mcp_actions.py'
+      - 'android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_diagnostics.py'
       - 'tests/test_android_mcp_actions.py'
       - 'tests/test_android_mcp_approval.py'
       - 'scripts/android_mcp_live_acceptance.py'
@@ -69,6 +71,8 @@ on:
       - 'computer_agent.py'
       - 'android_mcp_bridge.py'
       - 'android_mcp_actions.py'
+      - 'android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_diagnostics.py'
       - 'tests/test_android_mcp_actions.py'
       - 'tests/test_android_mcp_approval.py'
       - 'scripts/android_mcp_live_acceptance.py'
@@ -155,6 +159,7 @@ jobs:
           python -m unittest discover -s tests -p "test_android_mcp_actions.py" -v
           python -m unittest discover -s tests -p "test_android_mcp_approval.py" -v
           python -m unittest discover -s tests -p "test_android_mcp_live_acceptance.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_diagnostics.py" -v
           python -m unittest discover -s tests -p "test_android_agent_live_acceptance.py" -v
 
       - name: Run real Windows UI Automation click acceptance (isolated fixture)
@@ -216,7 +221,7 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --hidden-import opencli_windows_bridge --hidden-import opencli_diagnostics --hidden-import android_mcp_bridge --hidden-import android_mcp_actions --collect-all agent_reach --collect-all yt_dlp --hidden-import windows_public_video --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --hidden-import opencli_windows_bridge --hidden-import opencli_diagnostics --hidden-import android_mcp_bridge --hidden-import android_mcp_actions --hidden-import android_mcp_diagnostics --collect-all agent_reach --collect-all yt_dlp --hidden-import windows_public_video --collect-submodules pywinauto desktop/runtime.py
 
       # A public API probe must never stop a valid, locally tested installer from
       # reaching the owner's QA artifact. Executable imports and the packaged
