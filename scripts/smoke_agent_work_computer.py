@@ -77,8 +77,11 @@ def main() -> None:
                         page.wait_for_function(
                             "() => document.querySelector('#report').textContent.includes('Trạng thái Worker: queued')",
                             timeout=15000)
+                        page.wait_for_function(
+                            "() => document.querySelector('#computerStatus').textContent.includes('Computer Run: chưa tạo')",
+                            timeout=15000)
                         before=page.locator("#computerStatus").inner_text()
-                        assert "chưa tạo" in before, before
+                        assert "Computer Run: chưa tạo" in before, before
                         page.locator("#computerStart").click()
                         page.wait_for_function(
                             "() => document.querySelector('#computerStatus').textContent.includes('Computer Run: ') && !document.querySelector('#computerStatus').textContent.includes('chưa tạo')",
