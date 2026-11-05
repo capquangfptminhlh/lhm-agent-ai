@@ -206,5 +206,35 @@ class NativeLaunchAndUwpTests(unittest.TestCase):
         self.assertTrue(agent._approval_required("windows_launch", {"mode": "supervised"}))
 
 
+class SaveDialogVisibilityTests(unittest.TestCase):
+    """Owner run 2026-11-05, P4 #1: 15 WinUI PopupHost windows hid Save as."""
+
+    def test_popup_hosts_dropped_and_owned_dialog_listed_first(self):
+        notepad = 2427532
+        windows = [(10, "Shell_TrayWnd", 0, "")] + \
+                  [(100 + i, "Microsoft.UI.Content.PopupWindowSiteBridge", notepad, "PopupHost") for i in range(15)] + \
+                  [(263914, "#32770", notepad, "Save as"), (notepad, "Notepad", 0, "*Xin ..... - Notepad")]
+        by_handle = {h: (cls, owner, title) for h, cls, owner, title in windows}
+
+        class FakeUser32:
+            def GetClassNameW(self, hwnd, buf, size):
+                buf.value = by_handle[hwnd.value][0]
+            def GetWindow(self, hwnd, kind):
+                assert kind == wn.GW_OWNER
+                return by_handle[hwnd.value][1] or None
+
+        def info(h):
+            return {"hwnd": h, "process": "notepad.exe", "title": by_handle[h][2], "x": 0, "y": 0,
+                    "width": 38 if by_handle[h][0].startswith("Microsoft.UI") else 900, "height": 600}
+
+        with patch.object(wn, "_window_info", side_effect=info):
+            listed = wn._order_windows(FakeUser32(), [h for h, *_ in windows])
+        self.assertEqual([w["title"] for w in listed], ["Save as", "", "*Xin ..... - Notepad"])
+        self.assertEqual((listed[0]["dialog"], listed[0]["owner_hwnd"]), (True, notepad))
+        self.assertNotIn("dialog", listed[2])
+        # The dialog must survive the Agent's 1800-char observation cut.
+        self.assertLess(str({"windows": listed}).find("Save as"), 1800)
+
+
 if __name__ == "__main__":
     unittest.main()

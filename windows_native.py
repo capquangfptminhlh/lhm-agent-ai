@@ -51,6 +51,9 @@ def _user32():
     u.IsWindowVisible.argtypes=[wintypes.HWND]
     u.GetWindowTextLengthW.argtypes=[wintypes.HWND]
     u.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
+    u.GetWindow.restype=wintypes.HWND
     u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
     u.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
     u.SetForegroundWindow.argtypes=[wintypes.HWND]
@@ -169,12 +172,38 @@ def _enumerate():
         if len(handles)<300: handles.append(int(hwnd))
         return True
     u.EnumWindows(visitor,0)
-    result=[]
+    return _order_windows(u,handles)
+
+# Windows 11 Notepad keeps a dozen tiny WinUI "PopupHost" tooltip windows.
+# In the owner P4 run (2026-11-05) they pushed the Save as dialog past the
+# model's truncated observation, so the Agent never saw it and looped.
+POPUP_CLASSES=frozenset({"Microsoft.UI.Content.PopupWindowSiteBridge"})
+DIALOG_CLASS="#32770"
+GW_OWNER=4
+
+def _class_name(u,hwnd):
+    buf=ctypes.create_unicode_buffer(256)
+    u.GetClassNameW(wintypes.HWND(hwnd),buf,256)
+    return buf.value
+
+def _order_windows(u,handles):
+    """Allowed windows without popup hosts; owned dialogs (Save as, Open,
+    confirmations) first and marked, so a short observation still shows them."""
+    dialogs,windows=[],[]
     for handle in handles:
-        if len(result)>=HWND_LIMIT:break
-        try:result.append(_window_info(handle))
+        if len(dialogs)+len(windows)>=HWND_LIMIT:break
+        try:info=_window_info(handle)
         except HTTPException:continue
-    return result
+        cls=_class_name(u,handle)
+        if cls in POPUP_CLASSES:continue
+        owner=u.GetWindow(wintypes.HWND(handle),GW_OWNER)
+        if owner:info["owner_hwnd"]=int(owner)
+        if cls==DIALOG_CLASS:
+            info["dialog"]=True
+            dialogs.append(info)
+        else:
+            windows.append(info)
+    return dialogs+windows
 
 def _focus(hwnd):
     i=_window_info(hwnd)
