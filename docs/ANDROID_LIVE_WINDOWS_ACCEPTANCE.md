@@ -24,7 +24,7 @@ Workflow: [android-agent-live-windows.yml](../.github/workflows/android-agent-li
 ## Chặn thao tác sai/lặp trong lượt thử Back
 
 - Trước khi phát lệnh chạm, harness đối chiếu nút Back duy nhất với kích thước ảnh PNG **chỉ đọc metadata** từ chính AVD; index bị trùng, tọa độ nằm ngoài khung nhìn hoặc hình học không hợp lệ đều khiến bài test FAIL mà không gọi tap.
-- Native Windows Runner chỉ cho phép **một tap đang thực thi trên mỗi serial AVD** trong cùng tiến trình, bao gồm giai đoạn đọc lại UI, gửi ADB và đọc hậu kiểm. Lượt chạm đồng thời bị từ chối HTTP 409; observation token của lượt bị từ chối vẫn bị tiêu thụ, nên phải quét và xin duyệt lại thay vì retry tự động.
+- Native Windows Runner chỉ cho phép **một tap đang thực thi trên mỗi serial AVD** trong cùng tiến trình, bao gồm giai đoạn đọc lại UI, gửi ADB và đọc hậu kiểm. Khi một tap bắt đầu, tất cả observation token còn hiệu lực trên cùng AVD (kể cả từ run khác) bị thu hồi. Lượt chạm đồng thời bị từ chối HTTP 409; phải quét và xin duyệt lại thay vì retry tự động.
 - Trước mọi tap, Runner vẫn so sánh toàn bộ hình học UI với observation đã cấp. Mã hết hạn, dùng lại, sai run/role/serial, hoặc UI thay đổi đều phải từ chối. Sau tap, mọi kết quả vẫn mang trạng thái **chưa xác minh tác động bên ngoài** và cần chủ sở hữu đối chiếu.
 - Đây là khóa **trong một tiến trình Runner**, không phải khóa phân tán giữa nhiều máy hoặc ứng dụng ADB khác. Chưa thể bảo đảm AVD không đổi màn hình trong khoảng rất ngắn giữa lúc đọc lại và lúc ADB gửi tap. Chỉ thử trên AVD sạch, không tài khoản và không dữ liệu quan trọng.
 
