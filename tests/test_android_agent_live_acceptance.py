@@ -90,6 +90,36 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
                          ["android_mcp_devices","android_mcp_inspect"])
         self.assertEqual(host.calls[-1],"stop")
 
+    async def test_safe_back_rejects_offscreen_or_ambiguous_index(self):
+        class UnsafeBridge(FakeBridge):
+            def __init__(self, problem):
+                super().__init__()
+                self.problem=problem
+
+            async def execute(self, role, tool, args, run_id=None):
+                data=await super().execute(role,tool,args,run_id=run_id)
+                if tool=="android_mcp_inspect":
+                    if self.problem=="offscreen":
+                        data["elements"][0]["bounds"]["x"]=999
+                    else:
+                        data["elements"].append({
+                            "index":1,"role":"toggle","hint":None,
+                            "bounds":{"x":100,"y":120,"width":20,"height":20}
+                        })
+                return data
+
+        for issue in ("offscreen","duplicate"):
+            with self.subTest(issue=issue):
+                host=FakeHost()
+                bridge=UnsafeBridge(issue)
+                with self.assertRaises(RuntimeError):
+                    await run_live(host,bridge,"LHM_Test_Pixel",
+                                   allow_back_tap=True)
+                self.assertEqual(
+                    [call[0] for call in bridge.calls],
+                    ["android_mcp_devices","android_mcp_inspect"])
+                self.assertEqual(host.calls[-1],"stop")
+
     async def test_private_label_refusal_and_cleanup(self):
         host=FakeHost()
         with self.assertRaises(RuntimeError):
