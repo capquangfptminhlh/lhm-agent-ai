@@ -125,8 +125,17 @@ async def _send_tap(serial: str,x: int,y: int) -> None:
         )
         try:
             await asyncio.wait_for(process.wait(),timeout=12)
+        except asyncio.CancelledError:
+            # Cancelling a Computer run does NOT cancel an already spawned ADB
+            # child. Terminate/reap it before releasing the per-AVD tap lock.
+            # A touch may already have happened; never retry automatically.
+            if process.returncode is None:
+                process.kill()
+            await asyncio.shield(process.wait())
+            raise
         except asyncio.TimeoutError:
-            process.kill()
+            if process.returncode is None:
+                process.kill()
             await process.wait()
             # The touch may already have occurred: NEVER retry automatically.
             raise HTTPException(504,"Android tap outcome unknown; inspect device manually")
