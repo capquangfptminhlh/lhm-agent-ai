@@ -9,7 +9,7 @@ CI Windows thông thường build Electron/EXE và chạy kiểm thử với And
 - Một PC Windows 10/11 dành riêng cho QA, bật VT-x/AMD-V và cài Android SDK (platform-tools, emulator, system image). Có AVD kiểm thử tạo sẵn với tên an toàn, ví dụ `LHM_Test_Pixel`. **Không đăng nhập tài khoản Google, ngân hàng, Zalo hay thông tin cá nhân trên AVD này.**
 - GitHub Actions Runner của chính chủ trên PC đó có nhãn `self-hosted`, `Windows`, `X64` và nhãn bổ sung `android-sdk`. Không đăng ký nhãn này cho máy của người dùng cuối hoặc máy chủ dùng chung.
 - Trước khi chạy, **đóng toàn bộ AVD và ngắt các điện thoại ADB** trên PC kiểm thử. Bài test từ chối chạy nếu đã có thiết bị ADB.
-- Repo `capquangfptminhlh/ggminh` chứa `bin/lhm-android-mcp.js`; workflow checkout repo này ngay trong job để sử dụng giao thức MCP hiện tại.
+- Repo `capquangfptminhlh/ggminh` chứa `bin/lhm-android-mcp.js`; cả hai workflow AVD thật checkout **đúng commit MCP đã qua Windows protocol CI** (`ee68f681c63ffd2e077179a374bd02c32c81426a`), không lấy `main` biến động. Khi nâng cấp MCP phải cập nhật đồng bộ cả ba workflow và chạy CI lại.
 
 ## Chạy bằng tay
 
