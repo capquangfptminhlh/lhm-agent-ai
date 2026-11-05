@@ -34,6 +34,12 @@ def _reserve(serial: str) -> None:
         if serial in _ACTIVE_TAPS:
             raise HTTPException(409,"Android emulator has another active tap; inspect again")
         _ACTIVE_TAPS.add(serial)
+        # A second run may hold an older observation of the same screen.
+        # Invalidate ALL of those tokens before any ADB operation. Geometry
+        # may look unchanged even when a tap had an external side effect.
+        for token, observation in list(_OBSERVATIONS.items()):
+            if observation["serial"] == serial:
+                _OBSERVATIONS.pop(token,None)
 
 
 def _release(serial: str) -> None:
