@@ -44,3 +44,5 @@ Thumbs.db
 node_modules/
 .next/
 coverage/
+# Windows build-only third-party runtime (never commit npm packages or Node binary)
+desktop/vendor/

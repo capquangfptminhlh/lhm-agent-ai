@@ -8,12 +8,60 @@ on:
       - 'windows_native.py'
       - 'computer_executor.py'
       - 'computer_agent.py'
+      - 'android_mcp_bridge.py'
+      - 'android_mcp_actions.py'
+      - 'android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_actions.py'
+      - 'tests/test_android_mcp_approval.py'
+      - 'scripts/android_mcp_live_acceptance.py'
+      - 'tests/test_android_mcp_live_acceptance.py'
+      - '.github/workflows/android-mcp-live-windows.yml'
+      - 'scripts/android_agent_live_acceptance.py'
+      - 'tests/test_android_agent_live_acceptance.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_android_mcp_bridge.py'
+      - 'tests/test_android_mcp_real_node.py'
+      - 'repo_agent_bindings.py'
+      - 'repo_agent_repair.py'
+      - 'repo_agent_ai_patch.py'
+      - 'repo_agent_pr_ci.py'
+      - 'repo_agent_pr_triage.py'
+      - 'repo_agent_pr_revision.py'
+      - 'repo_agent_pr_annotations.py'
+      - 'repo_agent_pr_rerun.py'
+      - 'tests/test_repo_agent_pr_rerun.py'
+      - 'tests/test_repo_agent_pr_revision.py'
+      - 'tests/test_repo_agent_pr_triage.py'
+      - 'tests/test_repo_agent_pr_ci.py'
+      - 'tests/test_repo_agent_ai_patch.py'
+      - 'tests/test_repo_agent_repair.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_agent_runtime_pilot.py'
+      - 'app.py'
+      - 'tests/test_free_only_task_entrypoints.py'
+      - 'team_collaboration.py'
+      - 'tests/test_team_collaboration.py'
+      - 'scripts/team_chat_live_acceptance.py'
+      - 'static/agent_pilot.html'
+      - 'agent_work_orders.py'
+      - 'static/agent_work.html'
+      - 'tests/test_agent_fleet.py'
+      - 'static/repo_agents.html'
+      - 'office3d_api.py'
+      - 'static/office3d.html'
+      - 'static/office3d.js'
+      - 'static/office3d.css'
+      - 'tests/test_live_office3d.py'
+      - 'tests/test_repo_agent_bindings.py'
       - 'robot_vision.py'
       - 'robot_sandbox.py'
       - 'worker.py'
       - 'openrouter_provider.py'
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_uia_gui_e2e.py'
+      - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -24,9 +72,57 @@ on:
       - 'windows_native.py'
       - 'computer_executor.py'
       - 'computer_agent.py'
+      - 'android_mcp_bridge.py'
+      - 'android_mcp_actions.py'
+      - 'android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_diagnostics.py'
+      - 'tests/test_android_mcp_actions.py'
+      - 'tests/test_android_mcp_approval.py'
+      - 'scripts/android_mcp_live_acceptance.py'
+      - 'tests/test_android_mcp_live_acceptance.py'
+      - '.github/workflows/android-mcp-live-windows.yml'
+      - 'scripts/android_agent_live_acceptance.py'
+      - 'tests/test_android_agent_live_acceptance.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_android_mcp_bridge.py'
+      - 'tests/test_android_mcp_real_node.py'
+      - 'repo_agent_bindings.py'
+      - 'repo_agent_repair.py'
+      - 'repo_agent_ai_patch.py'
+      - 'repo_agent_pr_ci.py'
+      - 'repo_agent_pr_triage.py'
+      - 'repo_agent_pr_revision.py'
+      - 'repo_agent_pr_annotations.py'
+      - 'repo_agent_pr_rerun.py'
+      - 'tests/test_repo_agent_pr_rerun.py'
+      - 'tests/test_repo_agent_pr_revision.py'
+      - 'tests/test_repo_agent_pr_triage.py'
+      - 'tests/test_repo_agent_pr_ci.py'
+      - 'tests/test_repo_agent_ai_patch.py'
+      - 'tests/test_repo_agent_repair.py'
+      - 'agent_runtime_pilot.py'
+      - 'tests/test_agent_runtime_pilot.py'
+      - 'app.py'
+      - 'tests/test_free_only_task_entrypoints.py'
+      - 'team_collaboration.py'
+      - 'tests/test_team_collaboration.py'
+      - 'scripts/team_chat_live_acceptance.py'
+      - 'static/agent_pilot.html'
+      - 'agent_work_orders.py'
+      - 'static/agent_work.html'
+      - 'tests/test_agent_fleet.py'
+      - 'static/repo_agents.html'
+      - 'office3d_api.py'
+      - 'static/office3d.html'
+      - 'static/office3d.js'
+      - 'static/office3d.css'
+      - 'tests/test_live_office3d.py'
+      - 'tests/test_repo_agent_bindings.py'
       - 'openrouter_provider.py'
       - 'openrouter_free_catalog.py'
       - 'openrouter_user_allowlist.py'
+      - 'scripts/windows_uia_gui_e2e.py'
+      - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -36,6 +132,34 @@ permissions:
   contents: read
 
 jobs:
+  android-mcp-real-node-contract:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout LHM Robot under test
+        uses: actions/checkout@v4
+      - name: Checkout pinned ggminh MCP implementation
+        uses: actions/checkout@v4
+        with:
+          repository: capquangfptminhlh/ggminh
+          ref: ee68f681c63ffd2e077179a374bd02c32c81426a
+          path: ggminh
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install bridge protocol dependency only
+        run: python -m pip install "fastapi>=0.110,<1"
+      - name: Real Python-to-Node MCP stdio acceptance with zero device access
+        env:
+          LHM_TEST_GGMINH_DIR: ${{ github.workspace }}/ggminh
+        run: python -m unittest discover -s tests -p "test_android_mcp_real_node.py" -v
+
   build-windows-electron:
     runs-on: windows-latest
     timeout-minutes: 45
@@ -55,10 +179,32 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install "pyinstaller>=6.10,<7" "pillow>=11,<13" "psutil>=6,<9" "pywinauto>=0.6.9,<1" "playwright==1.58.0"
 
+      - name: Install SHA256-verified Agent-Reach from original GitHub release
+        run: python scripts/install_agent_reach_windows.py
+
       - name: Test Win32 controller safety defaults (without OS clicks)
         env:
           LHM_DB_PATH: lhm-ci-native-unit.sqlite3
         run: python -m unittest discover -s tests -p "test_*native.py" -v
+
+      - name: Verify Android MCP deny-by-default policies and subprocess safety
+        run: |
+          python -m unittest discover -s tests -p "test_android_mcp_bridge.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_actions.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_approval.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_live_acceptance.py" -v
+          python -m unittest discover -s tests -p "test_android_mcp_diagnostics.py" -v
+          python -m unittest discover -s tests -p "test_android_agent_live_acceptance.py" -v
+
+      - name: Run real Windows UI Automation click acceptance (isolated fixture)
+        shell: pwsh
+        timeout-minutes: 5
+        run: python scripts/windows_uia_gui_e2e.py
+
+      - name: Real multi-step Computer Agent acceptance (approval, Runner, UIA, SQLite)
+        shell: pwsh
+        timeout-minutes: 4
+        run: python scripts/windows_agent_multistep_e2e.py
 
       - name: Run Python runtime import test
         env:
@@ -70,9 +216,35 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Bundle OpenCLI 2.0.2 and Node 24 directly for Windows customers
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD "desktop/vendor/opencli-runtime"
+          New-Item -ItemType Directory -Force $bundle | Out-Null
+          npm install --prefix $bundle --no-save --ignore-scripts --no-audit --no-fund @jackwener/opencli@2.0.2
+          if ($LASTEXITCODE -ne 0) { throw "Pinned OpenCLI package install failed" }
+          Copy-Item -LiteralPath (Get-Command node).Source -Destination (Join-Path $bundle "node.exe")
+          $cli = Join-Path $bundle "node_modules/@jackwener/opencli/dist/src/main.js"
+          $package = Join-Path $bundle "node_modules/@jackwener/opencli/package.json"
+          if (-not (Test-Path $cli) -or -not (Test-Path $package) -or -not (Test-Path (Join-Path $bundle "node.exe"))) {
+            throw "Bundled Node/OpenCLI entrypoint missing"
+          }
+          $meta=Get-Content $package -Raw | ConvertFrom-Json
+          if ($meta.name -ne "@jackwener/opencli" -or $meta.version -ne "2.0.2") { throw "Unexpected OpenCLI version" }
+          $help = (& (Join-Path $bundle "node.exe") $cli browser state --help | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $help -notmatch "--profile" -or $help -notmatch "--session") {
+            throw "OpenCLI v2.0.2 subcommand profile/session flags missing"
+          }
+          & (Join-Path $bundle "node.exe") $cli browser state --profile ci-test-only --session lhm-ci-test --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "OpenCLI browser leaf-level options incompatible" }
+          Write-Host "Node + pinned OpenCLI leaf-level CLI contract validated; no live Chrome profile used"
+
       - name: Validate Electron JavaScript before packaging
         run: |
+          node --check desktop/scripts/ensure-opencli-bundle.cjs
           node --check desktop/main.cjs
+          node --check desktop/android-mcp-config.cjs
+          node --test desktop/test/android-mcp-config.test.cjs
           node --check desktop/settings-preload.cjs
           node --check desktop/settings.js
           node --check desktop/openrouter-free-test.cjs
@@ -83,15 +255,65 @@ jobs:
 
       - name: Freeze local FastAPI, Worker and Windows Native Runner
         shell: pwsh
-        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --collect-submodules pywinauto desktop/runtime.py
+        run: python -m PyInstaller --noconfirm --clean --onedir --console --name lhm-runtime --distpath dist --workpath build/pyinstaller --add-data "static;static" --add-data "templates;templates" --add-data "dashboard.html;." --collect-all playwright --collect-submodules uvicorn --hidden-import windows_native --hidden-import robot_vision --hidden-import robot_sandbox --hidden-import opencli_windows_bridge --hidden-import opencli_diagnostics --hidden-import android_mcp_bridge --hidden-import android_mcp_actions --hidden-import android_mcp_diagnostics --collect-all agent_reach --collect-all yt_dlp --hidden-import windows_public_video --collect-submodules pywinauto desktop/runtime.py
 
-      - name: Smoke test actual bundled runtime EXE
+      # A public API probe must never stop a valid, locally tested installer from
+      # reaching the owner's QA artifact. Executable imports and the packaged
+      # Windows runtime are still required checks below.
+      - name: Smoke test actual bundled runtime EXE (offline)
         shell: pwsh
         env:
           LHM_DB_PATH: lhm-ci-native-executable.sqlite3
         run: |
           & .\dist\lhm-runtime\lhm-runtime.exe self-test
-          if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime failed" }
+          if ($LASTEXITCODE -ne 0) { throw "Frozen Python runtime import / Agent-Reach CLI contract failed" }
+          Write-Host "Frozen Windows Python runtime and Agent-Reach CLI import PASS"
+
+      - name: Probe Agent-Reach public GitHub search (external integration, nonblocking)
+        shell: pwsh
+        timeout-minutes: 3
+        continue-on-error: true
+        run: |
+          # Probe source and frozen runtimes separately. Keep failure visible in
+          # Actions, but do not mask errors in the installer/GUI acceptance gates.
+          $ErrorActionPreference = 'Continue'
+          $failures = 0
+          $probes = @(
+            @{ Label = 'source'; Executable = 'python'; Arguments = @('desktop/runtime.py', 'reach-worker', 'github', 'agent tools') },
+            @{ Label = 'frozen'; Executable = '.\dist\lhm-runtime\lhm-runtime.exe'; Arguments = @('reach-worker', 'github', 'agent tools') }
+          )
+          foreach ($probe in $probes) {
+            $passed = $false
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              $arguments = $probe.Arguments
+              $output = & $probe.Executable @arguments 2>&1
+              $exitCode = $LASTEXITCODE
+              $diagnostic = (($output | Out-String).Trim())
+              if ($exitCode -eq 0) {
+                try {
+                  $data = $diagnostic | ConvertFrom-Json -ErrorAction Stop
+                  if ($data.ok -eq $true -and $data.schema_version -eq 1 -and
+                      $data.channel -eq 'github' -and $data.action -eq 'search' -and
+                      $null -ne $data.items) {
+                    $passed = $true
+                    Write-Host "Agent-Reach $($probe.Label) public GitHub search PASS"
+                    break
+                  }
+                  $diagnostic = "Unexpected Agent-Reach response schema: " + $diagnostic
+                } catch {
+                  $diagnostic = "Invalid Agent-Reach JSON: " + $_.Exception.Message + "; " + $diagnostic
+                }
+              }
+              if ($diagnostic.Length -gt 1200) { $diagnostic = $diagnostic.Substring(0, 1200) }
+              Write-Warning "Agent-Reach $($probe.Label) attempt $attempt exited $exitCode : $diagnostic"
+              if ($attempt -lt 3) { Start-Sleep -Seconds 3 }
+            }
+            if (-not $passed) {
+              $failures++
+              Write-Host "::warning::Agent-Reach $($probe.Label) live public search failed; review this probe before enabling that integration in production."
+            }
+          }
+          if ($failures -gt 0) { throw "Agent-Reach live public search failed in $failures of 2 runtimes; installer validation continues independently." }
 
       - name: Real packaged Windows runtime acceptance (HTTP and native auth)
         shell: pwsh
@@ -111,6 +333,19 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: npm run dist:win
+
+      - name: Inspect real packaged OpenCLI resources and execute shipped Node
+        shell: pwsh
+        run: |
+          $root = Join-Path $PWD "desktop/dist/win-unpacked/resources/opencli-runtime"
+          $node = Join-Path $root "node.exe"
+          $cli = Join-Path $root "node_modules/@jackwener/opencli/dist/src/main.js"
+          if (-not (Test-Path $node) -or -not (Test-Path $cli)) { throw "Installer is missing bundled OpenCLI or Node" }
+          $help = (& $node $cli browser state --profile ci-test-only --session lhm-ci-test --help | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $help -notmatch "--profile" -or $help -notmatch "--session") {
+            throw "Installed OpenCLI flags not compatible with Windows bridge"
+          }
+          Write-Host "Real packaged Windows resources contain working Node/OpenCLI leaf-level flags"
 
       - name: Check Windows installer exists and is not empty
         shell: pwsh

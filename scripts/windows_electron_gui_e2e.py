@@ -89,7 +89,7 @@ def main():
                         "Packaged Electron did not reach local backend: " + page.url)
                     console_errors = []
                     page.on("pageerror", lambda err: console_errors.append(str(err)[:180]))
-                    paths = ["/office3d", "/team-chat", "/computer", "/workflow-builder",
+                    paths = ["/office3d", "/team-chat", "/agent-work", "/computer", "/workflow-builder",
                              "/agent-tools", "/dashboard"]
                     timings = []
                     for path in paths:
@@ -101,6 +101,10 @@ def main():
                         assert len(body.strip()) > 80, f"Blank/empty Electron page: {path}"
                         assert page.url.startswith("http://127.0.0.1:7770" + path)
                         timings.append((path, round((time.monotonic()-began)*1000)))
+                        if path == "/agent-work":
+                            page.locator("#role option").first.wait_for(state="attached",timeout=12000)
+                            assert page.locator("#role option").count()==16, "Missing fixed Agent role cards"
+                            assert "không phải dịch vụ đã cài đặt" in body.lower(), "Repo transparency warning missing"
                         if path == "/office3d":
                             page.screenshot(path=str(DEST), full_page=False, timeout=20000)
                     # New-install acceptance: real Electron opens a local settings

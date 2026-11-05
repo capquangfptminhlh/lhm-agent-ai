@@ -29,12 +29,20 @@
       "splash.html",
       "package.json",
       "settings.js",
-      "openrouter-free-test.cjs"
+      "openrouter-free-test.cjs",
+      "android-mcp-config.cjs"
     ],
     "extraResources": [
       {
         "from": "../dist/lhm-runtime",
         "to": "runtime",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/opencli-runtime",
+        "to": "opencli-runtime",
         "filter": [
           "**/*"
         ]
@@ -58,6 +66,10 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
     },
-    "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}"
+    "artifactName": "LHM-Robot-Desktop-Setup-${version}-${arch}.${ext}",
+    "afterPack": "scripts/ensure-opencli-bundle.cjs"
+  },
+  "overrides": {
+    "@electron-internal/extract-zip": "1.0.6"
   }
 }

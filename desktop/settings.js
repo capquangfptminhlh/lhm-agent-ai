@@ -6,11 +6,23 @@ async function load(){
   $("provider").value=x.provider;
   $("allowedApps").value=x.allowedApps||"";
   $("allowedHosts").value=x.allowedHosts||"";
+  for(const role of ["content","sales","quality"]){
+    $(role+"Hosts").value=x[role+"Hosts"]||"";
+  }
   $("visionEnabled").checked=x.visionEnabled===true;
   $("trustedEnabled").checked=x.trustedEnabled===true;
   $("fullScreenEnabled").checked=x.fullScreenEnabled===true;
   $("visionModel").value=x.visionModel||"";
   $("sandboxEnabled").checked=x.sandboxEnabled===true;
+  $("reachEnabled").checked=x.reachEnabled===true;
+  $("opencliEnabled").checked=x.opencliEnabled===true;
+  $("opencliProfile").value=x.opencliProfile||"";
+  $("opencliHosts").value=x.opencliHosts||"";
+  $("androidMcpEnabled").checked=x.androidMcpEnabled===true;
+  $("androidMcpTapEnabled").checked=x.androidMcpTapEnabled===true;
+  $("androidMcpRepo").value=x.androidMcpRepo||"";
+  $("androidMcpSerials").value=x.androidMcpSerials||"";
+  $("androidMcpRoles").value=x.androidMcpRoles||"";
   $("agentParallelism").value=String(x.agentParallelism||1);
   $("openStatus").textContent=x.hasOpenrouterKey?"(đã lưu)": "(chưa có)";
   $("openTest").disabled=!x.hasOpenrouterKey || !x.secureStorage;
@@ -23,11 +35,23 @@ $("save").onclick=async()=>{
    await window.lhmSettings.save({
     provider:$("provider").value,allowedApps:$("allowedApps").value,
     allowedHosts:$("allowedHosts").value,
+    contentHosts:$("contentHosts").value,
+    salesHosts:$("salesHosts").value,
+    qualityHosts:$("qualityHosts").value,
     visionEnabled:$("visionEnabled").checked,
     trustedEnabled:$("trustedEnabled").checked,
     fullScreenEnabled:$("fullScreenEnabled").checked,
     visionModel:$("visionModel").value,
     sandboxEnabled:$("sandboxEnabled").checked,
+    reachEnabled:$("reachEnabled").checked,
+    opencliEnabled:$("opencliEnabled").checked,
+    opencliProfile:$("opencliProfile").value,
+    opencliHosts:$("opencliHosts").value,
+    androidMcpEnabled:$("androidMcpEnabled").checked,
+    androidMcpTapEnabled:$("androidMcpTapEnabled").checked,
+    androidMcpRepo:$("androidMcpRepo").value,
+    androidMcpSerials:$("androidMcpSerials").value,
+    androidMcpRoles:$("androidMcpRoles").value,
     agentParallelism:Number($("agentParallelism").value),
     openrouterKey:$("openKey").value,
     clearOpenrouter:$("clearOpenrouter").checked
@@ -53,6 +77,81 @@ async function checkReadiness(){
  }finally{refresh.disabled=false}
 }
 $("refreshReadiness").onclick=checkReadiness;
+$("opencliFindProfiles").onclick=async()=>{
+ const button=$("opencliFindProfiles"),list=$("opencliProfileSelect"),panel=$("opencliCheckResult");
+ button.disabled=true;
+ try{
+   const found=await window.lhmSettings.opencliProfiles();
+   list.replaceChildren();
+   const blank=document.createElement("option");
+   blank.value="";blank.textContent="Chọn Chrome profile riêng…";
+   list.append(blank);
+   for(const item of found.profiles||[]){
+     if(!item || typeof item.id!=="string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(item.id))continue;
+     const option=document.createElement("option");
+     option.value=item.id;option.textContent=String(item.label||item.id).slice(0,80);
+     list.append(option);
+   }
+   panel.textContent=(found.daemon_started?"Đã khởi chạy Browser Bridge cục bộ. ":"")+(list.options.length>1?"Chọn đúng profile Chrome riêng trong danh sách rồi Lưu cấu hình.":String(found.detail||"Chưa thấy Chrome profile kết nối"));
+ }catch(e){panel.textContent="Không tìm được Chrome profile: "+(e.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
+$("opencliProfileSelect").onchange=()=>{if($("opencliProfileSelect").value)$("opencliProfile").value=$("opencliProfileSelect").value;};
+$("opencliExtension").onclick=async()=>{
+ const button=$("opencliExtension"),panel=$("opencliCheckResult");
+ button.disabled=true;
+ try {await window.lhmSettings.opencliExtension();panel.textContent="Đã mở Chrome Web Store. Cài extension trong Chrome profile riêng của LHM, sau đó quay lại kiểm tra kết nối.";}
+ catch(e){panel.textContent="Không mở được trang extension: "+(e.message||"lỗi hệ thống");}
+ finally {button.disabled=false;}
+};
+$("opencliCheck").onclick=async()=>{
+ const button=$("opencliCheck"), panel=$("opencliCheckResult");
+ button.disabled=true;panel.textContent="Đang kiểm tra Windows Controller và Chrome Bridge...";
+ try{
+  const s=await window.lhmSettings.opencliStatus();
+  panel.textContent=[
+    (s.enabled?"✓":"✕")+" OpenCLI đã bật",
+    (s.cli_installed?"✓":"✕")+" Node.js / OpenCLI 2.0.2 đã cài",
+    (s.bridge_running?"✓":"✕")+" Browser Bridge đang hoạt động",
+    (s.profile_connected?"✓":"✕")+" Profile Chrome '"+(s.profile_alias||"chưa chọn")+"' đã kết nối",
+    s.ready?"Sẵn sàng thao tác theo quyền được cấp":"Chưa sẵn sàng: "+(s.detail||"kiểm tra cấu hình")
+  ].join("\n");
+ }catch(err){panel.textContent="Không kiểm tra được: "+(err.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
+$("androidMcpCheck").onclick=async()=>{
+ const button=$("androidMcpCheck"),panel=$("androidMcpCheckResult");
+ button.disabled=true;panel.textContent="Đang hỏi MCP cục bộ và kiểm tra ADB thật trên Windows…";
+ try {
+   const data=await window.lhmSettings.androidMcpStatus();
+   const details={
+     "disabled":"Tính năng đang tắt",
+     "configuration-incomplete":"Thiếu cấu hình hoặc thư mục MCP trên Windows",
+     "mcp-device-read-failed":"Không đọc được ADB qua MCP (kiểm tra SDK, quyền và Node)",
+     "no-online-allowed-avd":"Chưa có máy Android ảo được cấp quyền đang online",
+     "mcp-ui-read-failed":"Không quét được giao diện AVD (kiểm tra đã mở khóa và HOME)",
+     "invalid-mcp-device-response":"MCP trả danh sách thiết bị không hợp lệ",
+     "invalid-mcp-ui-response":"MCP trả giao diện không hợp lệ",
+     "avd-ui-not-actionable":"AVD online nhưng chưa thấy nút tương tác",
+     "avd-ui-read-confirmed":"Đã đọc giao diện thật qua MCP trên Windows",
+     "runner-unavailable-or-timeout":"Windows Runner chưa khởi động hoặc hết thời gian đọc ADB"
+   };
+   const devices=Array.isArray(data.devices)?data.devices:[];
+   panel.textContent=[
+     (data.configured?"✓":"✕")+" Cấu hình MCP: "+(data.configured?"hợp lệ":"chưa hợp lệ"),
+     (data.mcpConnected?"✓":"✕")+" MCP → ADB: "+(data.mcpConnected?"đã phản hồi":"chưa xác nhận"),
+     (data.avdConnected?"✓":"✕")+" Android ảo được phép: "+(data.avdConnected?"đang kết nối":"chưa tìm thấy"),
+     (data.uiReadable?"✓":"✕")+" Đọc giao diện: "+(data.uiReadable?"thành công":"chưa thành công"),
+     "Số nút tương tác: "+(data.uiActionableCount||0),
+     "Thiết bị đã cấp quyền: "+(devices.map(d=>d.serial+" ("+d.status+")").join(", ")||"chưa có thiết bị online"),
+     "Vai trò Agent: "+(data.allowedRoles?.join(", ")||"chưa có"),
+     "Chạm Android ảo: "+(data.tapEnabled?"được cấu hình, luôn cần phê duyệt":"tắt"),
+     data.ready?"✓ Kết nối đọc AVD thật đạt (chưa thử tap).":
+       "✕ "+(details[data.detail]||"Chưa xác minh kết nối Android thật")
+   ].join("\n");
+ } catch(error){panel.textContent="Không kiểm tra được Android MCP: "+(error?.message||"lỗi kết nối");}
+ finally{button.disabled=false;}
+};
 $("quickStart").onclick=()=>{
  if(!$("openKey").value.trim() && $("openStatus").textContent.includes("chưa có")){
    $("status").textContent="Nhập OpenRouter API key ở trên để Agent có thể trả lời.";

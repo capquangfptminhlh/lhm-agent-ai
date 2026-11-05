@@ -29,14 +29,14 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,48}$")
 ALLOWED_COMMANDS = {"python","python3","pytest","git","ls","cat","pwd","find",
                     "rg","grep","sed","wc","head","tail","mkdir","cp","mv"}
 WINDOWS_TOOLS = {"windows_list","windows_launch","windows_snapshot","windows_screenshot",
-                 "windows_activate","windows_click","windows_type","windows_scroll",
+                 "windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
-ALLOWED_TOOLS = {"list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
+ALLOWED_TOOLS = {"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
 PAUSED = False
-MUTATIONS = {"windows_launch","write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
-             "windows_activate","windows_click","windows_type","windows_scroll",
+MUTATIONS = {"windows_launch","android_mcp_tap","opencli_click","opencli_fill","write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
+             "windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
              "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
              "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 MAX_FILE_BYTES = 96_000
@@ -47,11 +47,12 @@ _PLAYWRIGHT = None
 
 class ToolRequest(BaseModel):
     workspace_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,48}$")
+    run_id: str | None = Field(default=None,pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
-    tool: Literal["list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
+    tool: Literal["android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
                   "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
                   "windows_list","windows_launch","windows_snapshot","windows_screenshot","windows_activate",
-                  "windows_click","windows_type","windows_scroll",
+                  "windows_click","windows_click_element","windows_type","windows_scroll",
                   "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                   "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"]
     args: dict[str,Any] = Field(default_factory=dict)
@@ -85,9 +86,16 @@ def _safe_path(ws: str,role: str,name: str) -> Path:
         raise HTTPException(403,"Path outside Agent sandbox")
     return path
 
-def _allowed_domain(url: str) -> bool:
+def _allowed_domain(url: str, role: str | None = None) -> bool:
     allow={x.lower().rstrip(".").strip() for x in
             os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if x.strip()}
+    # Extra network fence for specialist Chrome profiles. Both global and
+    # role host lists must allow a target; an empty global list denies all.
+    if role in ("content","sales","quality"):
+        raw=os.getenv("LHM_COMPUTER_"+role.upper()+"_ALLOWED_HOSTS","")
+        # Fail closed: an empty role allowlist cannot inherit the global list.
+        own={x.lower().rstrip(".").strip() for x in raw.split(",") if x.strip()}
+        allow &= own
     try:
         u=urlsplit(url)
         host=(u.hostname or "").lower().rstrip(".")
@@ -165,7 +173,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
                 viewport={"width":1300,"height":850},**options)
             async def guard(route):
                 url=route.request.url
-                if url.startswith(("about:","data:","blob:")) or _allowed_domain(url):
+                if url.startswith(("about:","data:","blob:")) or _allowed_domain(url, role):
                     await route.continue_()
                 else:
                     await route.abort()
@@ -176,7 +184,7 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
         page.set_default_timeout(8000)
         if tool=="browser_open":
             url=args.get("url","")
-            if not isinstance(url,str) or not _allowed_domain(url):
+            if not isinstance(url,str) or not _allowed_domain(url, role):
                 raise HTTPException(422,"Browser URL must match an admin-approved HTTPS host")
             await page.goto(url,wait_until="domcontentloaded",timeout=16000)
         elif tool=="browser_scroll":
@@ -242,6 +250,15 @@ async def perform(req: ToolRequest) -> dict:
             raise HTTPException(503,"Windows native control is not available")
         return __native_tool(tool,args)
     _home(ws,role)
+    if tool.startswith("android_mcp_"):
+        from android_mcp_bridge import execute as android_mcp_execute
+        return await android_mcp_execute(role,tool,args,run_id=req.run_id)
+    if tool.startswith("opencli_"):
+        from opencli_windows_bridge import execute as opencli_execute
+        return await opencli_execute(ws,role,tool,args,run_id=req.run_id)
+    if tool=="agent_reach_search":
+        from agent_reach_bridge import search as agent_reach_search
+        return await agent_reach_search(ws,role,args,_home(ws,role))
     if tool=="sandbox_run":
         if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
             raise HTTPException(503,"Local Docker sandbox command is Windows Desktop-only")
@@ -302,6 +319,46 @@ async def perform(req: ToolRequest) -> dict:
         return await _browser(ws,role,tool,args)
     raise HTTPException(422,"Unsupported computer tool")
 
+async def _close_playwright_sessions() -> dict[str,int]:
+    """Release ONLY runner-owned Playwright/Edge contexts (not user Chrome).
+    
+    Called on authenticated owner shutdown and on ASGI graceful exit.
+    Do not run browser actions while closing: serialize with role locks.
+    """
+    global _PLAYWRIGHT
+    closed=0
+    for key,context in list(BROWSER_SESSIONS.items()):
+        lock=BROWSER_LOCKS.setdefault(key,asyncio.Lock())
+        async with lock:
+            try:
+                await asyncio.wait_for(context.close(),timeout=12)
+                closed+=1
+            except Exception:
+                # An unresponsive browser still requires us to stop Playwright.
+                pass
+            finally:
+                BROWSER_SESSIONS.pop(key,None)
+    if _PLAYWRIGHT is not None:
+        try:
+            await asyncio.wait_for(_PLAYWRIGHT.stop(),timeout=12)
+        except Exception:
+            pass
+        _PLAYWRIGHT=None
+    return {"contexts_closed":closed}
+
+
+@runner.post("/v1/browser/close")
+async def close_browser_sessions(authorization: str | None = Header(None)):
+    """Electron owner-only shutdown. Cannot close arbitrary external Chrome tabs."""
+    _auth(authorization)
+    return await _close_playwright_sessions()
+
+
+@runner.on_event("shutdown")
+async def close_browser_on_shutdown():
+    await _close_playwright_sessions()
+
+
 @runner.get("/health")
 async def health(authorization: str | None = Header(None)):
     _auth(authorization)
@@ -309,7 +366,31 @@ async def health(authorization: str | None = Header(None)):
             "mode":"windows_native" if os.name=="nt" and os.environ.get("LHM_DESKTOP_NATIVE")=="1" else "separate_runner",
             "paused":PAUSED,
             "agent_isolation":"directories_not_vms",
+            "agent_reach_cli_installed":bool(shutil.which("agent-reach")),
             "tools":sorted(ALLOWED_TOOLS)}
+
+@runner.get("/v1/android-mcp/status")
+async def android_mcp_status(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from android_mcp_diagnostics import inspect_status
+    # Real bounded MCP stdio/ADB reads on this Windows PC, never just
+    # an existence check for the Node script. No writes or screenshots.
+    return await inspect_status()
+
+
+@runner.get("/v1/opencli/status")
+async def opencli_status(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from opencli_diagnostics import inspect
+    return await inspect()
+
+
+@runner.get("/v1/opencli/profiles")
+async def opencli_profiles(authorization: str | None = Header(None)):
+    _auth(authorization)
+    from opencli_diagnostics import connected_profiles
+    return await connected_profiles()
+
 
 @runner.post("/v1/tool")
 async def tool_endpoint(request: ToolRequest,authorization: str | None = Header(None)):

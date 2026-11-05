@@ -1,0 +1,64 @@
+name: Android MCP Real Windows Acceptance (manual test AVD)
+
+on:
+  workflow_dispatch:
+    inputs:
+      avd_name:
+        description: "Existing dedicated test AVD name, already running"
+        required: true
+        type: string
+      serial:
+        description: "Exact emulator-XXXX ADB serial of that dedicated AVD"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lhm-robot-android-mcp-live
+  cancel-in-progress: false
+
+jobs:
+  android-mcp-live:
+    # Do not run on standard GitHub-hosted Windows CI: an actual owner-
+    # provisioned Android SDK + accelerated test AVD is mandatory.
+    runs-on: [self-hosted, Windows, X64, android-sdk]
+    timeout-minutes: 15
+    env:
+      LHM_ANDROID_TEST_SERIAL: ${{ inputs.serial }}
+      LHM_ANDROID_TEST_AVD: ${{ inputs.avd_name }}
+      LHM_ANDROID_MCP_TAP_ENABLED: "0"
+    steps:
+      - name: Checkout LHM Robot exact commit
+        uses: actions/checkout@v4
+        with:
+          path: lhm-agent-ai
+      - name: Checkout ggminh local read-only MCP server
+        uses: actions/checkout@v4
+        with:
+          repository: capquangfptminhlh/ggminh
+          ref: ee68f681c63ffd2e077179a374bd02c32c81426a
+          path: ggminh
+          persist-credentials: false
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only Python MCP protocol dependency
+        working-directory: lhm-agent-ai
+        shell: pwsh
+        run: python -m pip install "fastapi>=0.110,<1"
+      - name: Test REAL AVD via read-only Robot → MCP → ADB
+        working-directory: lhm-agent-ai
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python scripts/android_mcp_live_acceptance.py --serial "$env:LHM_ANDROID_TEST_SERIAL" --avd-name "$env:LHM_ANDROID_TEST_AVD" --ggminh "$env:GITHUB_WORKSPACE/ggminh"
+          if ($LASTEXITCODE -ne 0) { throw "Real Android MCP acceptance failed" }
+      # No screenshot, raw UI XML, serials, tokens or Android profiles uploaded.

@@ -17,6 +17,74 @@ test("Electron uses hardened renderer and does not expose Node to web pages",()=
  assert.match(main,/sameOrigin\(url\)/);
  assert.match(main,/setPermissionRequestHandler/);
 });
+test("OpenCLI Node and package are embedded in Windows installer; fixed extension shortcut",()=>{
+ const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
+ assert.equal(pkg.build.extraResources[1].to,"opencli-runtime");
+ assert.equal(pkg.build.afterPack,"scripts/ensure-opencli-bundle.cjs");
+ assert.ok(fs.existsSync(path.join(root,"scripts","ensure-opencli-bundle.cjs")));
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const settings=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
+ assert.match(main,/LHM_OPENCLI_BUNDLE_DIR/);
+ assert.match(main,/settings:opencli-extension/);
+ assert.match(main,/chromewebstore\.google\.com\/detail\/opencli/);
+ assert.match(settings,/id="opencliExtension"/);
+ assert.match(preload,/opencliExtension:.*settings:opencli-extension/);
+ assert.match(preload,/opencliProfiles:.*settings:opencli-profiles/);
+ assert.match(main,/settings:opencli-profiles/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/opencli\/profiles"/);
+ assert.match(settings,/id="opencliFindProfiles"/);
+ assert.match(settings,/id="opencliProfileSelect"/);
+
+});
+test("OpenCLI status is settings-only and authenticated on Windows native runner",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const preload=fs.readFileSync(path.join(root,"settings-preload.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ assert.match(main,/settings:opencli-status/);
+ assert.match(main,/event.sender.id!==settingsWindow.webContents.id/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/opencli\/status"/);
+ assert.match(preload,/opencliStatus:.*settings:opencli-status/);
+ assert.match(html,/id="opencliCheck"/);
+});
+test("OpenCLI is explicit opt-in with dedicated Chrome profile and host scope",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
+ assert.match(main,/LHM_OPENCLI_ENABLED/);
+ assert.match(main,/LHM_OPENCLI_PROFILE/);
+ assert.match(main,/LHM_OPENCLI_ALLOWED_HOSTS/);
+ assert.match(main,/opencliHosts\.some\(x=>!allowedHosts\.includes\(x\)\)/);
+ for(const field of ["opencliEnabled","opencliProfile","opencliHosts"]){
+   assert.match(html,new RegExp('id="'+field+'"'));
+   assert.match(js,new RegExp(field));
+ }
+});
+test("Windows owner can scope Content Sales Quality domains; no implicit global inheritance",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ for(const role of ["content","sales","quality"]){
+   assert.match(html,new RegExp('id="'+role+'Hosts"'));
+   assert.match(js,new RegExp(role+'Hosts'));
+   assert.match(main,new RegExp("LHM_COMPUTER_"+role.toUpperCase()+"_ALLOWED_HOSTS"));
+ }
+ assert.match(main,/hosts\.some\(h=>!allowedHosts\.includes\(h\)\)/);
+ const envSection=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];
+ for(const role of ["CONTENT","SALES","QUALITY"]){
+   assert.match(envSection,new RegExp("LHM_COMPUTER_"+role+"_ALLOWED_HOSTS"));
+ }
+});
+test("Electron releases ONLY owned Playwright Edge profile before stopping native runner",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const runner=fs.readFileSync(path.join(root,"..","computer_executor.py"),"utf8");
+ assert.match(main,/before-quit/);
+ assert.match(main,/NATIVE_ORIGIN\+"\/v1\/browser\/close"/);
+ assert.match(main,/await backendFetch\(NATIVE_ORIGIN/);
+ assert.match(runner,/@runner\.post\("\/v1\/browser\/close"\)/);
+ assert.match(runner,/_auth\(authorization\)/);
+ assert.match(runner,/await asyncio\.wait_for\(context\.close\(\)/);
+});
 test("Native runner receives no cloud secrets and no main env",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const native=main.split("function nativeEnv(runtimeEnv)")[1].split("function runtimeCommand(")[0];

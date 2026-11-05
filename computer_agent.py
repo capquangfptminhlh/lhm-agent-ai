@@ -8,6 +8,7 @@ are automated. A separate container runs subprocesses and Playwright.
 from __future__ import annotations
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,14 @@ from openrouter_provider import call_free_model, is_free_model, local_free_quota
 
 router=APIRouter(tags=["Agent Computer"])
 TOOLS = {
+  "android_mcp_devices":"Read ONLY operator-allowlisted Android device status via local Windows MCP. No screenshots or control; {}.",
+  "android_mcp_inspect":"Read sanitized Android UI roles, safe hints and geometry on an operator-allowlisted emulator; returns short-lived observation_id when owner enabled tapping; {serial: exact serial from android_mcp_devices}.",
+  "android_mcp_tap":"ONE operator-approved tap on a previously observed UI widget of a dedicated test emulator ONLY; {serial: exact emulator serial, observation_id: exact token from android_mcp_inspect, index: numeric observed widget index}. ALWAYS needs human approval. Fails if UI changed or token expired; then owner must reconcile actual result.",
+  "opencli_open":"Open a HTTPS URL in owner-approved dedicated Chrome profile; {url: https://allowed.host/path}",
+  "opencli_state":"Read the current allowlisted browser URL and numbered DOM elements; {}",
+  "opencli_click":"Click one numeric [ref] from current OpenCLI state with exact observed URL and label; {ref: integer, url: string, label: string}; always requires owner approval",
+  "opencli_fill":"Fill one numeric [ref] with observed URL and label; {ref: integer, url: string, label: string, text: string}; always requires owner approval",
+  "agent_reach_search":"Read-only cross-platform search via separately installed Agent-Reach; {channel: github|youtube|bilibili, query: text}; no login or posting.",
   "list_files":"List files under this Agent's sandbox directory; {path?: relative dir}",
   "read_file":"Read UTF-8 file inside sandbox; {path: relative file}",
   "write_file":"Write one UTF-8 file inside sandbox; {path: relative, content: text}; may require approval",
@@ -39,10 +48,11 @@ TOOLS = {
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
   "windows_list":"List Windows app HWNDs whose executables are allowed by the local operator; {}",
   "windows_launch":"Start an operator-allowlisted app (notepad.exe, explorer.exe or calc.exe), then call windows_list to get its HWND; explorer may open a folder inside Documents; {app: string, folder?: path under Documents}",
-  "windows_snapshot":"Read bounded UI Automation labels from an allowed HWND; {hwnd: integer}",
+  "windows_snapshot":"Read up to 60 UI Automation controls with type, label (redacted for editable/password fields), automation_id and visible center {x,y} local to the allowed HWND; use an observed center with windows_click, never invent coordinates; {hwnd: integer}",
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
   "windows_click":"Click inside focused allowed app window; {hwnd: int, x: local int, y: local int}; approval required",
+  "windows_click_element":"Click ONE UI Automation control in an allowed Windows HWND. First call windows_snapshot and use exact observed automation_id, control_type and label; no guessing, ambiguous matches fail. Always needs owner approval; {hwnd:int,automation_id:str,control_type:str,label:str}",
   "windows_right_click":"Right-click at local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
   "windows_double_click":"Double-click local x/y inside approved foreground HWND; always human approved; {hwnd:int,x:int,y:int}",
   "windows_hotkey":"Send only approved shortcuts Ctrl+S/A/C/V/F/Z/Y/Shift+S, Alt+Tab, Alt+Shift+Tab or Enter/Esc/arrows within selected foreground HWND; human approved in supervised mode; {hwnd:int,keys:str}",
@@ -56,7 +66,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","windows_launch","windows_activate","windows_click","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_launch","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -67,7 +77,7 @@ SENSITIVE_TOOLS={"sandbox_run","run_command","browser_click","browser_fill","win
 # post content and a fill can place data into an external form — the
 # decision's "send/post data out" category — and the two cannot be told
 # apart from routine clicks in advance, so the whole surface stays gated.
-ALWAYS_APPROVAL_TOOLS={"run_command","sandbox_run","vision_observe","vision_locate",
+ALWAYS_APPROVAL_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_click_element",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
                        "browser_click","browser_fill"}
@@ -129,9 +139,69 @@ def _steps(c: sqlite3.Connection, rid: str) -> list[dict[str,Any]]:
         out.append(d)
     return out
 
+def _android_tap_preview(args: dict, steps: list[dict]) -> dict:
+    """Only authorize a tap with a real prior UI inspection IN THIS RUN.
+
+    The preview is geometry/role only; MCP intentionally never leaks labels.
+    It is used in both the proposal/approved-step gates and human UI.
+    """
+    if not isinstance(args,dict) or set(args)!={"serial","observation_id","index"}:
+        raise HTTPException(422,"Android tap requires exact observed serial, token and index")
+    serial=args["serial"]
+    token=args["observation_id"]
+    index=args["index"]
+    if (not isinstance(serial,str) or
+            not re.fullmatch(r"emulator-[0-9]{4,5}",serial) or
+            not isinstance(token,str) or not re.fullmatch(r"[0-9a-f]{32}",token) or
+            type(index) is not int or not 1<=index<=120):
+        raise HTTPException(422,"Invalid Android observed target")
+    for step in reversed(steps):
+        if (step.get("tool")!="android_mcp_inspect" or
+                step.get("status")!="completed" or
+                (step.get("args") or {}).get("serial")!=serial):
+            continue
+        result=step.get("result")
+        if (not isinstance(result,dict) or
+                result.get("observation_id")!=token or
+                result.get("privacy")!="geometry-only" or
+                result.get("read_only") is not True):
+            continue
+        elements=result.get("elements")
+        if not isinstance(elements,list):
+            break
+        for element in elements:
+            if not isinstance(element,dict) or element.get("index")!=index:
+                continue
+            bounds=element.get("bounds")
+            if not isinstance(bounds,dict) or set(bounds)!={"x","y","width","height"}:
+                break
+            if (any(type(bounds.get(key)) is not int or
+                    not 0<=bounds[key]<=8192 for key in bounds) or
+                    bounds["width"]==0 or bounds["height"]==0):
+                break
+            role=element.get("role")
+            if role not in ("button","text-input","toggle","picker","slider",
+                            "interactive-view"):
+                role="interactive-view"
+            hint=element.get("hint")
+            if hint not in ("back","home","search","menu","close","next"):
+                hint=None
+            return {"serial":serial,"index":index,"role":role,
+                    "hint":hint,"bounds":bounds,
+                    "label_available":False,"requires_owner_review":True}
+        break
+    raise HTTPException(409,"Android tap needs a matching prior UI inspection in this Computer run")
+
+
 def _view(c, row) -> dict[str,Any]:
     out=dict(row)
     out["steps"]=_steps(c,row["id"])
+    for position,step in enumerate(out["steps"]):
+        if step["tool"]=="android_mcp_tap":
+            try:
+                step["tap_preview"]=_android_tap_preview(step["args"],out["steps"][:position])
+            except HTTPException:
+                step["tap_preview"]=None
     out["runner_configured"]=bool(os.getenv("LHM_COMPUTER_RUNNER_TOKEN",""))
     return out
 
@@ -177,6 +247,11 @@ def create_computer_run(ws: str, inp: ComputerRunIn):
             raise HTTPException(403,"Trusted mode is not enabled on this installation")
     elif inp.max_steps>MAX_STEPS:
         raise HTTPException(422,"Supervised runs are limited to 15 steps; longer runs require trusted mode")
+    # Match the fixed Work Order policy: Free-only desktops must never
+    # create a Computer Run pointing at a paid/default DeepSeek model.
+    from openrouter_provider import validate_model
+    selected_model = "openrouter/free" if os.environ.get("LHM_OPENROUTER_FREE_ONLY")=="1" else MODEL
+    validate_model(selected_model)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if not workspace(c,ws):
@@ -192,7 +267,7 @@ def create_computer_run(ws: str, inp: ComputerRunIn):
         c.execute("""INSERT INTO computer_runs
           (id,workspace_id,role,objective,model,status,max_steps,created_at,updated_at,idempotency_key,mode)
           VALUES(?,?,?,?,?,'queued',?,?,?,?,?)""",
-          (rid,ws,inp.role,inp.objective,MODEL,inp.max_steps,now(),now(),inp.idempotency_key,inp.mode))
+          (rid,ws,inp.role,inp.objective,selected_model,inp.max_steps,now(),now(),inp.idempotency_key,inp.mode))
         audit(c,ws,"computer.started",f"{inp.role}: sandbox computer task created ({inp.mode})",rid)
         return {**_view(c,_get(c,rid)),"deduplicated":False}
 
@@ -219,7 +294,7 @@ def cancel_computer_run(rid: str):
         r=_get(c,rid)
         if r["status"]=="processing":
             raise HTTPException(409,"Agent đang thực thi lệnh; không thể khẳng định đã hủy thao tác đang chạy")
-        if r["status"] not in ("queued","awaiting_approval","awaiting_checkpoint"):
+        if r["status"] not in ("queued","awaiting_approval","awaiting_checkpoint","awaiting_reconciliation"):
             raise HTTPException(409,"Session không thể hủy ở trạng thái này")
         c.execute("UPDATE computer_runs SET status='cancelled',updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.cancelled","Human cancelled computer session",rid)
@@ -234,6 +309,9 @@ def approve_computer_step(rid: str,sid: str):
         step=c.execute("SELECT * FROM computer_steps WHERE id=? AND run_id=?",(sid,rid)).fetchone()
         if not step or step["status"]!="awaiting_approval" or r["status"]!="awaiting_approval":
             raise HTTPException(409,"Không có lệnh phù hợp đang chờ duyệt")
+        if step["tool"]=="android_mcp_tap":
+            prior=[x for x in _steps(c,rid) if x["number"]<step["number"]]
+            _android_tap_preview(json.loads(step["args_json"]),prior)
         c.execute("UPDATE computer_steps SET status='approved',updated_at=? WHERE id=?",(now(),sid))
         c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.step_approved",f"{step['tool']} approved for sandbox runner",rid)
@@ -257,6 +335,41 @@ def approve_computer_checkpoint(rid: str):
                   (now(),rid))
         audit(c,r["workspace_id"],"computer.checkpoint_approved",
               "Human approved trusted-run checkpoint; run resumed",rid)
+        return _view(c,_get(c,rid))
+
+
+@router.post("/computer/runs/{rid}/reconciliation/acknowledge")
+def acknowledge_computer_reconciliation(rid: str):
+    """Owner checked the Chrome outcome; do NOT assert an external success.
+
+    Acknowledgement only unblocks later, separately approved actions. It
+    never replays a click or changes external_effect_verified to true.
+    """
+    prepare_db()
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        r=_get(c,rid)
+        if r["status"]!="awaiting_reconciliation":
+            raise HTTPException(409,"Phiên không có thao tác cần đối soát")
+        step=c.execute("SELECT * FROM computer_steps WHERE run_id=? ORDER BY number DESC LIMIT 1",
+                       (rid,)).fetchone()
+        if not step or step["tool"] not in ("opencli_click","android_mcp_tap") or step["status"]!="needs_review":
+            raise HTTPException(409,"Không có thao tác Android/OpenCLI đã ghi nhận để đối soát")
+        try:
+            receipt=json.loads(step["result_json"] or "{}")
+        except ValueError:
+            receipt={}
+        if (not isinstance(receipt,dict)
+                or receipt.get("requires_owner_reconciliation") is not True
+                or receipt.get("confirmed_by_cli") is not True
+                or receipt.get("external_effect_verified") is not False):
+            raise HTTPException(409,"Thiếu biên nhận OpenCLI hợp lệ; không thể tiếp tục")
+        c.execute("UPDATE computer_steps SET status='reviewed_unverified',error=NULL,updated_at=? WHERE id=?",
+                  (now(),step["id"]))
+        c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",
+                  (now(),rid))
+        audit(c,r["workspace_id"],"computer.reconciliation_acknowledged",
+              "Owner reviewed external effect; provider/app outcome remains UNVERIFIED",rid)
         return _view(c,_get(c,rid))
 
 
@@ -286,11 +399,14 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
     token=os.environ.get("LHM_COMPUTER_RUNNER_TOKEN","").strip()
     if not token:
         raise HTTPException(503,"LHM_COMPUTER_RUNNER_TOKEN chưa được cấu hình")
-    async with httpx.AsyncClient(timeout=httpx.Timeout(32,connect=5),trust_env=False) as client:
+    # OpenCLI runs state-before -> approved action -> state-after as separate
+    # Browser Bridge calls; default 32s would prematurely abandon real writes.
+    timeout=125 if tool.startswith("opencli_") else 85 if tool=="android_mcp_tap" else 32
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout,connect=5),trust_env=False) as client:
         response=await client.post(_runner_base()+"/v1/tool",
            headers={"Authorization":"Bearer "+token},
            json={"workspace_id":r["workspace_id"],"role":r["role"],
-                 "tool":tool,"args":args})
+                 "run_id":r.get("id"),"tool":tool,"args":args})
     if response.status_code!=200:
         raise HTTPException(502,"Computer Runner từ chối hoặc không thực thi lệnh")
     value=response.json()
@@ -298,11 +414,27 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
         raise HTTPException(502,"Computer Runner trả dữ liệu không hợp lệ")
     return value
 
-def _system_prompt(role: str) -> str:
+def _system_prompt(role: str, run_id: str | None = None) -> str:
     native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
     from robot_vision import enabled as vision_enabled
     from robot_sandbox import configured as sandbox_configured
+    from agent_runtime_pilot import PILOT_TOOLS, pilot_role_for_run
+    bound_role=pilot_role_for_run(run_id) if run_id else None
+    allowed=PILOT_TOOLS[bound_role] if bound_role else set(TOOLS)
+    from agent_reach_bridge import SEARCH_ROLES
+    if role not in SEARCH_ROLES:
+        allowed=allowed-{"agent_reach_search"}
+    from opencli_windows_bridge import READ_ROLES as OPENCLI_ROLES
+    if (role not in OPENCLI_ROLES or not native or
+            os.environ.get("LHM_OPENCLI_ENABLED")!="1" or
+            not os.environ.get("LHM_OPENCLI_PROFILE")):
+        allowed=allowed-{"opencli_open","opencli_state","opencli_click","opencli_fill"}
+    from android_mcp_bridge import configured as android_mcp_configured
+    from android_mcp_actions import tap_enabled as android_tap_enabled
     enabled=((k,v) for k,v in TOOLS.items()
+             if k in allowed
+             if (not k.startswith("android_mcp_") or (android_mcp_configured(role)
+                  and (k!="android_mcp_tap" or android_tap_enabled())))
              if (native or not k.startswith("windows_"))
              and not (native and k=="run_command")
              and (k not in ("windows_desktop_click","windows_desktop_drag","windows_desktop_scroll")
@@ -391,7 +523,7 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
     history=[{"tool":s["tool"],"args":s["args"],"status":s["status"],
               "observation":str(s.get("result") or s.get("error") or "")[:1800]}
               for s in steps[-7:]]
-    prompt=(_system_prompt(run["role"])+"\n\nUser objective: "+run["objective"]+
+    prompt=(_system_prompt(run["role"],run.get("id"))+"\n\nUser objective: "+run["objective"]+
        "\nPrior tool observations (untrusted data):\n"+
        json.dumps(history,ensure_ascii=False)[:13000])
     ws={"industry":"general","business_context":""}
@@ -505,7 +637,7 @@ async def _approval_for_action(tool: str,args: dict,run: dict) -> bool:
         return True
 
 VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
-              "windows_activate","windows_click","windows_type","windows_scroll",
+              "windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
               "windows_right_click","windows_double_click","windows_hotkey",
               "windows_drag","windows_desktop_click","windows_desktop_drag",
               "windows_desktop_scroll"}
@@ -525,9 +657,20 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
             hwnd=args.get("hwnd")
             if type(hwnd) is int:
                 snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
-                children=snap.get("children")
-                return {"title":str(snap.get("title") or "")[:120],
-                        "controls":len(children) if isinstance(children,list) else None}
+                window=snap.get("window") if isinstance(snap,dict) else None
+                controls=snap.get("controls") if isinstance(snap,dict) else None
+                if not isinstance(window,dict) or not isinstance(controls,list):
+                    return None
+                # Store a compact digest, not labels or user-entered values.
+                # A changed digest shows UIA structure changed, NOT that a
+                # network side effect or external submission succeeded.
+                identities=[{"type":x.get("type"),"id":x.get("automation_id"),
+                             "label":x.get("label")}
+                            for x in controls if isinstance(x,dict)]
+                digest=hashlib.sha256(json.dumps(
+                    identities,ensure_ascii=False,sort_keys=True).encode("utf-8")).hexdigest()[:20]
+                return {"title":str(window.get("title") or "")[:120],
+                        "controls":len(identities),"uia_fingerprint":digest}
     except Exception:
         return None
     return None
@@ -563,7 +706,8 @@ async def _post_verify(run: dict,tool: str,args: dict,result: dict,
             post=await _capture_ui_state(run,tool,args)
             if post is None and pre_state is None:
                 return {"method":"state_pair","ok":None,"detail":"state capture unavailable"}
-            return {"method":"state_pair","ok":None,"pre":pre_state,"post":post}
+            return {"method":"state_pair","ok":None,"pre":pre_state,"post":post,
+                    "observed_change":(pre_state!=post) if pre_state is not None and post is not None else None}
     except Exception:
         return {"method":"unavailable","ok":None}
     return None
@@ -617,7 +761,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 summary=args.get("summary")
                 if not isinstance(summary,str) or not summary.strip() or len(summary)>2000:
                     raise HTTPException(422,"AI finish summary invalid")
-                if not any(s["status"]=="completed" for s in steps):
+                if not any(s["status"] in ("completed","reviewed_unverified") for s in steps):
                     raise HTTPException(422,"AI chưa thực thi công cụ; không thể tự nhận hoàn thành")
                 with db() as c:
                     c.execute("UPDATE computer_runs SET status='completed_unverified',outcome=?,updated_at=? WHERE id=?",
@@ -639,6 +783,19 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     audit(c,run["workspace_id"],"computer.tool_rejected_args",
                           f"{tool} arguments invalid; nothing executed",rid)
                 return {"status":"queued","id":rid,"last_tool":tool,"step_status":"failed"}
+            from agent_runtime_pilot import assert_pilot_action
+            assert_pilot_action(run,tool,args,steps)
+            if tool.startswith("android_mcp_"):
+                from android_mcp_bridge import validate as validate_android_mcp
+                validate_android_mcp(run["role"],tool,args)
+                if tool=="android_mcp_tap":
+                    _android_tap_preview(args,steps)
+            if tool.startswith("opencli_"):
+                from opencli_windows_bridge import validate as validate_opencli
+                validate_opencli(run["role"],tool,args)
+            if tool=="agent_reach_search":
+                from agent_reach_bridge import validate as validate_reach
+                validate_reach(run["role"],args)
             approval_needed=await _approval_for_action(tool,args,run)
             sid=new_id()
             with db() as c:
@@ -659,6 +816,20 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         with db() as c:
             c.execute("UPDATE computer_steps SET status='executing',updated_at=? WHERE id=?",
                       (now(),sid))
+        # Bound pilot policy is enforced again for previously-approved steps.
+        from agent_runtime_pilot import assert_pilot_action
+        assert_pilot_action(run,tool,args)
+        if tool.startswith("android_mcp_"):
+            from android_mcp_bridge import validate as validate_android_mcp
+            validate_android_mcp(run["role"],tool,args)
+            if tool=="android_mcp_tap":
+                _android_tap_preview(args,steps)
+        if tool.startswith("opencli_"):
+            from opencli_windows_bridge import validate as validate_opencli
+            validate_opencli(run["role"],tool,args)
+        if tool=="agent_reach_search":
+            from agent_reach_bridge import validate as validate_reach
+            validate_reach(run["role"],args)
         # P3 evidence pair: capture local UI state BEFORE a UI mutation so
         # the step record carries an auditable before/after comparison.
         pre_state=None
@@ -689,6 +860,27 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 verify_failed=verification.get("ok") is False
                 if verify_failed:
                     step_status="failed"
+        # The CLI confirming a Chrome click is NOT evidence that a provider
+        # accepted a post, order or message. Pause the loop before the LLM
+        # can propose another action or claim an external success.
+        if tool in ("opencli_click","android_mcp_tap"):
+            if (result.get("confirmed_by_cli") is not True
+                    or result.get("requires_owner_reconciliation") is not True
+                    or result.get("external_effect_verified") is not False):
+                raise HTTPException(502,"OpenCLI click receipt incomplete; owner inspection required")
+            clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
+            detail=("Android emulator tap sent; inspect the Android screen before continuing. Outcome NOT verified." if tool=="android_mcp_tap" else
+                    "Chrome click executed; inspect the provider before continuing. Not verified published.")
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("UPDATE computer_steps SET status='needs_review',result_json=?,error=?,updated_at=? WHERE id=?",
+                          (clean,detail,now(),sid))
+                c.execute("UPDATE computer_runs SET status='awaiting_reconciliation',error=?,updated_at=? WHERE id=?",
+                          (detail,now(),rid))
+                audit(c,run["workspace_id"],"computer.external_reconciliation_required",
+                      tool+" action sent, external effect unverified; owner must inspect",rid)
+            return {"status":"awaiting_reconciliation","id":rid,
+                    "last_tool":tool,"step_status":"needs_review"}
         clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
         with db() as c:
             c.execute("BEGIN IMMEDIATE")

@@ -4,7 +4,7 @@
  * No web page receives Node, filesystem, OS command or Electron IPC powers.
  * The local Python runtime is a supervised, separate executable.
  */
-const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage} = require("electron");
+const {app, BrowserWindow, Menu, session, ipcMain, dialog, safeStorage ,shell} = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
@@ -12,13 +12,20 @@ const {spawn} = require("node:child_process");
 const http = require("node:http");
 const {requestFreeCompletion} = require("./openrouter-free-test.cjs");
 const {readiness} = require("./readiness.cjs");
+const {parseAndroidMcp,androidMcpEnv} = require("./android-mcp-config.cjs");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const BACKEND_ORIGIN = "http://127.0.0.1:7770";
 const NATIVE_ORIGIN = "http://127.0.0.1:7782";
 const ROUTES = Object.freeze({
   "Văn phòng 3D":"/office3d",
+  "Agent Office Bridge":"/agent-office",
   "Đội Agent trao đổi":"/team-chat",
+  "Việc cố định Agent":"/agent-work",
+  "Công cụ 16 phòng ban":"/agents/departments/ui",
+  "Runtime 3 Agent Pilot":"/agents/runtime-pilot/ui",
+  "Kho công cụ GitHub":"/agents/github-stack/ui",
+  "Agent theo repository":"/repo-agents/ui",
   "Máy tính Agent":"/computer",
   "Công cụ chuyên môn":"/agent-tools",
   "Workflow Builder":"/workflow-builder",
@@ -57,9 +64,28 @@ function saveSettings(input) {
       .split(",").map(x=>x.trim()).filter(Boolean);
   const allowedApps = String(input.allowedApps || "").toLowerCase()
       .split(",").map(x=>x.trim()).filter(Boolean);
+  const roleHosts={};
+  for(const role of ["content","sales","quality"]){
+    const key=role+"Hosts";
+    const hosts=String(input[key]||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+    if(hosts.length>20 || hosts.some(h=>!allowedHosts.includes(h))){
+      throw new Error("Website "+role+" phải là tập con của danh sách HTTPS tổng (tối đa 20).");
+    }
+    roleHosts[key]=[...new Set(hosts)];
+  }
   if (allowedHosts.length > 30 || allowedHosts.some(h=>
       !/^(?=.{4,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(h))) {
     throw new Error("Chỉ cho phép tối đa 30 tên miền HTTPS hợp lệ, không dùng IP hoặc wildcard.");
+  }
+  const androidMcp=parseAndroidMcp(input);
+  const opencliEnabled=input.opencliEnabled===true;
+  const opencliProfile=String(input.opencliProfile||"").trim();
+  const opencliHosts=String(input.opencliHosts||"").toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+  if(opencliEnabled && (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(opencliProfile) || !opencliHosts.length)) {
+    throw new Error("OpenCLI cần tên Chrome profile riêng và danh sách website được phép.");
+  }
+  if(opencliHosts.some(x=>!allowedHosts.includes(x)) || opencliHosts.length>15) {
+    throw new Error("Host OpenCLI phải nằm trong danh sách HTTPS được phép ở Windows Controller.");
   }
   const blocked=new Set(["cmd.exe","powershell.exe","pwsh.exe","wt.exe",
     "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe","wscript.exe",
@@ -73,13 +99,16 @@ function saveSettings(input) {
     throw new Error("Vision model phải là tên model OpenRouter :free cụ thể, không dùng gói trả phí.");
   }
   const data = {
-    provider, allowedHosts:[...new Set(allowedHosts)],
+    provider, allowedHosts:[...new Set(allowedHosts)], ...roleHosts,
     allowedApps:[...new Set(allowedApps)],
     visionEnabled:input.visionEnabled===true,
     trustedEnabled:input.trustedEnabled===true,
     fullScreenEnabled:input.fullScreenEnabled===true,
     visionModel,
     sandboxEnabled:input.sandboxEnabled===true,
+    reachEnabled:input.reachEnabled===true,
+    opencliEnabled,opencliProfile,opencliHosts:[...new Set(opencliHosts)],
+    ...androidMcp,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
     deepseekKey:""
@@ -106,12 +135,24 @@ function settingsForUI() {
   return {
     provider:"openrouter",
     allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.join(","):"",
+    contentHosts:Array.isArray(c.contentHosts)?c.contentHosts.join(","):"",
+    salesHosts:Array.isArray(c.salesHosts)?c.salesHosts.join(","):"",
+    qualityHosts:Array.isArray(c.qualityHosts)?c.qualityHosts.join(","):"",
     allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.join(","):"",
     visionEnabled:c.visionEnabled===true,
     trustedEnabled:c.trustedEnabled===true,
     fullScreenEnabled:c.fullScreenEnabled===true,
     visionModel:c.visionModel||"",
     sandboxEnabled:c.sandboxEnabled===true,
+    reachEnabled:c.reachEnabled===true,
+    opencliEnabled:c.opencliEnabled===true,
+    opencliProfile:c.opencliProfile||"",
+    opencliHosts:Array.isArray(c.opencliHosts)?c.opencliHosts.join(","):"",
+    androidMcpEnabled:c.androidMcpEnabled===true,
+    androidMcpTapEnabled:c.androidMcpTapEnabled===true,
+    androidMcpRepo:typeof c.androidMcpRepo==="string"?c.androidMcpRepo:"",
+    androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
+    androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):"",
     agentParallelism:[1,2,3,4].includes(c.agentParallelism)?c.agentParallelism:1,
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
@@ -129,9 +170,27 @@ function envForRuntime() {
     LHM_COMPUTER_URL:NATIVE_ORIGIN,
     LHM_COMPUTER_HOME:path.join(userData,"agent-data"),
     LHM_COMPUTER_BROWSER_CHANNEL:"msedge",
+    LHM_WINDOWS_REACH_ENABLED:c.reachEnabled===true?"1":"0",
+    ...androidMcpEnv({
+      androidMcpEnabled:c.androidMcpEnabled===true,
+    androidMcpTapEnabled:c.androidMcpTapEnabled===true,
+      androidMcpRepo:c.androidMcpRepo||"",
+      androidMcpSerials:Array.isArray(c.androidMcpSerials)?c.androidMcpSerials.join(","):"",
+      androidMcpRoles:Array.isArray(c.androidMcpRoles)?c.androidMcpRoles.join(","):""
+    },{packaged:app.isPackaged,resourcesPath:process.resourcesPath,
+       projectRoot:PROJECT_ROOT,platform:process.platform}),
+    LHM_OPENCLI_ENABLED:c.opencliEnabled===true?"1":"0",
+    LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
+    LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
+    LHM_OPENCLI_BUNDLE_DIR:app.isPackaged?path.join(process.resourcesPath,"opencli-runtime"):
+      (fs.existsSync(path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime","node.exe"))?
+        path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime"):""),
     LHM_DESKTOP_NATIVE:"1",
     LHM_DESKTOP_ALLOWED_APPS:(Array.isArray(c.allowedApps)?c.allowedApps:[]).join(","),
     LHM_COMPUTER_ALLOWED_HOSTS:(Array.isArray(c.allowedHosts)?c.allowedHosts:[]).join(","),
+    LHM_COMPUTER_CONTENT_ALLOWED_HOSTS:(Array.isArray(c.contentHosts)?c.contentHosts:[]).join(","),
+    LHM_COMPUTER_SALES_ALLOWED_HOSTS:(Array.isArray(c.salesHosts)?c.salesHosts:[]).join(","),
+    LHM_COMPUTER_QUALITY_ALLOWED_HOSTS:(Array.isArray(c.qualityHosts)?c.qualityHosts:[]).join(","),
     LHM_COMPUTER_VISION_ENABLED:c.visionEnabled===true?"1":"0",
     LHM_COMPUTER_TRUSTED_ENABLED:c.trustedEnabled===true?"1":"0",
     LHM_DESKTOP_FULL_SCREEN_ENABLED:c.fullScreenEnabled===true?"1":"0",
@@ -151,12 +210,19 @@ function nativeEnv(runtimeEnv) {
   // Deliberately never pass AI provider credentials to the native runner.
   const safeKeys=["SYSTEMROOT","WINDIR","PATH","PATHEXT","TEMP","TMP",
     "APPDATA","LOCALAPPDATA","USERPROFILE","HOMEDRIVE","HOMEPATH",
+    "ANDROID_SDK_ROOT","ANDROID_HOME",
     "PROGRAMFILES","PROGRAMFILES(X86)","COMMONPROGRAMFILES","COMSPEC"];
   const env={};
   for(const key of safeKeys) if(process.env[key]) env[key]=process.env[key];
   for(const key of ["LHM_COMPUTER_RUNNER_TOKEN","LHM_COMPUTER_HOME",
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
+    "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
+    "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
+    "LHM_ANDROID_MCP_ENABLED","LHM_ANDROID_MCP_TAP_ENABLED","LHM_ANDROID_MCP_ENTRY","LHM_ANDROID_MCP_NODE",
+    "LHM_ANDROID_MCP_ALLOWED_SERIALS","LHM_ANDROID_MCP_ALLOWED_ROLES",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
+    "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS","LHM_COMPUTER_SALES_ALLOWED_HOSTS",
+    "LHM_COMPUTER_QUALITY_ALLOWED_HOSTS",
     "LHM_DESKTOP_FULL_SCREEN_ENABLED",
     "LHM_SANDBOX_ENABLED"])
     env[key]=runtimeEnv[key];
@@ -214,9 +280,9 @@ function stopAll() {
   shutdown=true;
   for(const k of ["worker","native","api"])terminate(k);
 }
-function backendFetch(url,token,method="GET",body=null) {
+function backendFetch(url,token,method="GET",body=null,timeoutMs=1600) {
   return new Promise((resolve,reject)=>{
-    const req=http.request(url,{method,timeout:1600,
+    const req=http.request(url,{method,timeout:timeoutMs,
       headers:{"Authorization":"Bearer "+token,
         ...(body?{"Content-Type":"application/json"}:{})}},res=>{
       const chunks=[];
@@ -366,6 +432,60 @@ function settingsIPC(){
       allowedApps:Array.isArray(c.allowedApps)?c.allowedApps.length:0,
       allowedHosts:Array.isArray(c.allowedHosts)?c.allowedHosts.length:0});
   });
+  ipcMain.handle("settings:opencli-extension",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    // A fixed, trusted Chrome Web Store destination. Renderer never chooses URL.
+    await shell.openExternal("https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk");
+    return {opened:true};
+  });
+  ipcMain.handle("settings:opencli-profiles",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try {
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/opencli/profiles",runnerToken);
+      if(response.status!==200)throw Error("Native controller unavailable");
+      const data=JSON.parse(response.text);
+      if(!Array.isArray(data.profiles))throw Error("Invalid profile discovery");
+      return {profiles:data.profiles.slice(0,12),detail:String(data.detail||"").slice(0,160)};
+    } catch {
+      return {profiles:[],detail:"Không liệt kê được Chrome profile, kiểm tra Browser Bridge."};
+    }
+  });
+  ipcMain.handle("settings:opencli-status",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try{
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/opencli/status",runnerToken);
+      if(response.status!==200)throw Error("Windows native controller is unavailable");
+      const data=JSON.parse(response.text);
+      if(typeof data.ready!=="boolean" || typeof data.cli_installed!=="boolean")
+        throw Error("Invalid OpenCLI status");
+      return data;
+    }catch(err){
+      return {ready:false,enabled:false,cli_installed:false,
+              bridge_running:false,profile_connected:false,
+              detail:"Windows controller not ready or OpenCLI status unavailable"};
+    }
+  });
+  ipcMain.handle("settings:android-mcp-status",async event=>{
+    if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
+      throw Error("Not settings window");
+    try {
+      const response=await backendFetch(NATIVE_ORIGIN+"/v1/android-mcp/status",runnerToken,"GET",null,65000);
+      if(response.status!==200)throw Error("Android MCP status unavailable");
+      const data=JSON.parse(response.text);
+      if(typeof data.ready!=="boolean" || !Array.isArray(data.allowedRoles) ||
+         typeof data.connectionChecked!=="boolean" || !Array.isArray(data.devices))
+        throw Error("Invalid MCP status");
+      return data;
+    } catch {
+      return {ready:false,configured:false,enabled:false,connectionChecked:false,
+        mcpConnected:false,avdConnected:false,uiReadable:false,uiActionableCount:0,
+        devices:[],allowedRoles:[],allowedDeviceCount:0,
+        detail:"runner-unavailable-or-timeout"};
+    }
+  });
   ipcMain.handle("settings:test-openrouter",async event=>{
     if(!settingsWindow || event.sender.id!==settingsWindow.webContents.id)
       throw Error("Not settings window");
@@ -391,7 +511,26 @@ function settingsIPC(){
     return {saved:true};
   });
 }
-app.on("before-quit",stopAll);
+app.on("before-quit",event=>{
+  if(shutdown)return;
+  event.preventDefault();
+  // Edge is an owned persistent Playwright context. End its native profile
+  // lease before killing the runner; otherwise Windows may leave an orphan
+  // msedge.exe holding files even after Robot closes. Never close the user's
+  // independently opened Chrome/OpenCLI profiles here.
+  (async()=>{
+    try {
+      if(children.has("native")){
+        await backendFetch(NATIVE_ORIGIN+"/v1/browser/close",runnerToken,"POST",null,8500);
+      }
+    } catch(e) {
+      writeLog("electron","Browser cleanup skipped: "+(e?.name||"error")+"\n");
+    } finally {
+      stopAll();
+      app.quit();
+    }
+  })();
+});
 app.on("window-all-closed",()=>{if(process.platform!=="darwin")app.quit();});
 app.on("activate",()=>{if(!mainWindow)createMain();});
 app.whenReady().then(async()=>{

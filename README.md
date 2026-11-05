@@ -1,3 +1,57 @@
+## Android MCP cho Windows — đọc thiết bị theo quyền từng Agent
+
+LHM Robot Desktop có mục **Android MCP** trong Thiết lập Robot. Anh chọn thư mục `ggminh` trên Windows, serial ADB đã cho phép và các vai trò trong 16 Agent được đọc metadata Android. Computer Agent được cấp quyền có thể gọi `android_mcp_devices` / `android_mcp_inspect`; không có quyền chạm, gõ, cài APK hoặc gửi ảnh. Mặc định tắt, không cấp quyền cho Agent hoặc thiết bị nào. Công cụ cần Android SDK/ADB và phiên bản ggminh có MCP.
+
+Hướng dẫn: [docs/ANDROID_MCP_WINDOWS_AGENT.md](docs/ANDROID_MCP_WINDOWS_AGENT.md). Chưa có nghiệm thu Android emulator thực trên Windows nên không tuyên bố chức năng Android hoàn thiện.
+
+---
+
+## OpenCLI cho Windows — thao tác Chrome profile riêng, có phê duyệt
+
+Bản Computer Agent có thêm OpenCLI Browser Bridge **tùy chọn** để mở
+trang HTTPS được anh cấp quyền, xem các phần tử DOM, click và điền văn
+bản theo tham chiếu số. **Mọi click/fill đều đợi anh duyệt từng bước.**
+QA/Sales chỉ đọc; Content mới có quyền đề xuất click/fill.
+
+Bản Windows mới **đã đóng gói Node và OpenCLI 2.0.2**; anh không phải
+cài npm. Trong **Thiết lập Robot**, dùng nút mở Chrome Web Store để tự
+cài Browser Bridge vào **Chrome profile mới**, chọn profile và bật công cụ. Phải thiết lập danh sách host riêng, không
+tự truy cập Chrome cá nhân, không cần Linux/Docker. OpenCLI là bên thứ ba
+chạy bằng tài khoản Windows hiện tại; chưa có nghiệm thu phiên Chrome
+thật nếu chủ máy chưa thiết lập. Xem
+[docs/WINDOWS_OPENCLI_PILOT.md](docs/WINDOWS_OPENCLI_PILOT.md).
+
+---
+
+## Windows: Agent-Reach tìm kiếm ngay trong LHM Robot Desktop (không cần Linux)
+
+Bản Windows đóng gói có Agent-Reach v1.6.0 từ **wheel GitHub chính thức**,
+kiểm tra SHA-256 trước khi đưa vào EXE. Vào **LHM Robot → Thiết lập Robot**,
+tích **Bật Agent-Reach tìm kiếm GitHub/YouTube công khai ngay trên Windows**,
+lưu rồi khởi động lại. Agent Content, Quality, Research và các vai trò có
+quyền được gọi `agent_reach_search` khi làm Work Order qua Computer Agent.
+
+- **Không cần Docker / Linux** cho tìm kiếm GitHub và YouTube dạng công khai.
+  Các tính năng yêu cầu sandbox chạy mã vẫn có thể cần Docker riêng.
+- Không nhập tài khoản hay mật khẩu GitHub/YouTube; phiên Chrome cá nhân không
+  tự động được sao chép. Mọi kết quả tìm kiếm chỉ là dữ liệu từ nguồn ngoài,
+  phải kiểm chứng trước khi sử dụng.
+- Công cụ là một **tiến trình phụ** dưới tài khoản Windows hiện tại, có HOME,
+  APPDATA, LOCALAPPDATA riêng và không nhận OpenRouter key/runner token, nhưng
+  **không phải VM/security isolation**. Chỉ bật trên máy anh tin cậy; tắt
+  tùy chọn nếu không sử dụng.
+- Không có quyền đăng Facebook/TikTok/Zalo, không click Chrome hay gọi lệnh
+  shell qua công cụ này. Các thao tác khác của Robot giữ phê duyệt hiện tại.
+- Bản Windows thử nghiệm chỉ hỗ trợ **GitHub và YouTube** với backend công
+  khai xác định; Bilibili và social đăng nhập không được kích hoạt Windows.
+- Mã nguồn chạy trên Windows trước khi đóng gói có thể cài Agent-Reach bằng
+  `python scripts/install_agent_reach_windows.py` (người vận hành chạy
+  một lần; không cho AI tự cài).
+
+Xem `docs/WINDOWS_AGENT_REACH.md` để kiểm tra EXE, nguồn tải và giới hạn.
+
+---
+
 ## OpenRouter Free — kiểm tra API ngay trên Electron và GitHub
 
 Trong **LHM Robot Desktop → LHM Robot → Thiết lập Robot** anh lưu
@@ -28,6 +82,48 @@ màn hình và chuột, không phải 16 VM độc lập.
 
 Xem [ROBOT_GROK_ARCHITECTURE.md](ROBOT_GROK_ARCHITECTURE.md) để biết cấu
 hình, các giới hạn và điều kiện nghiệm thu trên Windows thật.
+
+---
+
+## 16 Agent chuyên môn → Work Order → Computer (quyền tối thiểu)
+
+Toàn bộ 16 Agent cố định đã có thể tạo Computer Run từ một Work Order tại
+`/agents/runtime-pilot/ui`. Mỗi Agent chia sẻ **một lõi Computer Runner**, nhưng
+mỗi lượt được ràng buộc chặt với đúng vai trò và Work Order gốc.
+
+**Giao diện sử dụng dễ hơn:** mở `/agent-work` trong Robot, giao một nhiệm
+vụ cố định rồi bấm **Cho Agent làm tiếp bằng Computer (giám sát)**. Nút này
+tạo một Computer Run dùng lại chính Work Order và idempotency ở backend; bấm
+lại không tạo lượt thứ hai. **Xem tiến độ Computer** đọc trạng thái thật,
+hiện các bước công cụ và khi cần phê duyệt/đối soát. Liên kết **Mở Computer
+để duyệt** dẫn tới màn giám sát hành động. Ở chiến dịch 16 Agent, anh chọn
+nút **Mở <vai trò>** để xem riêng nhiệm vụ và khởi tạo Computer từng người;
+không tự động bật 16 Computer Run cùng lúc.
+
+CI chạy Chrome thật với API/SQLite tạm, không có model key: tạo Work Order,
+bấm Computer, xác nhận dedupe và chọn từng Agent của Fleet. Kiểm thử này
+**không** chứng minh API/Chrome/Android thực sự kết nối với tài khoản của anh.
+
+- **Content / Sales / Quality:** giữ bộ công cụ trình duyệt đã có, bắt buộc
+  whitelist host riêng; click/fill có kiểm soát và những thao tác nhạy cảm
+  vẫn đợi người quản trị phê duyệt.
+- **13 vai trò khác:** chỉ được `list_files`, `read_file` trong thư mục
+  workspace/role; Research, Strategy, Lead, Ads, Analytics và Compliance
+  được đề xuất `agent_reach_search` (tìm kiếm công khai, cần bật và kết nối
+  thật). **Không được** mở trình duyệt, ghi file, thực thi lệnh, điều khiển
+  chuột Windows, chạm Android hay xuất bản bằng Computer Pilot.
+- Sau mỗi lượt Computer, trạng thái `completed_unverified` chỉ chứng minh
+  AI đã tạo báo cáo từ các bước công cụ đã lưu; **không có nghĩa** đã hoàn
+  thành thao tác ngoài hệ thống. Postiz/Tool Hub vẫn cần QA, phê duyệt và
+  biên nhận từ provider.
+- Các kiểm thử offline dùng API và SQLite thật, mô phỏng phản hồi model/
+  runner để kiểm tra mọi vai trò cùng giới hạn quyền. Chúng không chứng minh
+  16 Agent đang hoạt động thực tế trên máy của người dùng.
+
+Đây là nâng cấp từng phần, không phải 16 VM/PC riêng, cũng không phải tự
+kết nối tất cả website. Không cần cấu hình Chrome cho 13 vai trò chỉ đọc.
+Với tìm kiếm Agent-Reach, người quản trị cần bật công cụ riêng trong
+thiết lập Windows.
 
 ---
 
@@ -345,3 +441,12 @@ Tài liệu nhà cung cấp: https://openrouter.ai/collections/free-models ,
 https://openrouter.ai/openrouter/free và https://openrouter.ai/pricing .
 Đây là adapter đã kiểm thử offline với phản hồi mô phỏng, **chưa gọi thử
 một tài khoản OpenRouter thật** và chưa chạy production tải lớn.
+
+### Windows — cấp quyền website theo từng nhân viên AI
+
+Trong **Thiết lập Robot → Windows Controller**, ngoài danh sách domain
+HTTPS tổng, cần nhập **Content Hosts, Sales Hosts, Quality Hosts**. Mỗi danh
+sách là tập con của domain tổng; không nhập = không được truy cập bằng
+Computer Pilot. Robot áp giới hạn này cho cả Microsoft Edge/Playwright
+và OpenCLI. Windows CI kiểm thử browser tool bằng Edge thật trên trang trống,
+không chứng minh kết nối website có đăng nhập.

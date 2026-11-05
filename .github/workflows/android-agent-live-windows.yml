@@ -1,0 +1,68 @@
+name: LHM Robot Android REAL Windows AVD Acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      avd_name:
+        description: "Existing dedicated CLEAN test AVD (must contain no personal accounts)"
+        required: true
+        type: string
+      allow_safe_back_tap:
+        description: "Owner explicitly approves one safe Back button tap on the test AVD only"
+        required: true
+        type: choice
+        default: 'NO'
+        options:
+          - 'NO'
+          - 'YES'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lhm-robot-android-real-windows
+  cancel-in-progress: false
+
+jobs:
+  android-agent-live:
+    # Labels are intentionally strict. A regular windows-latest build does
+    # not have evidence of nested Android virtualization/real ADB runtime.
+    runs-on: [self-hosted, Windows, X64, android-sdk]
+    timeout-minutes: 20
+    env:
+      LHM_ANDROID_AVD: ${{ inputs.avd_name }}
+      LHM_ANDROID_LIVE_BACK_TAP: ${{ inputs.allow_safe_back_tap }}
+    steps:
+      - name: Checkout LHM Robot from selected commit
+        uses: actions/checkout@v4
+      - name: Checkout owner-controlled ggminh Android MCP
+        uses: actions/checkout@v4
+        with:
+          repository: capquangfptminhlh/ggminh
+          ref: ee68f681c63ffd2e077179a374bd02c32c81426a
+          path: ggminh
+          persist-credentials: false
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install minimal bridge dependency
+        run: python -m pip install "fastapi>=0.110,<1"
+      - name: Validate harness and policy mocks before real device
+        run: python -m unittest discover -s tests -p "test_android_agent_live_acceptance.py" -v
+      - name: Boot isolated AVD and test REAL Android UI through MCP
+        shell: pwsh
+        timeout-minutes: 13
+        run: |
+          $env:LHM_GGMINH_REPO = Join-Path $PWD 'ggminh'
+          python scripts/android_agent_live_acceptance.py
+      - name: Summarize real test category
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host 'REAL AVD acceptance requires a dedicated Windows self-hosted Android SDK/virtualization runner.'
+          Write-Host 'Without an explicitly dispatched successful run, Android hardware/runtime is NOT verified.'

@@ -68,6 +68,26 @@ def agent_parallelism() -> int:
         return 1
 
 
+async def maintain_worker_heartbeat(stop: asyncio.Event, interval: float = 5.0) -> None:
+    """Keep a truthful worker heartbeat while model/computer I/O is awaited.
+
+    The main work loop can await a slow provider for minutes. Heartbeat must
+    not depend on that loop completing a task. If SQLite is unavailable, the
+    heartbeat is not invented: the UI will correctly see it expire.
+    """
+    while not stop.is_set():
+        try:
+            with db() as c:
+                c.execute("INSERT INTO worker_heartbeats(id,updated_at) VALUES('default',?) "
+                          "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",(now(),))
+        except Exception as exc:
+            print(f"Worker heartbeat database error: {type(exc).__name__}",flush=True)
+        try:
+            await asyncio.wait_for(stop.wait(),timeout=interval)
+        except asyncio.TimeoutError:
+            pass
+
+
 async def _run_queued_task(task_id: str) -> None:
     try:
         await execute_task(task_id)
@@ -101,14 +121,9 @@ async def dispatch_agent_batch(rows: list) -> int:
     return len(selected)
 
 
-async def main() -> None:
-    print("LHM Agent Worker running. Approved tool jobs execute once, with reconciliation on errors.", flush=True)
+async def _work_loop() -> None:
     last_recover=0
     while True:
-        # This timestamp is observed by the office: never fake an online worker.
-        with db() as c:
-            c.execute("INSERT INTO worker_heartbeats(id,updated_at) VALUES('default',?) "
-                      "ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at",(now(),))
         if time.time()-last_recover>60:
             await recover_stuck()
             recover_computer_runs()
@@ -132,6 +147,17 @@ async def main() -> None:
         if not dispatched:
             await asyncio.sleep(2)
             continue
+
+
+async def main() -> None:
+    print("LHM Agent Worker running. Approved tool jobs execute once, with reconciliation on errors.", flush=True)
+    stop=asyncio.Event()
+    heart=asyncio.create_task(maintain_worker_heartbeat(stop))
+    try:
+        await _work_loop()
+    finally:
+        stop.set()
+        await heart
 
 
 if __name__=="__main__":
