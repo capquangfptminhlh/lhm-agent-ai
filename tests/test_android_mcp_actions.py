@@ -150,6 +150,9 @@ class AndroidTapTests(unittest.TestCase):
                     "research",RUN,self.args(first_token),inspector))
                 try:
                     await asyncio.wait_for(entered.wait(),timeout=2)
+                    # A tap starting in one run invalidates every prior
+                    # observation on that AVD, including other run tokens.
+                    self.assertNotIn(second_token,action._OBSERVATIONS)
                     with self.assertRaises(HTTPException) as busy:
                         await action.perform(
                             "research",other_run,self.args(second_token),inspector)
