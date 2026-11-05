@@ -1,8 +1,10 @@
 """Synthetic harness tests only. Live Windows self-hosted AVD is separate."""
 from __future__ import annotations
 
+import re
 import struct
 import unittest
+from pathlib import Path
 
 from scripts.android_agent_live_acceptance import (
     configured_avd, screenshot_metadata, run_live, PNG_SIGNATURE,
@@ -28,10 +30,13 @@ class FakeHost:
 
 
 class FakeBridge:
-    def __init__(self, *, safe_back=True, raw_text=False, deny=False):
+    def __init__(self, *, safe_back=True, raw_text=False, deny=False,
+                 ui_after="changed", wrong_receipt=False):
         self.safe_back=safe_back
         self.raw_text=raw_text
         self.deny=deny
+        self.ui_after=ui_after
+        self.wrong_receipt=wrong_receipt
         self.calls=[]
     async def execute(self, role, tool, args, run_id=None):
         self.calls.append((tool,run_id))
@@ -50,7 +55,9 @@ class FakeBridge:
             assert args["serial"]=="emulator-5554"
             assert args["index"]==1
             assert run_id is not None
-            return {"state":"tap_sent","confirmed_by_cli":True,
+            return {"state":"tap_sent","serial":args["serial"],
+                    "index":2 if self.wrong_receipt else args["index"],
+                    "ui_after":self.ui_after,"confirmed_by_cli":True,
                     "requires_owner_reconciliation":True,
                     "external_effect_verified":False}
         raise AssertionError("Unexpected MCP tool")
@@ -64,6 +71,7 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output["runtime"],"REAL_WINDOWS_AVD")
         self.assertEqual(output["read"],"PASS")
         self.assertEqual(output["tap"],"NOT_REQUESTED")
+        self.assertFalse(output["ui_transition_observed"])
         self.assertFalse(output["external_effect_verified"])
         self.assertEqual([c[0] for c in bridge.calls],
                          ["android_mcp_devices","android_mcp_inspect"])
@@ -75,6 +83,7 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
         result=await run_live(host,bridge,"LHM_Test_Pixel",
                               allow_back_tap=True)
         self.assertEqual(result["tap"],"SENT_UNVERIFIED_NEEDS_OWNER_RECONCILIATION")
+        self.assertTrue(result["ui_transition_observed"])
         self.assertFalse(result["external_effect_verified"])
         self.assertEqual(bridge.calls[-1][0],"android_mcp_tap")
         self.assertEqual(bridge.calls[-1][1],bridge.calls[1][1])
@@ -88,6 +97,54 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
                            allow_back_tap=True)
         self.assertEqual([c[0] for c in bridge.calls],
                          ["android_mcp_devices","android_mcp_inspect"])
+        self.assertEqual(host.calls[-1],"stop")
+
+    async def test_safe_back_rejects_offscreen_or_ambiguous_index(self):
+        class UnsafeBridge(FakeBridge):
+            def __init__(self, problem):
+                super().__init__()
+                self.problem=problem
+
+            async def execute(self, role, tool, args, run_id=None):
+                data=await super().execute(role,tool,args,run_id=run_id)
+                if tool=="android_mcp_inspect":
+                    if self.problem=="offscreen":
+                        data["elements"][0]["bounds"]["x"]=999
+                    else:
+                        data["elements"].append({
+                            "index":1,"role":"toggle","hint":None,
+                            "bounds":{"x":100,"y":120,"width":20,"height":20}
+                        })
+                return data
+
+        for issue in ("offscreen","duplicate"):
+            with self.subTest(issue=issue):
+                host=FakeHost()
+                bridge=UnsafeBridge(issue)
+                with self.assertRaises(RuntimeError):
+                    await run_live(host,bridge,"LHM_Test_Pixel",
+                                   allow_back_tap=True)
+                self.assertEqual(
+                    [call[0] for call in bridge.calls],
+                    ["android_mcp_devices","android_mcp_inspect"])
+                self.assertEqual(host.calls[-1],"stop")
+
+    async def test_back_without_ui_transition_never_reports_pass(self):
+        for outcome in ("unchanged","unavailable",None):
+            with self.subTest(outcome=outcome):
+                host=FakeHost()
+                bridge=FakeBridge(ui_after=outcome)
+                with self.assertRaisesRegex(RuntimeError,"no verified UI transition"):
+                    await run_live(host,bridge,"LHM_Test_Pixel",
+                                   allow_back_tap=True)
+                self.assertEqual(bridge.calls[-1][0],"android_mcp_tap")
+                self.assertEqual(host.calls[-1],"stop")
+
+    async def test_mismatched_tap_receipt_never_reports_pass(self):
+        host=FakeHost()
+        bridge=FakeBridge(wrong_receipt=True)
+        with self.assertRaisesRegex(RuntimeError,"not bound"):
+            await run_live(host,bridge,"LHM_Test_Pixel",allow_back_tap=True)
         self.assertEqual(host.calls[-1],"stop")
 
     async def test_private_label_refusal_and_cleanup(self):
@@ -118,6 +175,25 @@ class TestLivePreflight(unittest.TestCase):
         for invalid in ("../escape","AVD;whoami","","A"*70,"name with spaces"):
             with self.assertRaises(RuntimeError):
                 configured_avd(invalid)
+
+    def test_real_avd_workflows_use_the_ci_proven_ggminh_revision(self):
+        # Never silently switch a hardware acceptance test to ggminh/main.
+        root=Path(__file__).resolve().parents[1]
+        workflows=(
+            ".github/workflows/windows-desktop.yml",
+            ".github/workflows/android-agent-live-windows.yml",
+            ".github/workflows/android-mcp-live-windows.yml",
+        )
+        revisions=[]
+        for relative in workflows:
+            content=(root/relative).read_text(encoding="utf-8")
+            match=re.search(
+                r"repository:\s*capquangfptminhlh/ggminh\s*\n\s*ref:\s*([0-9a-f]{40})\s*$",
+                content,re.MULTILINE)
+            self.assertIsNotNone(match,f"{relative} must pin an exact ggminh SHA")
+            revisions.append(match.group(1))
+        self.assertEqual(len(set(revisions)),1,
+                         "Windows MCP contract and manual AVD workflows must test the same ggminh")
 
     def test_png_header_and_dimensions(self):
         payload=PNG_SIGNATURE+b"\x00\x00\x00\rIHDR"+struct.pack(">II",720,1280)

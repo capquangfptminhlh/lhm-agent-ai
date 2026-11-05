@@ -217,6 +217,7 @@ async def run_live(host: Any, bridge: Any, name: str, *,
             raise RuntimeError("Android UI metadata was not fully redacted")
 
         tap = "NOT_REQUESTED"
+        ui_transition_observed = False
         if allow_back_tap:
             # An explicit workflow dispatch enables only a navigation-back tap,
             # never an arbitrary control, payment, message, login, or install.
@@ -224,22 +225,48 @@ async def run_live(host: Any, bridge: Any, name: str, *,
                        node.get("role") == "button" and node.get("hint") == "back"]
             if len(targets) != 1 or not result.get("observation_id"):
                 raise RuntimeError("No unique verified Back button; refusing a substitute tap")
+            target=targets[0]
+            bounds=target["bounds"]
+            # MCP reports tap CENTER, not top-left. The test AVD screenshot
+            # supplies independent display dimensions; refuse ambiguous or
+            # off-screen navigation even when the node claims a 'back' hint.
+            if (type(target.get("index")) is not int or
+                    not 1 <= target["index"] <= 120 or
+                    any(node is not target and node.get("index")==target["index"]
+                        for node in nodes) or
+                    any(type(bounds.get(key)) is not int for key in
+                        ("x","y","width","height")) or
+                    bounds["width"] <= 0 or bounds["height"] <= 0 or
+                    not 0 <= bounds["x"] < screen["width"] or
+                    not 0 <= bounds["y"] < screen["height"]):
+                raise RuntimeError("Back target is ambiguous or outside the test AVD screen")
             tap_result = await bridge.execute(
                 "research", "android_mcp_tap",
                 {"serial":serial,"observation_id":result["observation_id"],
                  "index":targets[0]["index"]},
                 run_id=run_id,
             )
-            if tap_result.get("state") != "tap_sent" or \
-                    tap_result.get("requires_owner_reconciliation") is not True or \
-                    tap_result.get("external_effect_verified") is not False:
-                raise RuntimeError("LHM Robot tap receipt did not require owner reconciliation")
+            if (not isinstance(tap_result,dict) or
+                    tap_result.get("state") != "tap_sent" or
+                    tap_result.get("serial") != serial or
+                    tap_result.get("index") != target["index"] or
+                    tap_result.get("confirmed_by_cli") is not True or
+                    tap_result.get("requires_owner_reconciliation") is not True or
+                    tap_result.get("external_effect_verified") is not False):
+                raise RuntimeError("LHM Robot tap receipt is not bound or requires review")
+            # A return code alone does not prove a UI response. For the
+            # dedicated Settings Back acceptance, demand an independently
+            # re-inspected geometry change. Still NOT app-effect verification.
+            if tap_result.get("ui_after") != "changed":
+                raise RuntimeError("Test Back tap has no verified UI transition")
+            ui_transition_observed = True
             tap = "SENT_UNVERIFIED_NEEDS_OWNER_RECONCILIATION"
 
         return {
             "runtime":"REAL_WINDOWS_AVD",
             "read":"PASS",
             "tap":tap,
+            "ui_transition_observed":ui_transition_observed,
             "screenshot":screen,
             "total_nodes":len(nodes),
             "elapsed_seconds":round(time.monotonic()-start, 1),

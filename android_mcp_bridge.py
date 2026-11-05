@@ -26,6 +26,7 @@ ALL_ROLES = {
     "hr", "procurement", "support", "compliance",
 }
 MAX_OUTPUT_BYTES = 96_000
+MCP_READ_TIMEOUT_SECONDS = 27
 MAX_NODES = 120
 
 def allowed_roles() -> set[str]:
@@ -157,11 +158,21 @@ async def execute(role: str, tool: str, args: dict[str, Any],
             env=env
         )
         try:
-            stdout,_=await asyncio.wait_for(proc.communicate(payload),timeout=27)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.communicate()
-            raise HTTPException(504,"Android MCP local read timed out")
+            stdout,_=await asyncio.wait_for(proc.communicate(payload),timeout=MCP_READ_TIMEOUT_SECONDS)
+        except (asyncio.CancelledError, asyncio.TimeoutError) as exc:
+            # A cancelled Computer run must not leave a local Node/ADB reader
+            # alive after its approved Android operation has been released.
+            # wait_for also cancels communicate() on timeout. Kill the process
+            # and drain/reap it before propagating cancellation or timeout.
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+            await asyncio.shield(proc.communicate())
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            raise HTTPException(504,"Android MCP local read timed out") from exc
     except HTTPException:raise
     except (OSError,ValueError):
         raise HTTPException(503,"Android MCP executable or source unavailable")

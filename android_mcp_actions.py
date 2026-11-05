@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -21,6 +22,29 @@ MAX_AGE_SECONDS = 300
 MAX_OBSERVATIONS = 24
 # Native Windows runner memory only. Restart invalidates all observations.
 _OBSERVATIONS: dict[str, dict[str, Any]] = {}
+# A shared Windows Runner can execute two approved Computer runs concurrently.
+# Serialize tap + before/after inspection per emulator so both cannot act on
+# a stale screen at the same time. This lock is process-local (not an ADB lock).
+_TAP_MUTEX = threading.Lock()
+_ACTIVE_TAPS: set[str] = set()
+
+
+def _reserve(serial: str) -> None:
+    with _TAP_MUTEX:
+        if serial in _ACTIVE_TAPS:
+            raise HTTPException(409,"Android emulator has another active tap; inspect again")
+        _ACTIVE_TAPS.add(serial)
+        # A second run may hold an older observation of the same screen.
+        # Invalidate ALL of those tokens before any ADB operation. Geometry
+        # may look unchanged even when a tap had an external side effect.
+        for token, observation in list(_OBSERVATIONS.items()):
+            if observation["serial"] == serial:
+                _OBSERVATIONS.pop(token,None)
+
+
+def _release(serial: str) -> None:
+    with _TAP_MUTEX:
+        _ACTIVE_TAPS.discard(serial)
 
 def _valid_run(run_id: str | None) -> bool:
     return isinstance(run_id,str) and bool(UUID.fullmatch(run_id))
@@ -34,20 +58,25 @@ def prepare(role: str,run_id: str | None,serial: str,observed: dict) -> str | No
         return None
     if not isinstance(observed,dict) or observed.get("privacy")!="geometry-only":
         return None
-    now=time.monotonic()
-    for key,value in list(_OBSERVATIONS.items()):
-        if now-value["time"]>MAX_AGE_SECONDS or (
-            value["run_id"]==run_id and value["role"]==role and value["serial"]==serial
-        ):
-            _OBSERVATIONS.pop(key,None)
-    while len(_OBSERVATIONS)>=MAX_OBSERVATIONS:
-        _OBSERVATIONS.pop(next(iter(_OBSERVATIONS)))
-    token=secrets.token_hex(16)
-    _OBSERVATIONS[token]={
-        "run_id":run_id,"role":role,"serial":serial,
-        "time":now,"snapshot":json.dumps(observed,sort_keys=True,separators=(",",":"))
-    }
-    return token
+    # Never mint a new token while another run might be changing the UI.
+    # Guard the observation table with the same mutex as AVD reservation.
+    with _TAP_MUTEX:
+        if serial in _ACTIVE_TAPS:
+            return None
+        now=time.monotonic()
+        for key,value in list(_OBSERVATIONS.items()):
+            if now-value["time"]>MAX_AGE_SECONDS or (
+                value["run_id"]==run_id and value["role"]==role and value["serial"]==serial
+            ):
+                _OBSERVATIONS.pop(key,None)
+        while len(_OBSERVATIONS)>=MAX_OBSERVATIONS:
+            _OBSERVATIONS.pop(next(iter(_OBSERVATIONS)))
+        token=secrets.token_hex(16)
+        _OBSERVATIONS[token]={
+            "run_id":run_id,"role":role,"serial":serial,
+            "time":now,"snapshot":json.dumps(observed,sort_keys=True,separators=(",",":"))
+        }
+        return token
 
 def _claim(role: str,run_id: str | None,args: dict) -> dict:
     if not tap_enabled() or not _valid_run(run_id):
@@ -96,8 +125,17 @@ async def _send_tap(serial: str,x: int,y: int) -> None:
         )
         try:
             await asyncio.wait_for(process.wait(),timeout=12)
+        except asyncio.CancelledError:
+            # Cancelling a Computer run does NOT cancel an already spawned ADB
+            # child. Terminate/reap it before releasing the per-AVD tap lock.
+            # A touch may already have happened; never retry automatically.
+            if process.returncode is None:
+                process.kill()
+            await asyncio.shield(process.wait())
+            raise
         except asyncio.TimeoutError:
-            process.kill()
+            if process.returncode is None:
+                process.kill()
             await process.wait()
             # The touch may already have occurred: NEVER retry automatically.
             raise HTTPException(504,"Android tap outcome unknown; inspect device manually")
@@ -110,7 +148,19 @@ async def _send_tap(serial: str,x: int,y: int) -> None:
 
 async def perform(role: str,run_id: str | None,args: dict,
                   inspect_fn: Callable[[str],Awaitable[dict]]) -> dict:
+    # _claim consumes the observation before any await, even when the
+    # emulator is already busy. An approved run must inspect again to retry.
     expected=_claim(role,run_id,args)
+    serial=expected["serial"]
+    _reserve(serial)
+    try:
+        return await _perform_reserved(expected,inspect_fn)
+    finally:
+        _release(serial)
+
+
+async def _perform_reserved(expected: dict,
+                            inspect_fn: Callable[[str],Awaitable[dict]]) -> dict:
     # Single-use consumed before asynchronous work and never returned.
     serial=expected["serial"]
     try:
