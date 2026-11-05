@@ -111,6 +111,51 @@ class AndroidBridgeTests(unittest.TestCase):
         request=json.loads(process.received.splitlines()[-1])
         self.assertEqual(request["params"]["name"],"android_list_devices")
 
+    def test_cancelled_or_timed_out_node_read_kills_and_reaps(self):
+        class HangingNode:
+            returncode = None
+            def __init__(self):
+                self.started=asyncio.Event()
+                self.reaped=asyncio.Event()
+                self.killed=False
+                self.calls=0
+            async def communicate(self,data=None):
+                self.calls+=1
+                if data is not None:
+                    self.started.set()
+                    # The first invocation is deliberately stuck in stdio.
+                    await asyncio.Event().wait()
+                await self.reaped.wait()
+                return b"",b""
+            def kill(self):
+                self.killed=True
+                self.returncode=-9
+                self.reaped.set()
+
+        async def run_case(cancel: bool):
+            process=HangingNode()
+            async def spawn(*args,**kwargs):
+                return process
+            with (patch.object(bridge.asyncio,"create_subprocess_exec",side_effect=spawn),
+                  patch.object(bridge,"MCP_READ_TIMEOUT_SECONDS",0.05)):
+                task=asyncio.create_task(bridge.execute(
+                    "research","android_mcp_devices",{}))
+                if cancel:
+                    await asyncio.wait_for(process.started.wait(),timeout=2)
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+                else:
+                    with self.assertRaises(HTTPException) as error:
+                        await asyncio.wait_for(task,timeout=2)
+                    self.assertEqual(error.exception.status_code,504)
+                self.assertTrue(process.killed)
+                self.assertTrue(process.reaped.is_set())
+                self.assertEqual(process.calls,2)
+
+        asyncio.run(run_case(True))
+        asyncio.run(run_case(False))
+
     def test_observation_token_is_first_in_bounded_computer_history(self):
         # A full page can have 120 nodes; the Computer LLM only sees
         # 1800 chars of previous results. Token must be ahead of elements.
