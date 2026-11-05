@@ -224,6 +224,21 @@ async def run_live(host: Any, bridge: Any, name: str, *,
                        node.get("role") == "button" and node.get("hint") == "back"]
             if len(targets) != 1 or not result.get("observation_id"):
                 raise RuntimeError("No unique verified Back button; refusing a substitute tap")
+            target=targets[0]
+            bounds=target["bounds"]
+            # MCP reports tap CENTER, not top-left. The test AVD screenshot
+            # supplies independent display dimensions; refuse ambiguous or
+            # off-screen navigation even when the node claims a 'back' hint.
+            if (type(target.get("index")) is not int or
+                    not 1 <= target["index"] <= 120 or
+                    any(node is not target and node.get("index")==target["index"]
+                        for node in nodes) or
+                    any(type(bounds.get(key)) is not int for key in
+                        ("x","y","width","height")) or
+                    bounds["width"] <= 0 or bounds["height"] <= 0 or
+                    not 0 <= bounds["x"] < screen["width"] or
+                    not 0 <= bounds["y"] < screen["height"]):
+                raise RuntimeError("Back target is ambiguous or outside the test AVD screen")
             tap_result = await bridge.execute(
                 "research", "android_mcp_tap",
                 {"serial":serial,"observation_id":result["observation_id"],
