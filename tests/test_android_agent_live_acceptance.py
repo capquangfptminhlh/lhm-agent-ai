@@ -1,8 +1,10 @@
 """Synthetic harness tests only. Live Windows self-hosted AVD is separate."""
 from __future__ import annotations
 
+import re
 import struct
 import unittest
+from pathlib import Path
 
 from scripts.android_agent_live_acceptance import (
     configured_avd, screenshot_metadata, run_live, PNG_SIGNATURE,
@@ -173,6 +175,25 @@ class TestLivePreflight(unittest.TestCase):
         for invalid in ("../escape","AVD;whoami","","A"*70,"name with spaces"):
             with self.assertRaises(RuntimeError):
                 configured_avd(invalid)
+
+    def test_real_avd_workflows_use_the_ci_proven_ggminh_revision(self):
+        # Never silently switch a hardware acceptance test to ggminh/main.
+        root=Path(__file__).resolve().parents[1]
+        workflows=(
+            ".github/workflows/windows-desktop.yml",
+            ".github/workflows/android-agent-live-windows.yml",
+            ".github/workflows/android-mcp-live-windows.yml",
+        )
+        revisions=[]
+        for relative in workflows:
+            content=(root/relative).read_text(encoding="utf-8")
+            match=re.search(
+                r"repository:\\s*capquangfptminhlh/ggminh\\s*\\n\\s*ref:\\s*([0-9a-f]{40})\\s*$",
+                content,re.MULTILINE)
+            self.assertIsNotNone(match,f"{relative} must pin an exact ggminh SHA")
+            revisions.append(match.group(1))
+        self.assertEqual(len(set(revisions)),1,
+                         "Windows MCP contract and manual AVD workflows must test the same ggminh")
 
     def test_png_header_and_dimensions(self):
         payload=PNG_SIGNATURE+b"\x00\x00\x00\rIHDR"+struct.pack(">II",720,1280)
