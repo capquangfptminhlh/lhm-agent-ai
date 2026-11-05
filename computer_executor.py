@@ -234,6 +234,20 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
         return {"url":page.url,"title":heading[:180],"text":text,
                 "links":links,"controls":inputs}
 
+def desktop_workspace() -> str:
+    """The ONE workspace (hồ sơ) allowed to see and drive this PC's screen.
+
+    Desktop windows (Firefox, Chrome, Edge, Cốc Cốc, messengers, Explorer)
+    carry the owner's personal logins and cannot be split per workspace, so
+    the physical desktop and attached Android devices belong to exactly one.
+    Other workspaces use only their own sandbox, browser and Chrome profile.
+    """
+    return os.getenv("LHM_DESKTOP_WORKSPACE","").strip() or "demo"
+
+def _require_desktop_workspace(ws: str) -> None:
+    if ws!=desktop_workspace():
+        raise HTTPException(403,"Màn hình và thiết bị của máy này thuộc hồ sơ khác")
+
 def __native_tool(tool: str,args: dict):
     from windows_native import execute
     return execute(tool,args)
@@ -244,6 +258,9 @@ async def perform(req: ToolRequest) -> dict:
     if PAUSED and tool in MUTATIONS:
         raise HTTPException(423,"Emergency pause is active; no mutations allowed")
     if tool in WINDOWS_TOOLS:
+        # Ownership first: another workspace never learns whether this PC
+        # has a controllable desktop. Neither check touches the sandbox volume.
+        _require_desktop_workspace(ws)
         # Validate platform BEFORE touching the sandbox volume. A Linux
         # worker with an unmounted /agent-data must fail closed with 503.
         if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
@@ -251,6 +268,7 @@ async def perform(req: ToolRequest) -> dict:
         return __native_tool(tool,args)
     _home(ws,role)
     if tool.startswith("android_mcp_"):
+        _require_desktop_workspace(ws)
         from android_mcp_bridge import execute as android_mcp_execute
         return await android_mcp_execute(role,tool,args,run_id=req.run_id)
     if tool.startswith("opencli_"):

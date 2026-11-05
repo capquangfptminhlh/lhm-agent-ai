@@ -87,6 +87,32 @@ function saveSettings(input) {
   if(opencliHosts.some(x=>!allowedHosts.includes(x)) || opencliHosts.length>15) {
     throw new Error("Host OpenCLI phải nằm trong danh sách HTTPS được phép ở Windows Controller.");
   }
+  // One physical desktop and one Chrome profile per workspace (hồ sơ):
+  // Chrome keeps logins per profile, so profiles are never shared.
+  const workspaceId=/^[a-z0-9][a-z0-9_-]{1,48}$/;
+  const desktopWorkspace=String(input.desktopWorkspace||"demo").trim();
+  const opencliWorkspace=String(input.opencliWorkspace||"demo").trim();
+  if(!workspaceId.test(desktopWorkspace) || !workspaceId.test(opencliWorkspace)) {
+    throw new Error("Mã hồ sơ chỉ gồm chữ thường, số, gạch ngang (2–49 ký tự).");
+  }
+  const opencliProfiles={};
+  if(opencliProfile) opencliProfiles[opencliWorkspace]={profile:opencliProfile,hosts:[...new Set(opencliHosts)]};
+  for(const line of String(input.opencliExtraProfiles||"").split(/\r?\n/).map(x=>x.trim()).filter(Boolean)) {
+    const m=/^([^=|]+)=([^|]+)\|(.*)$/.exec(line);
+    if(!m) throw new Error("Mỗi dòng Chrome profile theo hồ sơ: hồ_sơ = profile | host1, host2");
+    const ws=m[1].trim(), profile=m[2].trim();
+    const hosts=m[3].toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+    if(!workspaceId.test(ws) || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(profile) || !hosts.length ||
+       hosts.length>15 || hosts.some(x=>!allowedHosts.includes(x))) {
+      throw new Error("Chrome profile của hồ sơ "+ws+" không hợp lệ hoặc website không có trong danh sách HTTPS.");
+    }
+    if(opencliProfiles[ws]) throw new Error("Hồ sơ "+ws+" đã có Chrome profile.");
+    opencliProfiles[ws]={profile,hosts:[...new Set(hosts)]};
+  }
+  const usedProfiles=Object.values(opencliProfiles).map(x=>x.profile.toLowerCase());
+  if(new Set(usedProfiles).size!==usedProfiles.length || usedProfiles.length>50) {
+    throw new Error("Mỗi hồ sơ phải dùng một Chrome profile riêng, không dùng chung.");
+  }
   const blocked=new Set(["cmd.exe","powershell.exe","pwsh.exe","wt.exe",
     "regedit.exe","mmc.exe","taskmgr.exe","conhost.exe","wscript.exe",
     "cscript.exe","mshta.exe","rundll32.exe","python.exe","pythonw.exe","node.exe"]);
@@ -108,6 +134,7 @@ function saveSettings(input) {
     sandboxEnabled:input.sandboxEnabled===true,
     reachEnabled:input.reachEnabled===true,
     opencliEnabled,opencliProfile,opencliHosts:[...new Set(opencliHosts)],
+    opencliWorkspace,opencliProfiles,desktopWorkspace,
     ...androidMcp,
     agentParallelism:([1,2,3,4].includes(input.agentParallelism)?input.agentParallelism:1),
     openrouterKey:current.openrouterKey || "",
@@ -148,6 +175,11 @@ function settingsForUI() {
     opencliEnabled:c.opencliEnabled===true,
     opencliProfile:c.opencliProfile||"",
     opencliHosts:Array.isArray(c.opencliHosts)?c.opencliHosts.join(","):"",
+    opencliWorkspace:c.opencliWorkspace||"demo",
+    opencliExtraProfiles:Object.entries(opencliProfileMap(c))
+      .filter(([ws])=>ws!==(c.opencliWorkspace||"demo"))
+      .map(([ws,x])=>ws+" = "+x.profile+" | "+x.hosts.join(", ")).join("\n"),
+    desktopWorkspace:c.desktopWorkspace||"demo",
     androidMcpEnabled:c.androidMcpEnabled===true,
     androidMcpTapEnabled:c.androidMcpTapEnabled===true,
     androidMcpRepo:typeof c.androidMcpRepo==="string"?c.androidMcpRepo:"",
@@ -157,6 +189,13 @@ function settingsForUI() {
     hasOpenrouterKey:!!c.openrouterKey,hasDeepseekKey:false,
     secureStorage:safeStorage.isEncryptionAvailable()
   };
+}
+function opencliProfileMap(c) {
+  // Settings saved before per-workspace profiles: the single profile
+  // belongs only to the demo workspace.
+  if(c.opencliProfiles && typeof c.opencliProfiles==="object" && !Array.isArray(c.opencliProfiles)) return c.opencliProfiles;
+  return typeof c.opencliProfile==="string" && c.opencliProfile ?
+    {[c.opencliWorkspace||"demo"]:{profile:c.opencliProfile,hosts:Array.isArray(c.opencliHosts)?c.opencliHosts:[]}} : {};
 }
 function envForRuntime() {
   const c=readRawSettings();
@@ -182,6 +221,9 @@ function envForRuntime() {
     LHM_OPENCLI_ENABLED:c.opencliEnabled===true?"1":"0",
     LHM_OPENCLI_PROFILE:typeof c.opencliProfile==="string"?c.opencliProfile:"",
     LHM_OPENCLI_ALLOWED_HOSTS:(Array.isArray(c.opencliHosts)?c.opencliHosts:[]).join(","),
+    LHM_OPENCLI_WORKSPACE:c.opencliWorkspace||"demo",
+    LHM_OPENCLI_PROFILES:Object.keys(opencliProfileMap(c)).length?JSON.stringify(opencliProfileMap(c)):"",
+    LHM_DESKTOP_WORKSPACE:c.desktopWorkspace||"demo",
     LHM_OPENCLI_BUNDLE_DIR:app.isPackaged?path.join(process.resourcesPath,"opencli-runtime"):
       (fs.existsSync(path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime","node.exe"))?
         path.join(PROJECT_ROOT,"desktop","vendor","opencli-runtime"):""),
@@ -218,6 +260,7 @@ function nativeEnv(runtimeEnv) {
     "LHM_COMPUTER_BROWSER_CHANNEL","LHM_DESKTOP_NATIVE",
     "LHM_WINDOWS_REACH_ENABLED","LHM_OPENCLI_ENABLED",
     "LHM_OPENCLI_PROFILE","LHM_OPENCLI_ALLOWED_HOSTS","LHM_OPENCLI_BUNDLE_DIR",
+    "LHM_OPENCLI_WORKSPACE","LHM_OPENCLI_PROFILES","LHM_DESKTOP_WORKSPACE",
     "LHM_ANDROID_MCP_ENABLED","LHM_ANDROID_MCP_TAP_ENABLED","LHM_ANDROID_MCP_ENTRY","LHM_ANDROID_MCP_NODE",
     "LHM_ANDROID_MCP_ALLOWED_SERIALS","LHM_ANDROID_MCP_ALLOWED_ROLES",
     "LHM_DESKTOP_ALLOWED_APPS","LHM_COMPUTER_ALLOWED_HOSTS",
