@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -21,6 +22,23 @@ MAX_AGE_SECONDS = 300
 MAX_OBSERVATIONS = 24
 # Native Windows runner memory only. Restart invalidates all observations.
 _OBSERVATIONS: dict[str, dict[str, Any]] = {}
+# A shared Windows Runner can execute two approved Computer runs concurrently.
+# Serialize tap + before/after inspection per emulator so both cannot act on
+# a stale screen at the same time. This lock is process-local (not an ADB lock).
+_TAP_MUTEX = threading.Lock()
+_ACTIVE_TAPS: set[str] = set()
+
+
+def _reserve(serial: str) -> None:
+    with _TAP_MUTEX:
+        if serial in _ACTIVE_TAPS:
+            raise HTTPException(409,"Android emulator has another active tap; inspect again")
+        _ACTIVE_TAPS.add(serial)
+
+
+def _release(serial: str) -> None:
+    with _TAP_MUTEX:
+        _ACTIVE_TAPS.discard(serial)
 
 def _valid_run(run_id: str | None) -> bool:
     return isinstance(run_id,str) and bool(UUID.fullmatch(run_id))
@@ -110,7 +128,19 @@ async def _send_tap(serial: str,x: int,y: int) -> None:
 
 async def perform(role: str,run_id: str | None,args: dict,
                   inspect_fn: Callable[[str],Awaitable[dict]]) -> dict:
+    # _claim consumes the observation before any await, even when the
+    # emulator is already busy. An approved run must inspect again to retry.
     expected=_claim(role,run_id,args)
+    serial=expected["serial"]
+    _reserve(serial)
+    try:
+        return await _perform_reserved(expected,inspect_fn)
+    finally:
+        _release(serial)
+
+
+async def _perform_reserved(expected: dict,
+                            inspect_fn: Callable[[str],Awaitable[dict]]) -> dict:
     # Single-use consumed before asynchronous work and never returned.
     serial=expected["serial"]
     try:
