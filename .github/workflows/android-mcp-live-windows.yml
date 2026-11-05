@@ -41,10 +41,10 @@ jobs:
           ref: ee68f681c63ffd2e077179a374bd02c32c81426a
           path: ggminh
           persist-credentials: false
-      - name: Node.js 22
+      - name: Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Python 3.11
         uses: actions/setup-python@v5
         with:
