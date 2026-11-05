@@ -153,6 +153,9 @@ class AndroidTapTests(unittest.TestCase):
                     # A tap starting in one run invalidates every prior
                     # observation on that AVD, including other run tokens.
                     self.assertNotIn(second_token,action._OBSERVATIONS)
+                    # Also reject fresh snapshots from other runs until the
+                    # in-flight device touch and post-inspection complete.
+                    self.assertIsNone(action.prepare("research",other_run,SERIAL,SNAPSHOT))
                     with self.assertRaises(HTTPException) as busy:
                         await action.perform(
                             "research",other_run,self.args(second_token),inspector)
@@ -168,6 +171,7 @@ class AndroidTapTests(unittest.TestCase):
             self.assertTrue(receipt["requires_owner_reconciliation"])
             self.assertEqual(inspector.await_count,2)
             self.assertNotIn(SERIAL,action._ACTIVE_TAPS)
+            self.assertIsNotNone(action.prepare("research",other_run,SERIAL,SNAPSHOT))
             with self.assertRaises(HTTPException) as replay:
                 action._claim("research",other_run,self.args(second_token))
             self.assertEqual(replay.exception.status_code,409)
