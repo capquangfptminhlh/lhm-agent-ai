@@ -188,7 +188,7 @@ class TestLivePreflight(unittest.TestCase):
         for relative in workflows:
             content=(root/relative).read_text(encoding="utf-8")
             match=re.search(
-                r"repository:\\s*capquangfptminhlh/ggminh\\s*\\n\\s*ref:\\s*([0-9a-f]{40})\\s*$",
+                r"repository:\s*capquangfptminhlh/ggminh\s*\n\s*ref:\s*([0-9a-f]{40})\s*$",
                 content,re.MULTILINE)
             self.assertIsNotNone(match,f"{relative} must pin an exact ggminh SHA")
             revisions.append(match.group(1))
