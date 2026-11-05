@@ -58,20 +58,25 @@ def prepare(role: str,run_id: str | None,serial: str,observed: dict) -> str | No
         return None
     if not isinstance(observed,dict) or observed.get("privacy")!="geometry-only":
         return None
-    now=time.monotonic()
-    for key,value in list(_OBSERVATIONS.items()):
-        if now-value["time"]>MAX_AGE_SECONDS or (
-            value["run_id"]==run_id and value["role"]==role and value["serial"]==serial
-        ):
-            _OBSERVATIONS.pop(key,None)
-    while len(_OBSERVATIONS)>=MAX_OBSERVATIONS:
-        _OBSERVATIONS.pop(next(iter(_OBSERVATIONS)))
-    token=secrets.token_hex(16)
-    _OBSERVATIONS[token]={
-        "run_id":run_id,"role":role,"serial":serial,
-        "time":now,"snapshot":json.dumps(observed,sort_keys=True,separators=(",",":"))
-    }
-    return token
+    # Never mint a new token while another run might be changing the UI.
+    # Guard the observation table with the same mutex as AVD reservation.
+    with _TAP_MUTEX:
+        if serial in _ACTIVE_TAPS:
+            return None
+        now=time.monotonic()
+        for key,value in list(_OBSERVATIONS.items()):
+            if now-value["time"]>MAX_AGE_SECONDS or (
+                value["run_id"]==run_id and value["role"]==role and value["serial"]==serial
+            ):
+                _OBSERVATIONS.pop(key,None)
+        while len(_OBSERVATIONS)>=MAX_OBSERVATIONS:
+            _OBSERVATIONS.pop(next(iter(_OBSERVATIONS)))
+        token=secrets.token_hex(16)
+        _OBSERVATIONS[token]={
+            "run_id":run_id,"role":role,"serial":serial,
+            "time":now,"snapshot":json.dumps(observed,sort_keys=True,separators=(",",":"))
+        }
+        return token
 
 def _claim(role: str,run_id: str | None,args: dict) -> dict:
     if not tap_enabled() or not _valid_run(run_id):
