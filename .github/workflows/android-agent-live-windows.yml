@@ -40,17 +40,16 @@ jobs:
         with:
           repository: capquangfptminhlh/ggminh
           ref: ee68f681c63ffd2e077179a374bd02c32c81426a
-          ref: main
           path: ggminh
           persist-credentials: false
       - name: Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Node.js 22
+      - name: Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
       - name: Install minimal bridge dependency
         run: python -m pip install "fastapi>=0.110,<1"
       - name: Validate harness and policy mocks before real device

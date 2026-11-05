@@ -176,8 +176,31 @@ class TestLivePreflight(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 configured_avd(invalid)
 
+    @staticmethod
+    def _single_ggminh_checkout_ref(content):
+        # Look only inside the checkout 'with:' mapping, not at unrelated
+        # refs in later steps. Duplicate YAML keys must never pass CI.
+        lines=content.splitlines()
+        matches=[i for i,line in enumerate(lines)
+                 if line.strip()=="repository: capquangfptminhlh/ggminh"]
+        if len(matches)!=1:
+            raise AssertionError("Exactly one owner ggminh checkout is required")
+        start=matches[0]
+        indent=len(lines[start])-len(lines[start].lstrip())
+        refs=[]
+        for line in lines[start+1:]:
+            if not line.strip():
+                continue
+            depth=len(line)-len(line.lstrip())
+            if depth<indent:
+                break
+            if depth==indent and line.strip().startswith("ref:"):
+                refs.append(line.strip().split(":",1)[1].strip())
+        if len(refs)!=1 or not re.fullmatch(r"[0-9a-f]{40}",refs[0]):
+            raise AssertionError("Exactly one immutable ggminh ref SHA is required")
+        return refs[0]
+
     def test_real_avd_workflows_use_the_ci_proven_ggminh_revision(self):
-        # Never silently switch a hardware acceptance test to ggminh/main.
         root=Path(__file__).resolve().parents[1]
         workflows=(
             ".github/workflows/windows-desktop.yml",
@@ -185,15 +208,32 @@ class TestLivePreflight(unittest.TestCase):
             ".github/workflows/android-mcp-live-windows.yml",
         )
         revisions=[]
+        runtimes=[]
         for relative in workflows:
             content=(root/relative).read_text(encoding="utf-8")
-            match=re.search(
-                r"repository:\s*capquangfptminhlh/ggminh\s*\n\s*ref:\s*([0-9a-f]{40})\s*$",
-                content,re.MULTILINE)
-            self.assertIsNotNone(match,f"{relative} must pin an exact ggminh SHA")
-            revisions.append(match.group(1))
+            revisions.append(self._single_ggminh_checkout_ref(content))
+            node_versions=set(re.findall(
+                r"""(?m)^\s*node-version:\s*['"]?(\d+)['"]?\s*$""", content))
+            self.assertEqual(len(node_versions),1,
+                             f"{relative} must select one Node major version")
+            runtimes.append(next(iter(node_versions)))
         self.assertEqual(len(set(revisions)),1,
-                         "Windows MCP contract and manual AVD workflows must test the same ggminh")
+                         "Windows protocol CI and AVD acceptance must pin the same ggminh")
+        self.assertEqual(len(set(runtimes)),1,
+                         "Manual AVD workflow must use protocol-tested Node major version")
+
+    def test_duplicate_ggminh_checkout_ref_is_rejected(self):
+        content="""steps:
+  - name: checkout
+    uses: actions/checkout@v4
+    with:
+      repository: capquangfptminhlh/ggminh
+      ref: ee68f681c63ffd2e077179a374bd02c32c81426a
+      ref: main
+      path: ggminh
+"""
+        with self.assertRaisesRegex(AssertionError,"Exactly one immutable"):
+            self._single_ggminh_checkout_ref(content)
 
     def test_png_header_and_dimensions(self):
         payload=PNG_SIGNATURE+b"\x00\x00\x00\rIHDR"+struct.pack(">II",720,1280)
