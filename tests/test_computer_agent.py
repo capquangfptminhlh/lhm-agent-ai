@@ -128,6 +128,7 @@ class ComputerAgentTests(unittest.TestCase):
         url="/computer/runs/"+r["id"]+"/tick"
         args={"ref":12,"url":"https://example.com/form","label":"Send"}
         with patch.dict(os.environ,{
+            "LHM_OPENCLI_PROFILE":"lhm-work",
             "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
             "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com"}):
             with patch.object(agent,"_next_action",AsyncMock(return_value=("opencli_click",args))):
@@ -166,6 +167,7 @@ class ComputerAgentTests(unittest.TestCase):
         r=self.create(role="content",key="opencli-missing-receipt-001")
         url="/computer/runs/"+r["id"]+"/tick"
         with patch.dict(os.environ,{
+            "LHM_OPENCLI_PROFILE":"lhm-work",
             "LHM_OPENCLI_ALLOWED_HOSTS":"example.com",
             "LHM_COMPUTER_CONTENT_ALLOWED_HOSTS":"example.com"}):
             with patch.object(agent,"_next_action",AsyncMock(return_value=(

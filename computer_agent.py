@@ -414,7 +414,7 @@ async def runner_call(r: dict[str,Any],tool: str,args: dict[str,Any]) -> dict:
         raise HTTPException(502,"Computer Runner trả dữ liệu không hợp lệ")
     return value
 
-def _system_prompt(role: str, run_id: str | None = None) -> str:
+def _system_prompt(role: str, run_id: str | None = None, workspace_id: str | None = None) -> str:
     native=os.environ.get("LHM_DESKTOP_NATIVE")=="1"
     from robot_vision import enabled as vision_enabled
     from robot_sandbox import configured as sandbox_configured
@@ -425,12 +425,22 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
     if role not in SEARCH_ROLES:
         allowed=allowed-{"agent_reach_search"}
     from opencli_windows_bridge import READ_ROLES as OPENCLI_ROLES
+    from opencli_windows_bridge import configured_for as opencli_configured_for, workspace_profiles
+    try:
+        opencli_ready=(opencli_configured_for(workspace_id) if workspace_id is not None
+                       else bool(workspace_profiles()))
+    except HTTPException:
+        opencli_ready=False
     if (role not in OPENCLI_ROLES or not native or
-            os.environ.get("LHM_OPENCLI_ENABLED")!="1" or
-            not os.environ.get("LHM_OPENCLI_PROFILE")):
+            os.environ.get("LHM_OPENCLI_ENABLED")!="1" or not opencli_ready):
         allowed=allowed-{"opencli_open","opencli_state","opencli_click","opencli_fill"}
     from android_mcp_bridge import configured as android_mcp_configured
     from android_mcp_actions import tap_enabled as android_tap_enabled
+    # The PC screen and Android devices belong to ONE workspace; the Runner
+    # refuses everyone else, so never offer those tools to other workspaces.
+    from computer_executor import desktop_workspace
+    if workspace_id is not None and workspace_id!=desktop_workspace():
+        allowed={k for k in allowed if not k.startswith(("windows_","android_mcp_"))}
     enabled=((k,v) for k,v in TOOLS.items()
              if k in allowed
              if (not k.startswith("android_mcp_") or (android_mcp_configured(role)
@@ -526,7 +536,7 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
     history=[{"tool":s["tool"],"args":s["args"],"status":s["status"],
               "observation":str(s.get("result") or s.get("error") or "")[:1800]}
               for s in steps[-7:]]
-    prompt=(_system_prompt(run["role"],run.get("id"))+"\n\nUser objective: "+run["objective"]+
+    prompt=(_system_prompt(run["role"],run.get("id"),run["workspace_id"])+"\n\nUser objective: "+run["objective"]+
        "\nPrior tool observations (untrusted data):\n"+
        json.dumps(history,ensure_ascii=False)[:13000])
     ws={"industry":"general","business_context":""}
@@ -817,7 +827,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     _android_tap_preview(args,steps)
             if tool.startswith("opencli_"):
                 from opencli_windows_bridge import validate as validate_opencli
-                validate_opencli(run["role"],tool,args)
+                validate_opencli(run["role"],tool,args,run["workspace_id"])
             if tool=="agent_reach_search":
                 from agent_reach_bridge import validate as validate_reach
                 validate_reach(run["role"],args)
@@ -851,7 +861,7 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                 _android_tap_preview(args,steps)
         if tool.startswith("opencli_"):
             from opencli_windows_bridge import validate as validate_opencli
-            validate_opencli(run["role"],tool,args)
+            validate_opencli(run["role"],tool,args,run["workspace_id"])
         if tool=="agent_reach_search":
             from agent_reach_bridge import validate as validate_reach
             validate_reach(run["role"],args)

@@ -9,23 +9,28 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from opencli_windows_bridge import _configuration, _toolchain, _windows, _PROFILE, MAX_OUTPUT
+from opencli_windows_bridge import _configuration, _toolchain, _windows, _PROFILE, MAX_OUTPUT, workspace_profiles
 
 
 async def inspect() -> dict[str,Any]:
     state={"enabled":os.environ.get("LHM_OPENCLI_ENABLED")=="1",
            "cli_installed":False,"bridge_running":False,
            "profile_connected":False,"ready":False,
-           "profile_alias":os.environ.get("LHM_OPENCLI_PROFILE","")[:80],
+           "profile_alias":"","workspaces":[],
            "detail":""}
     if not _windows() or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
         return {**state,"detail":"Requires local Windows Desktop"}
     if not state["enabled"]:
         return {**state,"detail":"Enable OpenCLI in Robot Settings and restart"}
     try:
-        node,entry,profile=_configuration()
+        # Every workspace (hồ sơ) must have its own connected Chrome profile.
+        wanted={ws:entry["profile"] for ws,entry in workspace_profiles().items()}
+        if not wanted:
+            raise HTTPException(409,"Chọn Chrome profile riêng cho từng hồ sơ")
+        node,entry,_=_configuration(next(iter(wanted)))
     except HTTPException as exc:
         return {**state,"detail":str(exc.detail)[:160]}
+    state["profile_alias"]=", ".join(wanted.values())[:80]
     state["cli_installed"]=True
     env={k:os.environ[k] for k in ("PATH","PATHEXT","SYSTEMROOT",
          "WINDIR","APPDATA","LOCALAPPDATA","USERPROFILE","TEMP","TMP")
@@ -50,9 +55,13 @@ async def inspect() -> dict[str,Any]:
             return {**state,"detail":"OpenCLI returned an invalid diagnostics response"}
         state["bridge_running"]=data.get("daemonRunning") is True and data.get("daemonStale") is not True
         profiles=data.get("profiles")
-        state["profile_connected"]=isinstance(profiles,list) and any(
-            isinstance(p,dict) and profile in (p.get("alias"),p.get("contextId")) and p.get("connected") is True
-            for p in profiles)
+        def connected(profile: str) -> bool:
+            return isinstance(profiles,list) and any(
+                isinstance(p,dict) and profile in (p.get("alias"),p.get("contextId")) and p.get("connected") is True
+                for p in profiles)
+        state["workspaces"]=[{"workspace":ws,"profile":profile,"connected":connected(profile)}
+                             for ws,profile in wanted.items()]
+        state["profile_connected"]=all(w["connected"] for w in state["workspaces"])
         state["ready"]=state["bridge_running"] and state["profile_connected"]
         state["detail"]="Chrome profile connected" if state["ready"] else (
             "Start Chrome with the OpenCLI extension on the selected dedicated profile")
