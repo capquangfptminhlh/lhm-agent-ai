@@ -28,10 +28,13 @@ class FakeHost:
 
 
 class FakeBridge:
-    def __init__(self, *, safe_back=True, raw_text=False, deny=False):
+    def __init__(self, *, safe_back=True, raw_text=False, deny=False,
+                 ui_after="changed", wrong_receipt=False):
         self.safe_back=safe_back
         self.raw_text=raw_text
         self.deny=deny
+        self.ui_after=ui_after
+        self.wrong_receipt=wrong_receipt
         self.calls=[]
     async def execute(self, role, tool, args, run_id=None):
         self.calls.append((tool,run_id))
@@ -50,7 +53,9 @@ class FakeBridge:
             assert args["serial"]=="emulator-5554"
             assert args["index"]==1
             assert run_id is not None
-            return {"state":"tap_sent","confirmed_by_cli":True,
+            return {"state":"tap_sent","serial":args["serial"],
+                    "index":2 if self.wrong_receipt else args["index"],
+                    "ui_after":self.ui_after,"confirmed_by_cli":True,
                     "requires_owner_reconciliation":True,
                     "external_effect_verified":False}
         raise AssertionError("Unexpected MCP tool")
@@ -64,6 +69,7 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(output["runtime"],"REAL_WINDOWS_AVD")
         self.assertEqual(output["read"],"PASS")
         self.assertEqual(output["tap"],"NOT_REQUESTED")
+        self.assertFalse(output["ui_transition_observed"])
         self.assertFalse(output["external_effect_verified"])
         self.assertEqual([c[0] for c in bridge.calls],
                          ["android_mcp_devices","android_mcp_inspect"])
@@ -75,6 +81,7 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
         result=await run_live(host,bridge,"LHM_Test_Pixel",
                               allow_back_tap=True)
         self.assertEqual(result["tap"],"SENT_UNVERIFIED_NEEDS_OWNER_RECONCILIATION")
+        self.assertTrue(result["ui_transition_observed"])
         self.assertFalse(result["external_effect_verified"])
         self.assertEqual(bridge.calls[-1][0],"android_mcp_tap")
         self.assertEqual(bridge.calls[-1][1],bridge.calls[1][1])
@@ -119,6 +126,24 @@ class TestWindowsAvdHarness(unittest.IsolatedAsyncioTestCase):
                     [call[0] for call in bridge.calls],
                     ["android_mcp_devices","android_mcp_inspect"])
                 self.assertEqual(host.calls[-1],"stop")
+
+    async def test_back_without_ui_transition_never_reports_pass(self):
+        for outcome in ("unchanged","unavailable",None):
+            with self.subTest(outcome=outcome):
+                host=FakeHost()
+                bridge=FakeBridge(ui_after=outcome)
+                with self.assertRaisesRegex(RuntimeError,"no verified UI transition"):
+                    await run_live(host,bridge,"LHM_Test_Pixel",
+                                   allow_back_tap=True)
+                self.assertEqual(bridge.calls[-1][0],"android_mcp_tap")
+                self.assertEqual(host.calls[-1],"stop")
+
+    async def test_mismatched_tap_receipt_never_reports_pass(self):
+        host=FakeHost()
+        bridge=FakeBridge(wrong_receipt=True)
+        with self.assertRaisesRegex(RuntimeError,"not bound"):
+            await run_live(host,bridge,"LHM_Test_Pixel",allow_back_tap=True)
+        self.assertEqual(host.calls[-1],"stop")
 
     async def test_private_label_refusal_and_cleanup(self):
         host=FakeHost()
