@@ -266,9 +266,11 @@ async def perform(req: ToolRequest) -> dict:
         if os.name!="nt" or os.environ.get("LHM_DESKTOP_NATIVE")!="1":
             raise HTTPException(503,"Windows native control is not available")
         return __native_tool(tool,args)
+    if tool.startswith("android_mcp_"):
+        # Same as the desktop: refuse other workspaces before any sandbox I/O.
+        _require_desktop_workspace(ws)
     _home(ws,role)
     if tool.startswith("android_mcp_"):
-        _require_desktop_workspace(ws)
         from android_mcp_bridge import execute as android_mcp_execute
         return await android_mcp_execute(role,tool,args,run_id=req.run_id)
     if tool.startswith("opencli_"):
