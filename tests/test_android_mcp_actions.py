@@ -209,9 +209,9 @@ class AndroidTapTests(unittest.TestCase):
 
         async def scenario():
             process=BlockingProcess()
-            with patch.object(action,"_adb_binary",return_value="C:/Sdk/adb.exe"), \\
-                 patch.object(action.asyncio,"create_subprocess_exec",
-                              new_callable=AsyncMock,return_value=process):
+            with (patch.object(action,"_adb_binary",return_value="C:/Sdk/adb.exe"),
+                  patch.object(action.asyncio,"create_subprocess_exec",
+                               new_callable=AsyncMock,return_value=process)):
                 task=asyncio.create_task(action._send_tap(SERIAL,200,100))
                 await asyncio.wait_for(process.started.wait(),timeout=2)
                 task.cancel()
