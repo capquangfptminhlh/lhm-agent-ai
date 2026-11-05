@@ -123,6 +123,34 @@ class TickWithInvalidArgsTests(unittest.TestCase):
         self.assertIn("nothing executed", view["steps"][0]["error"])
         runner.assert_not_awaited()
 
+    def test_rejected_action_is_never_requested_again_and_repeats_stop_the_run(self):
+        # Owner run 2026-11-05, P4 #3: the owner rejected an extra link click,
+        # the model asked for the same click again and the run never finished.
+        run = self.client.post("/workspaces/demo/computer/runs", json={
+            "role": "research", "objective": "Mở example.com và mở liên kết đầu tiên", "max_steps": 10,
+            "idempotency_key": "p4-owner-run-rejected-loop"}).json()
+        click = ("browser_click", {"selector": "a[href='https://www.iana.org/domains']"})
+        runner = AsyncMock(side_effect=AssertionError("runner must not be called"))
+        with patch.object(agent, "_next_action", AsyncMock(return_value=click)), \
+                patch.object(agent, "runner_call", runner):
+            first = asyncio.run(agent.computer_tick(run["id"]))
+            self.assertEqual(first["status"], "awaiting_approval")
+            rejected = self.client.post(f"/computer/runs/{run['id']}/steps/{first['step_id']}/reject")
+            self.assertEqual(rejected.status_code, 200, rejected.text)
+            again = asyncio.run(agent.computer_tick(run["id"]))
+            self.assertEqual((again["status"], again["step_status"]), ("queued", "failed"))
+            stop = asyncio.run(agent.computer_tick(run["id"]))
+            self.assertEqual(stop["status"], "needs_review")
+        view = self.client.get(f"/computer/runs/{run['id']}").json()
+        self.assertEqual([s["status"] for s in view["steps"]], ["rejected", "failed", "failed"])
+        self.assertNotIn("awaiting_approval", [s["status"] for s in view["steps"][1:]])
+        self.assertIn("already rejected", view["steps"][1]["error"])
+        self.assertEqual(view["status"], "needs_review")
+        self.assertIn("owner rejected", view["error"])
+        runner.assert_not_awaited()
+        # A different action after a rejection is still proposed normally.
+        self.assertIn("refused by the owner", agent._system_prompt("research"))
+
 
 class FreeModelContactFilterTests(unittest.TestCase):
     """Task 4 was refused at step 0 for the fake test@example.com."""

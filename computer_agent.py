@@ -455,10 +455,13 @@ def _system_prompt(role: str, run_id: str | None = None) -> str:
       "All paths are relative to the Agent's own sandbox. "
       "Terminal is a restricted argv array, NEVER shell. "
       "Finish only after relevant successful tool evidence. "
+      "A step with status rejected was refused by the owner: never request that same action again; "
+      "choose a different action or finish with what you already observed. "
       "Browser may open only admin-allowlisted HTTPS hosts.\n"
       "Tools:\n"+choices)
 
 FORMAT_ERRORS={"AI không trả JSON hành động hợp lệ","AI action phải có đúng tool và args"}
+REPEATED_REJECTION="Owner already rejected this exact action, nothing executed"
 _THINK=re.compile(r"<think>.*?(?:</think>|$)",re.S|re.I)
 
 def _extract_action_object(content: Any) -> Any:
@@ -783,6 +786,28 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     audit(c,run["workspace_id"],"computer.tool_rejected_args",
                           f"{tool} arguments invalid; nothing executed",rid)
                 return {"status":"queued","id":rid,"last_tool":tool,"step_status":"failed"}
+            # Owner run 2026-11-05 (P4 #3): after the owner rejected a click the
+            # free model asked for the identical click again and never finished.
+            # A refused action is never put to the owner twice; repeating it
+            # again stops the run for a human instead of looping.
+            if any(s["status"]=="rejected" and s["tool"]==tool and s["args"]==args for s in steps):
+                repeated=any(s["status"]=="failed" and str(s.get("error") or "").startswith(REPEATED_REJECTION)
+                             for s in steps)
+                with db() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    c.execute("""INSERT INTO computer_steps
+                      (id,run_id,number,tool,args_json,status,error,created_at,updated_at)
+                      VALUES (?,?,?,?,?,'failed',?,?,?)""",
+                      (new_id(),rid,len(steps)+1,tool,json.dumps(args,ensure_ascii=False),
+                       REPEATED_REJECTION+"; take a different approach or finish",now(),now()))
+                    c.execute("UPDATE computer_runs SET step_count=step_count+1,status=?,error=?,updated_at=? WHERE id=?",
+                              ("needs_review" if repeated else "queued",
+                               "Agent kept requesting an action the owner rejected" if repeated else None,
+                               now(),rid))
+                    audit(c,run["workspace_id"],"computer.rejected_action_repeated",
+                          f"{tool} was already rejected; not asked again",rid)
+                return {"status":"needs_review" if repeated else "queued","id":rid,
+                        "last_tool":tool,"step_status":"failed"}
             from agent_runtime_pilot import assert_pilot_action
             assert_pilot_action(run,tool,args,steps)
             if tool.startswith("android_mcp_"):
