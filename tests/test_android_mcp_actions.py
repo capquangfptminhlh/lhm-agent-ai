@@ -191,6 +191,36 @@ class AndroidTapTests(unittest.TestCase):
         with self.assertRaises(HTTPException):
             action._claim("research",RUN,self.args(token))
 
+    def test_cancelled_adb_tap_terminates_child_before_unlock(self):
+        class BlockingProcess:
+            returncode=None
+            def __init__(self):
+                self.started=asyncio.Event()
+                self.exited=asyncio.Event()
+                self.killed=False
+            async def wait(self):
+                self.started.set()
+                await self.exited.wait()
+                return -9 if self.killed else 0
+            def kill(self):
+                self.killed=True
+                self.returncode=-9
+                self.exited.set()
+
+        async def scenario():
+            process=BlockingProcess()
+            with patch.object(action,"_adb_binary",return_value="C:/Sdk/adb.exe"), \\
+                 patch.object(action.asyncio,"create_subprocess_exec",
+                              new_callable=AsyncMock,return_value=process):
+                task=asyncio.create_task(action._send_tap(SERIAL,200,100))
+                await asyncio.wait_for(process.started.wait(),timeout=2)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertTrue(process.killed)
+                self.assertTrue(process.exited.is_set())
+        asyncio.run(scenario())
+
     def test_find_adb_from_standard_localappdata_sdk(self):
         with tempfile.TemporaryDirectory(prefix="android-sdk-test-") as root:
             adb=Path(root)/"Android"/"Sdk"/"platform-tools"/"adb.exe"
