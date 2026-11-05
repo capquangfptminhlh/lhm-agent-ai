@@ -208,11 +208,19 @@ class TestLivePreflight(unittest.TestCase):
             ".github/workflows/android-mcp-live-windows.yml",
         )
         revisions=[]
+        runtimes=[]
         for relative in workflows:
             content=(root/relative).read_text(encoding="utf-8")
             revisions.append(self._single_ggminh_checkout_ref(content))
+            node_versions=set(re.findall(
+                r"""(?m)^\s*node-version:\s*['"]?(\d+)['"]?\s*$""", content))
+            self.assertEqual(len(node_versions),1,
+                             f"{relative} must select one Node major version")
+            runtimes.append(next(iter(node_versions)))
         self.assertEqual(len(set(revisions)),1,
                          "Windows protocol CI and AVD acceptance must pin the same ggminh")
+        self.assertEqual(len(set(runtimes)),1,
+                         "Manual AVD workflow must use protocol-tested Node major version")
 
     def test_duplicate_ggminh_checkout_ref_is_rejected(self):
         content="""steps:
