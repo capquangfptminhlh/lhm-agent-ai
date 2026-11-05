@@ -40,7 +40,6 @@ jobs:
         with:
           repository: capquangfptminhlh/ggminh
           ref: ee68f681c63ffd2e077179a374bd02c32c81426a
-          ref: main
           path: ggminh
           persist-credentials: false
       - name: Python 3.11
