@@ -130,6 +130,60 @@ class AndroidTapTests(unittest.TestCase):
                         {"mode":"trusted"}))
         self.assertEqual(bridge.TAP_TOOL,"android_mcp_tap")
 
+    def test_simultaneous_approved_taps_same_avd_never_overlap(self):
+        other_run="12345678-1234-4123-8123-123456789abd"
+        first_token=self.token()
+        second_token=self.token(other_run)
+        inspector=AsyncMock(return_value=SNAPSHOT)
+
+        async def scenario():
+            entered=asyncio.Event()
+            release=asyncio.Event()
+            sent=[]
+            async def blocked_adb(serial,x,y):
+                sent.append((serial,x,y))
+                entered.set()
+                await release.wait()
+
+            with patch.object(action,"_send_tap",side_effect=blocked_adb):
+                first=asyncio.create_task(action.perform(
+                    "research",RUN,self.args(first_token),inspector))
+                try:
+                    await asyncio.wait_for(entered.wait(),timeout=2)
+                    with self.assertRaises(HTTPException) as busy:
+                        await action.perform(
+                            "research",other_run,self.args(second_token),inspector)
+                    self.assertEqual(busy.exception.status_code,409)
+                    self.assertNotIn(second_token,action._OBSERVATIONS)
+                    self.assertEqual(sent,[(SERIAL,200,100)])
+                    # Busy attempt never even re-inspected or sent a second touch.
+                    self.assertEqual(inspector.await_count,1)
+                finally:
+                    release.set()
+                receipt=await asyncio.wait_for(first,timeout=2)
+            self.assertEqual(receipt["state"],"tap_sent")
+            self.assertTrue(receipt["requires_owner_reconciliation"])
+            self.assertEqual(inspector.await_count,2)
+            self.assertNotIn(SERIAL,action._ACTIVE_TAPS)
+            with self.assertRaises(HTTPException) as replay:
+                action._claim("research",other_run,self.args(second_token))
+            self.assertEqual(replay.exception.status_code,409)
+
+        asyncio.run(scenario())
+
+    def test_device_reservation_released_when_reinspection_fails(self):
+        token=self.token()
+        with patch.object(action,"_send_tap",new_callable=AsyncMock) as sent:
+            with self.assertRaises(HTTPException):
+                asyncio.run(action.perform(
+                    "research",RUN,self.args(token),
+                    AsyncMock(side_effect=RuntimeError("AVD disconnected"))))
+        sent.assert_not_awaited()
+        self.assertNotIn(SERIAL,action._ACTIVE_TAPS)
+        # Failure does not make the original token reusable.
+        with self.assertRaises(HTTPException):
+            action._claim("research",RUN,self.args(token))
+
     def test_find_adb_from_standard_localappdata_sdk(self):
         with tempfile.TemporaryDirectory(prefix="android-sdk-test-") as root:
             adb=Path(root)/"Android"/"Sdk"/"platform-tools"/"adb.exe"
