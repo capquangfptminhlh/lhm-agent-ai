@@ -26,6 +26,7 @@ ALL_ROLES = {
     "hr", "procurement", "support", "compliance",
 }
 MAX_OUTPUT_BYTES = 96_000
+MCP_READ_TIMEOUT_SECONDS = 27
 MAX_NODES = 120
 
 def allowed_roles() -> set[str]:
@@ -157,7 +158,7 @@ async def execute(role: str, tool: str, args: dict[str, Any],
             env=env
         )
         try:
-            stdout,_=await asyncio.wait_for(proc.communicate(payload),timeout=27)
+            stdout,_=await asyncio.wait_for(proc.communicate(payload),timeout=MCP_READ_TIMEOUT_SECONDS)
         except (asyncio.CancelledError, asyncio.TimeoutError) as exc:
             # A cancelled Computer run must not leave a local Node/ADB reader
             # alive after its approved Android operation has been released.
