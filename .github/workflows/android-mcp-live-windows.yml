@@ -38,6 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: capquangfptminhlh/ggminh
+          ref: ee68f681c63ffd2e077179a374bd02c32c81426a
           path: ggminh
           persist-credentials: false
       - name: Node.js 22
