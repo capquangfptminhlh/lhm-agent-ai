@@ -309,6 +309,19 @@ def main() -> None:
                                                         item["value_length"]=len(value)
                                                     except Exception:
                                                         item["matches_test_term"]="unavailable"
+                                                    try:
+                                                        item["uia_has_focus"]=bool(element.has_keyboard_focus())
+                                                    except Exception:
+                                                        item["uia_has_focus"]="unavailable"
+                                                    # Isolated local fixture only:
+                                                    # test native UIA editing as a
+                                                    # diagnostic, NEVER count it as
+                                                    # an Agent action or PASS.
+                                                    try:
+                                                        element.set_edit_text(NEEDLE)
+                                                        item["uia_set_value_supported"]=True
+                                                    except Exception as exc:
+                                                        item["uia_set_value_error"]=type(exc).__name__
                                                 focused_edits.append(item)
                                                 if len(focused_edits)>=20:
                                                     break
