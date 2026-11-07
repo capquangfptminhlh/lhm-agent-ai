@@ -161,6 +161,29 @@ def main() -> None:
                                     "Windows UIA could not fill browser Find input",
                                 }
                                 reason=detail if detail in safe_reasons else "unclassified"
+                                if tool=="windows_fill_find" and response.status_code==409:
+                                    # CI-only OS identity diagnostics. Never
+                                    # print window title, field content, URL,
+                                    # file path or screenshots.
+                                    import ctypes
+                                    from ctypes import wintypes
+                                    import psutil
+                                    u=ctypes.windll.user32
+                                    fg=int(u.GetForegroundWindow() or 0)
+                                    pid=wintypes.DWORD(0)
+                                    u.GetWindowThreadProcessId(
+                                        wintypes.HWND(fg),ctypes.byref(pid))
+                                    owner_name="unknown"
+                                    if pid.value:
+                                        try:
+                                            owner_name=psutil.Process(pid.value).name().lower()
+                                        except Exception:
+                                            pass
+                                    print("EDGE_FOREGROUND_IDENTITY",{
+                                        "selected_is_foreground":fg==target_hwnd,
+                                        "foreground_process":owner_name,
+                                        "selected_hwnd_valid":bool(u.IsWindow(wintypes.HWND(target_hwnd))),
+                                    },flush=True)
                                 print("EDGE_RUNNER_DENIAL",tool,response.status_code,reason,
                                       flush=True)
                                 raise HTTPException(502,
