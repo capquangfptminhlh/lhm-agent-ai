@@ -43,7 +43,7 @@ header { padding: 36px; font-size: 24px; background: #eef2f9; }
 <div class="footer"></div></body></html>
 """
 TOOLS=("windows_list","windows_activate","windows_hotkey",
-       "windows_snapshot","windows_click","windows_type",
+       "windows_snapshot","windows_fill_find",
        "windows_hotkey","windows_hotkey","windows_screenshot")
 
 
@@ -197,18 +197,16 @@ def main() -> None:
                                     assert (edits[1]["center"]["y"]-
                                             edits[0]["center"]["y"])>=18,(
                                         "Edge find/address bar geometry ambiguous")
-                                    action=("windows_click",{"hwnd":hwnd,
-                                        **edits[1]["center"]})
+                                    action=("windows_fill_find",{"hwnd":hwnd,
+                                        "automation_id":edits[1]["automation_id"],
+                                        "text":NEEDLE})
                                 elif n==5:
-                                    action=("windows_type",{"hwnd":hwnd,"text":NEEDLE,
-                                        "input_method":"physical_ascii"})
-                                elif n==6:
                                     action=("windows_hotkey",{"hwnd":hwnd,"keys":"ENTER"})
-                                elif n==7:
+                                elif n==6:
                                     action=("windows_hotkey",{"hwnd":hwnd,"keys":"ESC"})
-                                elif n==8:
+                                elif n==7:
                                     action=("windows_screenshot",{"hwnd":hwnd})
-                                elif n==9:
+                                elif n==8:
                                     action=("finish",{
                                         "summary":"Đã gửi Ctrl+F tới Edge thử nghiệm; cần đối chiếu kết quả độc lập.",
                                         "evidence":"Giao diện Windows thật và hậu kiểm DOM tách riêng."
@@ -241,7 +239,7 @@ def main() -> None:
                                 assert out.get("last_tool")==expected,(expected,out)
                                 assert out["status"]=="queued",(expected,out)
 
-                                if number==6:
+                                if number==5:
                                     # Chromium/Edge may only commit a find
                                     # after ENTER. Never mark success from
                                     # the hotkey receipt alone.
@@ -342,6 +340,8 @@ def main() -> None:
                         saved=api.get(f"/computer/runs/{rid}").json()
                         assert [s["tool"] for s in saved["steps"]]==list(TOOLS)
                         assert all(s["status"]=="completed" for s in saved["steps"])
+                        assert saved["steps"][4]["result"]["filled"] is True
+                        assert saved["steps"][4]["result"]["search_result_verified"] is False
                         # Screenshot bytes are NOT persisted to SQLite.
                         assert saved["steps"][-1]["result"]["screenshot_available"] is True
                         assert "png_base64" not in str(saved)
