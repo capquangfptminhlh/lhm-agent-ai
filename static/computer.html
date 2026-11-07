@@ -51,6 +51,13 @@ textarea{min-height:110px;resize:vertical}.btn{border-radius:9px;background:#1d7
 <h2 style="margin-top:22px">Các bước thực hiện</h2><div id="steps"><div class="empty">Chưa có bước nào</div></div>
 <div id="outcome" class="note" hidden></div>
 </section>
+<section class="panel">
+ <div class="line between"><h2 style="margin:0">Nhật ký kiểm chứng · Chỉ đọc</h2>
+ <div class="line"><button id="replayRefresh" type="button" class="btn secondary" disabled>Xem lịch sử</button>
+ <button id="replayExport" type="button" class="btn secondary" disabled>Xuất JSON an toàn</button></div></div>
+ <p class="meta">Phê duyệt, trạng thái trước/sau và kết quả kiểm tra đã ẩn dữ liệu nhạy cảm. Chỉ xem lại dấu vết; tuyệt đối không phát lại lệnh click/gõ.</p>
+ <div id="replayTrail" class="empty">Chọn phiên và bấm Xem lịch sử.</div>
+</section>
 <section class="panel"><div class="line between"><h2 style="margin:0">Màn hình trình duyệt Agent</h2>
 <button id="screenshot" type="button" class="btn secondary" disabled>◉ Chụp màn hình</button></div>
 <p class="meta">Hình chụp thật từ Chrome trong Computer Runner. Không dùng ảnh minh họa hoặc tiến độ giả.</p>
@@ -126,6 +133,13 @@ function renderSelected(){
  $("checkpoint").hidden=!r||r.status!=="awaiting_checkpoint";
  $("reconcile").hidden=!r||r.status!=="awaiting_reconciliation";
  $("screenshot").disabled=!r;
+ $("replayRefresh").disabled=!r;
+ $("replayExport").disabled=!r;
+ if($("replayTrail").dataset.forRun!==(r?.id||"")){
+   $("replayTrail").dataset.forRun=r?.id||"";
+   $("replayTrail").className="empty";
+   $("replayTrail").textContent="Bấm Xem lịch sử để đọc biên nhận đã ẩn dữ liệu.";
+ }
  $("windowsRefresh").disabled=!r;
  $("windowsScreenshot").disabled=!r||!$("windowsSelect").value;
  $("outcome").hidden=!r?.outcome&&!r?.error;
@@ -195,6 +209,62 @@ $("reconcile").onclick=async()=>{
  catch(e){report(e.message,true)}
 };
 $("refresh").onclick=loadRuns;
+async function getReplay(){
+ const run=runs.find(x=>x.id===selected);if(!run)return null;
+ const log=await api("/workspaces/"+encodeURIComponent(ws)+"/computer/runs/"+
+                     encodeURIComponent(run.id)+"/replay");
+ if(log.read_only!==true||log.actions_reexecuted!==false)
+   throw Error("Nhật ký không ở chế độ chỉ đọc.");
+ return log;
+}
+$("replayRefresh").onclick=async()=>{
+ const button=$("replayRefresh");button.disabled=true;
+ try{
+   const log=await getReplay();if(!log)return;
+   const date=n=>new Date(n*1000).toLocaleString("vi-VN");
+   const steps=log.steps||[],events=log.events||[];
+   const level=v=>v==="deterministic_pass"?"Đối chiếu file đạt":
+      v==="failed"?"Xác minh thất bại":"Chưa chứng minh hoàn thành";
+   $("replayTrail").className="";
+   $("replayTrail").innerHTML=
+     '<p class="meta">'+esc(steps.length)+' bước · '+esc(events.length)+' sự kiện'+
+     (log.events_truncated?' · Nhật ký bị giới hạn':'')+'</p>'+
+     steps.map(x=>{
+       const verify=x.verification||{};
+       const decision=x.decision==="approved"?"Đã duyệt":
+           x.decision==="rejected"?"Đã từ chối":"Không có biên nhận duyệt";
+       const observed=verify.pre||verify.post?
+           '<pre>'+bytes({pre:verify.pre,post:verify.post,
+                          observed_change:verify.observed_change})+'</pre>':'';
+       return '<div class="step"><div class="line between"><strong>#'+
+         esc(x.number)+' · '+esc(x.tool)+'</strong>'+status(x.status)+'</div>'+
+         '<div class="meta">'+esc(date(x.created_at))+' · '+esc(decision)+
+         ' · '+esc(level(verify.level))+'</div>'+
+         '<div class="meta">'+esc(verify.method||"chưa có hậu kiểm")+
+         (verify.requires_owner_reconciliation?' · Cần đối soát thủ công':'')+
+         (verify.action_executed===false?' · Không gửi lệnh thực thi':'')+
+         '</div>'+observed+'</div>';
+     }).join("")+
+     '<details><summary class="meta">Chuỗi sự kiện đã ẩn nội dung</summary>'+
+     events.map(x=>'<div class="meta">'+esc(date(x.at))+' · '+esc(x.type)+'</div>').join("")+
+     '</details><p class="meta">Không lưu video/ảnh; thay đổi giao diện không chứng minh đã đăng hoặc gửi thành công.</p>';
+ }catch(e){report("Không mở được nhật ký: "+e.message,true)}
+ finally{button.disabled=!selected}
+};
+$("replayExport").onclick=async()=>{
+ const button=$("replayExport");button.disabled=true;
+ try{
+   const log=await getReplay();if(!log)return;
+   const blob=new Blob([JSON.stringify(log,null,2)],{type:"application/json"});
+   const href=URL.createObjectURL(blob);
+   const anchor=document.createElement("a");
+   anchor.href=href;anchor.download="lhm-replay-"+log.run.id+".json";
+   document.body.appendChild(anchor);anchor.click();anchor.remove();
+   URL.revokeObjectURL(href);
+   report("Đã xuất dấu vết đã ẩn dữ liệu; không thực hiện lại thao tác.");
+ }catch(e){report("Không xuất được nhật ký: "+e.message,true)}
+ finally{button.disabled=!selected}
+};
 $("screenshot").onclick=async()=>{
  if(!selected)return;const image=$("screenImage");image.hidden=true;$("screenEmpty").hidden=false;$("screenEmpty").textContent="Đang chụp ảnh màn hình thật...";
  try{const response=await fetch("/computer/runs/"+encodeURIComponent(selected)+"/screenshot",{cache:"no-store"});
