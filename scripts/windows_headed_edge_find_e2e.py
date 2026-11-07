@@ -179,9 +179,26 @@ def main() -> None:
                                             owner_name=psutil.Process(pid.value).name().lower()
                                         except Exception:
                                             pass
+                                    u.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
+                                    u.GetAncestor.restype=wintypes.HWND
+                                    u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
+                                    u.GetWindow.restype=wintypes.HWND
+                                    fg_root=int(u.GetAncestor(wintypes.HWND(fg),2) or 0)
+                                    fg_rootowner=int(u.GetAncestor(wintypes.HWND(fg),3) or 0)
+                                    target_root=int(u.GetAncestor(wintypes.HWND(target_hwnd),2) or 0)
+                                    owner=int(u.GetWindow(wintypes.HWND(fg),4) or 0)
                                     print("EDGE_FOREGROUND_IDENTITY",{
                                         "selected_is_foreground":fg==target_hwnd,
                                         "foreground_process":owner_name,
+                                        "foreground_pid_matches_selection":
+                                            bool(pid.value) and
+                                            any(w.get("pid")==pid.value for w
+                                                in before.json()["windows"] if
+                                                w.get("hwnd")==target_hwnd),
+                                        "foreground_owner_is_target":owner==target_hwnd,
+                                        "foreground_root_is_target":fg_root==target_hwnd,
+                                        "foreground_rootowner_is_target":fg_rootowner==target_hwnd,
+                                        "foreground_root_equals_target_root":fg_root==target_root,
                                         "selected_hwnd_valid":bool(u.IsWindow(wintypes.HWND(target_hwnd))),
                                     },flush=True)
                                 print("EDGE_RUNNER_DENIAL",tool,response.status_code,reason,
