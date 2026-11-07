@@ -42,7 +42,7 @@ header { padding: 36px; font-size: 24px; background: #eef2f9; }
 <div class="footer"></div></body></html>
 """
 TOOLS=("windows_list","windows_activate","windows_hotkey",
-       "windows_type","windows_hotkey","windows_screenshot")
+       "windows_type","windows_hotkey","windows_hotkey","windows_screenshot")
 
 
 def main() -> None:
@@ -175,10 +175,12 @@ def main() -> None:
                                 elif n==3:
                                     action=("windows_type",{"hwnd":hwnd,"text":NEEDLE})
                                 elif n==4:
-                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ESC"})
+                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ENTER"})
                                 elif n==5:
-                                    action=("windows_screenshot",{"hwnd":hwnd})
+                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ESC"})
                                 elif n==6:
+                                    action=("windows_screenshot",{"hwnd":hwnd})
+                                elif n==7:
                                     action=("finish",{
                                         "summary":"Đã gửi Ctrl+F tới Edge thử nghiệm; cần đối chiếu kết quả độc lập.",
                                         "evidence":"Giao diện Windows thật và hậu kiểm DOM tách riêng."
@@ -192,7 +194,7 @@ def main() -> None:
                         approval_count=0
                         with patch.object(agent,"runner_call",new=through_runner), \
                              patch.object(agent,"_next_action",new=plan):
-                            for expected in TOOLS:
+                            for number,expected in enumerate(TOOLS):
                                 response=api.post(tick)
                                 assert response.status_code==200,response.text
                                 out=response.json()
@@ -211,12 +213,23 @@ def main() -> None:
                                 assert out.get("last_tool")==expected,(expected,out)
                                 assert out["status"]=="queued",(expected,out)
 
-                                if expected=="windows_type":
-                                    # Verify real Edge native Find-in-page has
-                                    # visibly scrolled DOM; no OCR or screenshot
-                                    # of potential private content is needed.
-                                    page.wait_for_function(
-                                        "window.scrollY > 900",timeout=7000)
+                                if number==4:
+                                    # Chromium/Edge may only commit a find
+                                    # after ENTER. Never mark success from
+                                    # the hotkey receipt alone.
+                                    try:
+                                        page.wait_for_function(
+                                            "window.scrollY > 900",timeout=7000)
+                                    except Exception:
+                                        diagnostic={
+                                            "scroll_y":page.evaluate("window.scrollY"),
+                                            "title_matches":page.title()==TITLE,
+                                            "h1_visible":page.locator("#target").is_visible(),
+                                            "hwnd_known":target_hwnd is not None,
+                                            "native_sent":out.get("last_tool")=="windows_hotkey",
+                                        }
+                                        print("EDGE_NATIVE_FIND_DIAG "+str(diagnostic),flush=True)
+                                        raise
                                     rect=page.locator("#target").bounding_box()
                                     assert rect and 0<=rect["y"]<=720,rect
                                     assert page.locator("#target").inner_text()==NEEDLE
