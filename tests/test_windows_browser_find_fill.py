@@ -29,6 +29,9 @@ class FakeEdit:
     def set_edit_text(self,value):
         self.filled.append(value)
 
+    def get_value(self):
+        return self.filled[-1] if self.filled else ""
+
 
 class FindUiAGuards(unittest.TestCase):
     def setUp(self):
@@ -70,6 +73,7 @@ class FindUiAGuards(unittest.TestCase):
         receipt=self._fill()
         self.assertEqual(receipt["target"],"browser_find")
         self.assertIs(receipt["search_result_verified"],False)
+        self.assertIs(receipt["field_value_verified"],True)
         self.assertEqual(receipt["characters"],7)
         self.assertNotIn("Privacy",str(receipt))
         self.assertEqual(self.find.filled,["Privacy"])
