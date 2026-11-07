@@ -61,12 +61,16 @@ class FindUiAGuards(unittest.TestCase):
         self.foreground.start()
         self.check=patch.object(native,"_foreground",return_value=self.win)
         self.check.start()
+        self.popup=patch.object(native,"_foreground_owned_browser_find_popup",
+                                return_value=self.win)
+        self.popup.start()
         self.input_patch=patch.object(native,"_type_browser_ascii_keys",
             side_effect=lambda text,hwnd:self.find.set_edit_text(text))
         self.input=self.input_patch.start()
 
     def tearDown(self):
         self.input_patch.stop()
+        self.popup.stop()
         self.check.stop()
         self.foreground.stop()
         self.windows.stop()
