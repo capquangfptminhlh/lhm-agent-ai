@@ -683,12 +683,17 @@ def _fill_browser_find(hwnd: int,args: dict) -> dict:
         if candidates[1][1]!=wanted:
             raise HTTPException(409,"Browser Find input changed; refresh UIA snapshot")
         _foreground(hwnd)  # Recheck process owner/foreground before filling
-        candidates[1][2].set_edit_text(text)
-        # This only compares the field we just wrote, in memory. Never
-        # persist or return an Edit value. A dispatch receipt alone is
-        # not proof that Chromium actually accepted the text.
+        # Chromium's UIA ValuePattern.SetValue updates visible text but may
+        # NOT dispatch Find-on-page input/change events. First clear and
+        # focus the verified browser-chrome Edit, then send real ASCII
+        # virtual-key down/up input to that element.
+        candidates[1][2].set_edit_text("")
+        candidates[1][2].set_focus()
+        _type_browser_ascii_keys(text,hwnd)
+        # Compare only the field we just typed, in memory. Never return
+        # or log its contents; do not press Enter unless it retained input.
         if candidates[1][2].get_value()!=text:
-            raise HTTPException(502,"Browser Find field did not retain input")
+            raise HTTPException(502,"Browser Find field did not accept keyboard input")
     except HTTPException:
         raise
     except Exception as exc:
