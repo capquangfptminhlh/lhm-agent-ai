@@ -161,7 +161,7 @@ class WindowsNativeTests(unittest.TestCase):
     def test_windows_verification_uses_real_snapshot_shape(self):
         import asyncio
         from unittest.mock import AsyncMock
-        sample={"window":{"title":"Notepad"},"controls":[
+        sample={"window":{"hwnd":123,"pid":1001,"process":"notepad.exe","title":"Notepad"},"controls":[
             {"type":"Button","label":"Lưu","automation_id":"save-button"},
             {"type":"Edit","label":"","automation_id":"document"}]}
         with patch.object(ca,"runner_call",new=AsyncMock(return_value=sample)):
