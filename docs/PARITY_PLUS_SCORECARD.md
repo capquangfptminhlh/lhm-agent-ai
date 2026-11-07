@@ -111,3 +111,11 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - Kiểm tra trước giới hạn `browser_scroll` (1–1100 px), `windows_scroll` (±8 bước), hotkey/ HWND. Đề xuất sai ghi bước `failed`, `action_executed=false`; không gửi lệnh đến Runner, không dừng cả phiên vì lỗi định dạng tham số.
 - Nếu người điều hành bác bỏ một action, không được đề xuất y hệt lần thứ hai. Cho model một cơ hội đổi cách, nếu vẫn lặp, chuyển `needs_review`. Tuyệt đối không thực thi thay người điều hành.
 - Regression: `tests/test_p4_free_action_parser.py` (offline, không model live/Windows thật). **CODED** đến khi CI chứng minh. PR #31 còn G4 launcher, hiển thị Calculator, focus và cửa thoại riêng; chưa được tính hoàn thành.
+
+## K. P4/G4 + G2 — launcher, Calculator và hộp thoại Windows (07/11/2026)
+
+- Chọn lọc sửa lỗi từ PR #31 dựa trên main mới có PR #79–83; không merge nhánh cũ. `windows_launch` chỉ mở `notepad.exe`, `explorer.exe`, `calc.exe` nếu chủ đã cấp tên EXE chính xác, **luôn duyệt riêng ở mọi mode**. Explorer chỉ nhận thư mục con dưới Documents, không dùng shell hoặc câu lệnh tự do.
+- `windows_list` nhận diện tiến trình `calculatorapp.exe` qua đúng alias `calc.exe` (UWP frame phải chứa tiến trình Calculator); từ chối `applicationframehost.exe` nói chung. Bỏ PopupHost, đưa hộp thoại Save/Open lên đầu danh sách để tránh che mất bởi 80 tooltip giả.
+- Sau khôi phục cửa sổ đã thu nhỏ, đọc lại hình chữ nhật và xác nhận allowlist, tránh dùng tọa độ `-32000` cũ. `windows_launch` chỉ trả receipt `verified_visible=false`, buộc Agent quan sát `windows_list` trước khi kết luận.
+- Test chính sách offline `tests/test_p4_windows_launcher.py`; kiểm thử thật trên GitHub-hosted Windows `scripts/windows_launch_smoke.py` yêu cầu auth, chặn Emergency Pause, cấm cmd.exe, mở Notepad và quan sát HWND mới. **Không thay thế** 10 tác vụ P4 trên Windows chủ và không tự nhận OWNER_WINDOWS_PASS.
+- Trạng thái commit: **CODED**, chờ CI. Vẫn cần kiểm thử Calculator trên máy chủ, Notepad tiếng Việt, Explorer và hộp thoại thật.

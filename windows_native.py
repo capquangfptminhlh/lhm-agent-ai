@@ -51,6 +51,9 @@ def _user32():
     u.IsWindowVisible.argtypes=[wintypes.HWND]
     u.GetWindowTextLengthW.argtypes=[wintypes.HWND]
     u.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
+    u.GetWindow.restype=wintypes.HWND
     u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
     u.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
     u.SetForegroundWindow.argtypes=[wintypes.HWND]
@@ -59,6 +62,90 @@ def _user32():
     u.SendInput.argtypes=[wintypes.UINT,ctypes.c_void_p,ctypes.c_int]
     u.keybd_event.argtypes=[wintypes.BYTE,wintypes.BYTE,wintypes.DWORD,ctypes.c_size_t]
     return u
+
+
+# Strict, static launcher list. No browser, terminal, script interpreter or
+# arbitrary caller-supplied executable, arguments or shell mode.
+LAUNCHABLE=frozenset({"notepad.exe","explorer.exe","calc.exe"})
+PROCESS_ALIASES={"calculatorapp.exe":"calc.exe"}
+POPUP_CLASSES=frozenset({"Microsoft.UI.Content.PopupWindowSiteBridge"})
+DIALOG_CLASS="#32770"
+GW_OWNER=4
+
+
+def _allowed_process(name: str, allowlist: set[str]) -> bool:
+    return name in allowlist or PROCESS_ALIASES.get(name) in allowlist
+
+
+def _hosted_calculator(u,hwnd,host_pid: int) -> str | None:
+    """Inspect only child PIDs of a UWP frame; never allow arbitrary frame hosts."""
+    import psutil
+    found=[]
+    cb_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)
+    @cb_type
+    def visitor(child,_):
+        pid=wintypes.DWORD(0)
+        u.GetWindowThreadProcessId(child,ctypes.byref(pid))
+        if pid.value and pid.value!=host_pid:
+            try:
+                if psutil.Process(pid.value).name().lower()=="calculatorapp.exe":
+                    found.append("calculatorapp.exe")
+                    return False
+            except Exception:
+                pass
+        return True
+    u.EnumChildWindows(wintypes.HWND(hwnd),visitor,0)
+    return found[0] if found else None
+
+
+def _documents_folder(value: str) -> str:
+    """Resolve Explorer's selected folder inside the current user's Documents."""
+    if not isinstance(value,str) or not value.strip() or len(value)>260:
+        raise HTTPException(422,"Folder must be a path under Documents")
+    userprofile=os.environ.get("USERPROFILE","").strip()
+    if not userprofile or not os.path.isabs(userprofile):
+        raise HTTPException(503,"Windows user profile unavailable")
+    root=os.path.realpath(os.path.join(userprofile,"Documents"))
+    raw=value.strip()
+    if raw.casefold().startswith(("documents\\","documents/")):
+        raw=raw[len("documents/"):]
+    target=os.path.realpath(raw if os.path.isabs(raw) else os.path.join(root,raw))
+    try:
+        if os.path.commonpath([root,target])!=root:
+            raise HTTPException(403,"Explorer only opens folders inside Documents")
+    except ValueError as exc:
+        raise HTTPException(403,"Explorer folder is outside Documents") from exc
+    if not os.path.isdir(target):
+        raise HTTPException(404,"Explorer folder does not exist")
+    return target
+
+
+def _launch(args: dict) -> dict:
+    _require_windows()
+    if not isinstance(args,dict) or set(args)-{"app","folder"}:
+        raise HTTPException(422,"Launch accepts only app and optional folder")
+    app=args.get("app")
+    if type(app) is not str or app not in LAUNCHABLE or app not in _allowlist():
+        raise HTTPException(403,"Application is not on the launcher allowlist")
+    import subprocess
+    windir=os.environ.get("SYSTEMROOT") or os.environ.get("WINDIR")
+    if not windir or not os.path.isabs(windir):
+        raise HTTPException(503,"Windows system directory unavailable")
+    exe=os.path.join(windir,"explorer.exe" if app=="explorer.exe" else os.path.join("System32",app))
+    argv=[exe]
+    if "folder" in args:
+        if app!="explorer.exe":
+            raise HTTPException(422,"Only Explorer may receive a folder")
+        argv.append(_documents_folder(args["folder"]))
+    try:
+        subprocess.Popen(argv,shell=False,close_fds=True)
+    except OSError as exc:
+        raise HTTPException(503,"Windows rejected application launch") from exc
+    # Process creation does not verify a visible HWND; the Agent must
+    # inspect windows_list and the actual window before reporting success.
+    return {"launched":app,"verified_visible":False,
+            "next":"Use windows_list to find and verify the new window"}
+
 
 def _window_info(hwnd):
     """Inspect a top-level window, never bypass the executable allowlist."""
@@ -75,9 +162,11 @@ def _window_info(hwnd):
         import psutil
         process=psutil.Process(pid.value)
         name=process.name().lower()
-    except (ImportError,Exception) as exc:
+        if name=="applicationframehost.exe":
+            name=_hosted_calculator(u,hwnd,pid.value) or name
+    except Exception as exc:
         raise HTTPException(403,"Cannot validate owning process") from exc
-    if name not in _allowlist():
+    if not _allowed_process(name,_allowlist()):
         raise HTTPException(403,"Window executable is not on the desktop allowlist")
     size=min(500,max(1,u.GetWindowTextLengthW(hwnd)+1))
     title=ctypes.create_unicode_buffer(size)
@@ -103,12 +192,40 @@ def _enumerate():
         if len(handles)<300: handles.append(int(hwnd))
         return True
     u.EnumWindows(visitor,0)
-    result=[]
-    for handle in handles:
-        if len(result)>=HWND_LIMIT:break
-        try:result.append(_window_info(handle))
-        except HTTPException:continue
-    return result
+    return _order_windows(u,handles)
+
+
+def _window_class(u,hwnd):
+    buf=ctypes.create_unicode_buffer(256)
+    u.GetClassNameW(wintypes.HWND(hwnd),buf,256)
+    return buf.value
+
+
+def _order_windows(u,handles):
+    """Discard tooltip PopupHost surfaces; show real Save/Open dialogs first.
+
+    Iterate through all sampled HWNDs before trimming so a later dialog isn't
+    hidden by 80 earlier non-dialog windows.
+    """
+    dialogs,windows=[],[]
+    for hwnd in handles:
+        try:
+            info=_window_info(hwnd)
+        except HTTPException:
+            continue
+        cls=_window_class(u,hwnd)
+        if cls in POPUP_CLASSES:
+            continue
+        owner=u.GetWindow(wintypes.HWND(hwnd),GW_OWNER)
+        if owner:
+            info["owner_hwnd"]=int(owner)
+        if cls==DIALOG_CLASS:
+            info["dialog"]=True
+            dialogs.append(info)
+        elif len(windows)<HWND_LIMIT:
+            windows.append(info)
+    return (dialogs+windows)[:HWND_LIMIT]
+
 
 def _focus(hwnd):
     i=_window_info(hwnd)
@@ -145,7 +262,9 @@ def _focus(hwnd):
             pass
     if u.GetForegroundWindow()!=hwnd:
         raise HTTPException(409,"Windows denied foreground focus. Click the app manually and retry.")
-    return i
+    # A minimized window may have coordinates (-32000,-32000) before restore.
+    # Re-read HWND + process allowlist and rectangle AFTER successful focus.
+    return _window_info(hwnd)
 
 def _foreground(hwnd):
     i=_window_info(hwnd)
@@ -433,6 +552,8 @@ def execute(tool: str,args: dict):
         raise HTTPException(422,"Args must be an object")
     if tool=="windows_list":
         return {"windows":_enumerate(),"allowlist":sorted(_allowlist())}
+    if tool=="windows_launch":
+        return _launch(args)
     if tool=="windows_desktop_screenshot":
         if args:
             raise HTTPException(422,"Desktop screenshot accepts no parameters")
