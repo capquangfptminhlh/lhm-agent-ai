@@ -32,6 +32,9 @@ class FakeEdit:
     def get_value(self):
         return self.filled[-1] if self.filled else ""
 
+    def set_focus(self):
+        self.focused=True
+
 
 class FindUiAGuards(unittest.TestCase):
     def setUp(self):
@@ -58,8 +61,12 @@ class FindUiAGuards(unittest.TestCase):
         self.foreground.start()
         self.check=patch.object(native,"_foreground",return_value=self.win)
         self.check.start()
+        self.input=patch.object(native,"_type_browser_ascii_keys",
+            side_effect=lambda text,hwnd:self.find.set_edit_text(text))
+        self.input.start()
 
     def tearDown(self):
+        self.input.stop()
         self.check.stop()
         self.foreground.stop()
         self.windows.stop()
@@ -76,8 +83,20 @@ class FindUiAGuards(unittest.TestCase):
         self.assertIs(receipt["field_value_verified"],True)
         self.assertEqual(receipt["characters"],7)
         self.assertNotIn("Privacy",str(receipt))
-        self.assertEqual(self.find.filled,["Privacy"])
+        self.assertEqual(self.find.filled,["","Privacy"])
+        self.assertEqual(self.find.get_value(),"Privacy")
+        self.assertTrue(self.find.focused)
+        self.input.assert_called_once_with("Privacy",88)
         self.assertEqual(self.address.filled,[])
+
+    def test_uia_focus_failure_never_sends_keyboard_input(self):
+        def denied():
+            raise RuntimeError("SetFocus denied")
+        self.find.set_focus=denied
+        with self.assertRaises(HTTPException) as err:
+            self._fill()
+        self.assertEqual(err.exception.status_code,502)
+        self.input.assert_not_called()
 
     def test_address_bar_id_is_denied_without_any_fill(self):
         with self.assertRaises(HTTPException) as err:
