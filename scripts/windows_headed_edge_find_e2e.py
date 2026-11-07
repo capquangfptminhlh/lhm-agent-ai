@@ -221,12 +221,29 @@ def main() -> None:
                                         page.wait_for_function(
                                             "window.scrollY > 900",timeout=7000)
                                     except Exception:
+                                        # Only control *types/automation IDs*
+                                        # from the CI-only Edge profile; never
+                                        # read inputs, page contents or screenshots.
+                                        metadata=direct("windows_snapshot",{"hwnd":target_hwnd})
+                                        candidates=[]
+                                        if metadata.status_code==200:
+                                            for control in metadata.json().get("controls",[])[:60]:
+                                                candidates.append((
+                                                    control.get("type"),
+                                                    control.get("automation_id"),
+                                                    "center" in control))
+                                        import ctypes
+                                        foreground=int(ctypes.windll.user32.GetForegroundWindow() or 0)
                                         diagnostic={
                                             "scroll_y":page.evaluate("window.scrollY"),
                                             "title_matches":page.title()==TITLE,
-                                            "h1_visible":page.locator("#target").is_visible(),
-                                            "hwnd_known":target_hwnd is not None,
+                                            "viewport_target_y":page.locator("#target").bounding_box()["y"],
+                                            "foreground_is_edge":foreground==target_hwnd,
                                             "native_sent":out.get("last_tool")=="windows_hotkey",
+                                            "uia_control_count":len(candidates),
+                                            "uia_edit_metadata":[c for c in candidates
+                                                if c[0] in ("Edit","ComboBox")][:20],
+                                            "uia_status":metadata.status_code
                                         }
                                         print("EDGE_NATIVE_FIND_DIAG "+str(diagnostic),flush=True)
                                         raise
