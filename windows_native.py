@@ -401,7 +401,43 @@ def _type_unicode(text):
             raise HTTPException(502,"Windows rejected injected key events")
 
 
-# Deliberately narrow keyboard allowlist. OS shortcuts, Run dialogs and shell
+# Some Chromium browser chrome fields (notably Ctrl+F) need physical virtual
+# key-down events; KEYEVENTF_UNICODE is correct for Vietnamese Notepad text but
+# may not dispatch to an Edge browser toolbar Edit. Only a narrow, explicitly
+# chosen ASCII input mode is supported, and only inside an allowlisted browser
+# HWND. No clipboard, arbitrary controls or shell keyboard shortcuts.
+_PHYSICAL_ASCII_RE=re.compile(r"[A-Za-z0-9 ]{1,120}\Z")
+
+
+def _validate_physical_ascii(value):
+    if not isinstance(value,str) or _PHYSICAL_ASCII_RE.fullmatch(value) is None:
+        raise HTTPException(422,"Physical browser typing supports only 1-120 ASCII letters, digits and spaces")
+    return value
+
+
+def _type_browser_ascii_keys(text: str, hwnd: int):
+    text=_validate_physical_ascii(text)
+    u=_user32()
+    caps=bool(u.GetKeyState(0x14)&1) if hasattr(u,"GetKeyState") else False
+    for ch in text:
+        # Stop before each letter if the selected browser loses foreground.
+        _foreground(hwnd)
+        vk=0x20 if ch==" " else ord(ch.upper())
+        shift=ch.isalpha() and (ch.isupper() != caps)
+        try:
+            if shift:
+                u.keybd_event(0x10,0,0,0)
+            try:
+                u.keybd_event(vk,0,0,0)
+            finally:
+                u.keybd_event(vk,0,0x0002,0)
+        finally:
+            if shift:
+                u.keybd_event(0x10,0,0x0002,0)
+        time.sleep(0.015)
+
+
+# Deliberately narrow keyboard allowlist. OS shortcuts, Run dialogs, shell
 # launchers are excluded. Every call must be explicitly approved by a human.
 KEYS = {
     "ENTER": 0x0D, "ESC": 0x1B, "TAB": 0x09, "BACKSPACE": 0x08,
@@ -744,14 +780,24 @@ def execute(tool: str,args: dict):
         _press_hotkey(combo)
         return {"pressed":combo,"hwnd":hwnd}
     if tool=="windows_type":
-        _foreground_or_refocus(hwnd)
+        window=_foreground_or_refocus(hwnd)
         text=args.get("text")
         if not isinstance(text,str) or not text or len(text)>MAX_TEXT or any(
             ord(ch)<32 and ch not in ("\n","\t") for ch in text):
             raise HTTPException(422,"Text must be <=750 printable characters")
-        _type_unicode(text)
+        method=args.get("input_method","unicode")
+        if method=="physical_ascii":
+            _validate_physical_ascii(text)
+            if window["process"] not in _BROWSER_UIA_APPS:
+                raise HTTPException(403,"Physical ASCII input is restricted to allowlisted Edge/Chrome HWNDs")
+            _type_browser_ascii_keys(text,hwnd)
+        elif method=="unicode":
+            _type_unicode(text)
+        else:
+            raise HTTPException(422,"Unknown Windows text input method")
         # Do not echo typed text; it could be confidential.
-        return {"typed":True,"characters":len(text),"hwnd":hwnd}
+        return {"typed":True,"characters":len(text),"hwnd":hwnd,
+                "input_method":method}
     if tool=="windows_scroll":
         i=_foreground_or_refocus(hwnd)
         amount=args.get("steps",3)
