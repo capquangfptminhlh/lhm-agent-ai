@@ -640,6 +640,60 @@ def _prioritize_browser_chrome_edits(items: list[dict],limit: int=60) -> list[di
     return result
 
 
+def _fill_browser_find(hwnd: int,args: dict) -> dict:
+    """Fill ONLY the freshly observed browser Find-on-page Edit via UIA.
+
+    Browser chrome has a higher address-bar Edit and a lower Find Edit.
+    Any missing/ambiguous control, wrong process, stale automation ID or
+    unexpected geometry fails before writing. No DOM fields are writable.
+    """
+    window=_foreground_or_refocus(hwnd)
+    if window["process"] not in _BROWSER_UIA_APPS:
+        raise HTTPException(403,"Find input is restricted to allowlisted Edge/Chrome")
+    if not isinstance(args,dict) or set(args)!={"hwnd","automation_id","text"}:
+        raise HTTPException(422,"Find input requires exact hwnd, automation_id and text")
+    text=_validate_physical_ascii(args.get("text"))
+    wanted=args.get("automation_id")
+    if not isinstance(wanted,str) or not _is_browser_chrome_edit_meta("Edit",wanted):
+        raise HTTPException(422,"Find input requires a fresh browser chrome Edit id")
+    try:
+        from pywinauto import Desktop
+        browser=Desktop(backend="uia").window(handle=hwnd)
+        candidates=[]
+        for child in browser.descendants()[:320]:
+            info=child.element_info
+            kind=str(getattr(info,"control_type","") or "")
+            control_id=str(getattr(info,"automation_id","") or "")
+            if not _is_browser_chrome_edit_meta(kind,control_id):
+                continue
+            rect=getattr(info,"rectangle",None)
+            if rect is None:
+                continue
+            top=int(rect.top)-window["y"]
+            bottom=int(rect.bottom)-window["y"]
+            left=int(rect.left)-window["x"]
+            right=int(rect.right)-window["x"]
+            if (0<=left<right<=window["width"] and
+                    0<top<bottom<min(window["height"],220)):
+                candidates.append((top+(bottom-top)//2,control_id,child))
+        # Never guess between a page input, omnibox and Find bar.
+        candidates.sort(key=lambda x:x[0])
+        if len(candidates)!=2 or candidates[1][0]-candidates[0][0]<18:
+            raise HTTPException(409,"Browser Find input missing or ambiguous")
+        if candidates[1][1]!=wanted:
+            raise HTTPException(409,"Browser Find input changed; refresh UIA snapshot")
+        _foreground(hwnd)  # Recheck process owner/foreground before filling
+        candidates[1][2].set_edit_text(text)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502,"Windows UIA could not fill browser Find input") from exc
+    # UIA SetValue is local browser-chrome input only, not proof that DOM
+    # search moved or that any external network effect occurred.
+    return {"filled":True,"characters":len(text),"hwnd":hwnd,
+            "target":"browser_find","search_result_verified":False}
+
+
 def execute(tool: str,args: dict):
     """All native actions are invoked from the authenticated Runner process."""
     _require_windows()
@@ -742,6 +796,8 @@ def execute(tool: str,args: dict):
         return {"focused":True,"window":i}
     if tool=="windows_click_element":
         return _click_uia_control(hwnd,args)
+    if tool=="windows_fill_find":
+        return _fill_browser_find(hwnd,args)
     if tool=="windows_click":
         i=_foreground_or_refocus(hwnd)
         x,y=_coordinates(i,args)
