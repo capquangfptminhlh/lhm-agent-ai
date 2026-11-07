@@ -104,3 +104,10 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - Test trong `tests/test_computer_ui_reconciliation.py` mô phỏng browser đóng, snapshot thiếu URL, Notepad đã đóng trước khi click, và đường chạy bình thường. Đây là **kiểm thử offline**, chưa phải T10 trên Windows của chủ.
 - Bổ sung `scripts/windows_agent_multistep_e2e.py`: trên GitHub-hosted Windows tạo WinForms thật, quan sát UIA Button, duyệt thao tác, **đóng tiến trình thật trước click**, xác minh chỉ có `windows_snapshot`, không có `windows_click_element`, audit SQLite đầy đủ. Đây là kiểm thử Windows GUI cô lập, vẫn **không phải** `OWNER_WINDOWS_PASS`.
 - Trạng thái ở commit: **CODED**, chờ xác minh CI; `OWNER_WINDOWS_PASS`, P4 và Parity chưa có chứng cứ.
+
+## J. P4 — Parser và kiểm tra đề xuất model Free (07/11/2026)
+
+- Lấy **chọn lọc** từ PR #31 (nhánh cũ, không merge nguyên PR): chấp nhận một JSON action hợp lệ có kèm lời giải thích/fence/`<think>`, nhưng vẫn từ chối tool không có quyền và giới hạn bytes. Một lần yêu cầu model sửa định dạng nếu chưa chạy tool; tôn trọng hạn mức Free cho lần gọi bổ sung.
+- Kiểm tra trước giới hạn `browser_scroll` (1–1100 px), `windows_scroll` (±8 bước), hotkey/ HWND. Đề xuất sai ghi bước `failed`, `action_executed=false`; không gửi lệnh đến Runner, không dừng cả phiên vì lỗi định dạng tham số.
+- Nếu người điều hành bác bỏ một action, không được đề xuất y hệt lần thứ hai. Cho model một cơ hội đổi cách, nếu vẫn lặp, chuyển `needs_review`. Tuyệt đối không thực thi thay người điều hành.
+- Regression: `tests/test_p4_free_action_parser.py` (offline, không model live/Windows thật). **CODED** đến khi CI chứng minh. PR #31 còn G4 launcher, hiển thị Calculator, focus và cửa thoại riêng; chưa được tính hoàn thành.
