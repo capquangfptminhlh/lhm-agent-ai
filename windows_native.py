@@ -545,6 +545,36 @@ def _click_uia_control(hwnd: int, args: dict) -> dict:
             "detail":"UIA target clicked; application outcome not yet verified"}
 
 
+# Common Windows Save/Open dialogs can have >60 descendants because the file
+# listing expands each row into several controls. The File name Edit can be
+# at the end. Scan a bounded extra slice for that exact native control only;
+# never expose extra list-row text or editable values to the model.
+_FILENAME_IDS=frozenset({"1001","1148","filenamecontrolhost","filenameedit",
+                          "filename","filenamecontrol"})
+
+
+def _is_filename_meta(kind: str, automation_id: str) -> bool:
+    name=automation_id.casefold()
+    return kind in ("Edit","ComboBox") and (
+        name in _FILENAME_IDS or "filename" in name)
+
+
+def _prioritize_dialog_filename(items: list[dict], limit: int=60) -> list[dict]:
+    pinned=[x for x in items if _is_filename_meta(
+        str(x.get("type") or ""),str(x.get("automation_id") or ""))]
+    seen=set()
+    result=[]
+    for item in pinned+items:
+        identity=id(item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(item)
+        if len(result)==limit:
+            break
+    return result
+
+
 def execute(tool: str,args: dict):
     """All native actions are invoked from the authenticated Runner process."""
     _require_windows()
@@ -596,16 +626,28 @@ def execute(tool: str,args: dict):
             from pywinauto import Desktop
             items=[]
             target=Desktop(backend="uia").window(handle=hwnd)
-            for child in target.descendants()[:60]:
+            is_dialog=False
+            if os.name=="nt":
+                try:
+                    is_dialog=_window_class(_user32(),hwnd)==DIALOG_CLASS
+                except Exception:
+                    is_dialog=False
+            scan_limit=320 if is_dialog else 60
+            for index,child in enumerate(target.descendants()[:scan_limit]):
                 try:
                     meta=child.element_info
                     kind=str(meta.control_type or "")[:70]
+                    automation_id=str(getattr(meta,"automation_id","") or "")[:100]
+                    if index>=60 and (not is_dialog or
+                                      not _is_filename_meta(kind,automation_id)):
+                        # No values or labels of beyond-limit rows are read.
+                        continue
                     # Never inspect values or read text from editable/document/password fields.
                     secret=kind.lower() in ("edit","document","password") or bool(
                         getattr(meta,"is_password",False))
                     name="" if secret else str(child.window_text() or "")[:100]
                     item={"type":kind,"label":name,
-                          "automation_id":str(getattr(meta,"automation_id","") or "")[:100]}
+                          "automation_id":automation_id}
                     rect=getattr(meta,"rectangle",None)
                     if rect is not None:
                         # Return coordinates in the SAME top-level HWND coordinate
@@ -619,7 +661,8 @@ def execute(tool: str,args: dict):
                     items.append(item)
                 except (AttributeError,TypeError,ValueError,OverflowError):
                     continue
-            return {"window":i,"controls":items}
+            visible=_prioritize_dialog_filename(items) if is_dialog else items[:60]
+            return {"window":i,"controls":visible}
         except Exception:
             return {"window":i,"controls":[],"note":"UI Automation controls unavailable"}
     if tool=="windows_screenshot":
