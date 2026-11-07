@@ -575,6 +575,35 @@ def _prioritize_dialog_filename(items: list[dict], limit: int=60) -> list[dict]:
     return result
 
 
+# Chromium/Edge's Find-on-page Edit may be deeper than the standard first
+# 60 UIA descendants (address bar is early, Find bar is late). Only expose
+# extra browser chrome Edit *metadata* with empty labels, never entered text,
+# passwords, page rows or arbitrary downstream controls.
+_BROWSER_UIA_APPS=frozenset({"msedge.exe","chrome.exe"})
+_BROWSER_CHROME_EDIT_RE=re.compile(r"view_[0-9]{1,8}\Z")
+
+
+def _is_browser_chrome_edit_meta(kind: str, automation_id: str) -> bool:
+    return kind=="Edit" and _BROWSER_CHROME_EDIT_RE.fullmatch(automation_id) is not None
+
+
+def _prioritize_browser_chrome_edits(items: list[dict],limit: int=60) -> list[dict]:
+    pinned=[x for x in items if _is_browser_chrome_edit_meta(
+        str(x.get("type") or ""),str(x.get("automation_id") or ""))
+        and isinstance(x.get("center"),dict)]
+    seen=set()
+    result=[]
+    for item in pinned+items:
+        identity=id(item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(item)
+        if len(result)>=limit:
+            break
+    return result
+
+
 def execute(tool: str,args: dict):
     """All native actions are invoked from the authenticated Runner process."""
     _require_windows()
@@ -632,15 +661,18 @@ def execute(tool: str,args: dict):
                     is_dialog=_window_class(_user32(),hwnd)==DIALOG_CLASS
                 except Exception:
                     is_dialog=False
-            scan_limit=320 if is_dialog else 60
+            is_browser=i["process"] in _BROWSER_UIA_APPS
+            scan_limit=320 if is_dialog or is_browser else 60
             for index,child in enumerate(target.descendants()[:scan_limit]):
                 try:
                     meta=child.element_info
                     kind=str(meta.control_type or "")[:70]
                     automation_id=str(getattr(meta,"automation_id","") or "")[:100]
-                    if index>=60 and (not is_dialog or
-                                      not _is_filename_meta(kind,automation_id)):
-                        # No values or labels of beyond-limit rows are read.
+                    if index>=60 and not (
+                            (is_dialog and _is_filename_meta(kind,automation_id)) or
+                            (is_browser and _is_browser_chrome_edit_meta(kind,automation_id))):
+                        # Beyond 60 we only inspect type and automation_id
+                        # of a bounded set; never read labels or values.
                         continue
                     # Never inspect values or read text from editable/document/password fields.
                     secret=kind.lower() in ("edit","document","password") or bool(
@@ -661,7 +693,9 @@ def execute(tool: str,args: dict):
                     items.append(item)
                 except (AttributeError,TypeError,ValueError,OverflowError):
                     continue
-            visible=_prioritize_dialog_filename(items) if is_dialog else items[:60]
+            visible=(_prioritize_dialog_filename(items) if is_dialog else
+                     _prioritize_browser_chrome_edits(items) if is_browser else
+                     items[:60])
             return {"window":i,"controls":visible}
         except Exception:
             return {"window":i,"controls":[],"note":"UI Automation controls unavailable"}
