@@ -66,6 +66,7 @@ on:
       - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_unicode_save_e2e.py'
       - 'scripts/windows_notepad_save_e2e.py'
+      - 'scripts/windows_headed_edge_find_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -131,6 +132,7 @@ on:
       - 'scripts/windows_agent_multistep_e2e.py'
       - 'scripts/windows_unicode_save_e2e.py'
       - 'scripts/windows_notepad_save_e2e.py'
+      - 'scripts/windows_headed_edge_find_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -228,6 +230,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 7
         run: python scripts/windows_notepad_save_e2e.py
+
+      - name: Real headed Microsoft Edge Ctrl+F search (P4 T07 precursor)
+        shell: pwsh
+        timeout-minutes: 8
+        run: python scripts/windows_headed_edge_find_e2e.py
 
       - name: Run Python runtime import test
         env:
