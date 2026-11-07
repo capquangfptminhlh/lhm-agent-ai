@@ -133,7 +133,9 @@ test("Windows controller accepts only explicitly allowlisted HWND and is separat
  assert.match(runner,/WINDOWS_TOOLS/);
  assert.match(runner,/PAUSED and tool in MUTATIONS/);
  assert.match(runner,/native.*execute|from windows_native import execute/);
- assert.match(native,/name not in _allowlist/);
+ assert.match(native,/_allowed_process\\(name,_allowlist\\(\\)\\)/);
+ assert.match(native,/PROCESS_ALIASES=/);
+ assert.match(native,/LAUNCHABLE=frozenset/);
  assert.match(native,/Windows denied foreground focus/);
  assert.match(native,/Window executable is not on the desktop allowlist/);
 });
