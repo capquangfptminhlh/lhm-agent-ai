@@ -18,6 +18,9 @@ async function load(){
   $("opencliEnabled").checked=x.opencliEnabled===true;
   $("opencliProfile").value=x.opencliProfile||"";
   $("opencliHosts").value=x.opencliHosts||"";
+  $("opencliWorkspace").value=x.opencliWorkspace||"demo";
+  $("opencliExtraProfiles").value=x.opencliExtraProfiles||"";
+  $("desktopWorkspace").value=x.desktopWorkspace||"demo";
   $("androidMcpEnabled").checked=x.androidMcpEnabled===true;
   $("androidMcpTapEnabled").checked=x.androidMcpTapEnabled===true;
   $("androidMcpRepo").value=x.androidMcpRepo||"";
@@ -47,6 +50,9 @@ $("save").onclick=async()=>{
     opencliEnabled:$("opencliEnabled").checked,
     opencliProfile:$("opencliProfile").value,
     opencliHosts:$("opencliHosts").value,
+    opencliWorkspace:$("opencliWorkspace").value,
+    opencliExtraProfiles:$("opencliExtraProfiles").value,
+    desktopWorkspace:$("desktopWorkspace").value,
     androidMcpEnabled:$("androidMcpEnabled").checked,
     androidMcpTapEnabled:$("androidMcpTapEnabled").checked,
     androidMcpRepo:$("androidMcpRepo").value,

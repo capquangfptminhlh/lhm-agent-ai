@@ -33,16 +33,80 @@ def _windows() -> bool:
     return os.name=="nt"
 
 
-def allowed_url(url: str, role: str | None = None) -> bool:
+def _hosts(raw: str) -> set[str]:
+    return {h.strip().lower().rstrip(".") for h in raw.split(",") if h.strip()}
+
+
+def workspace_profiles() -> dict[str,dict[str,Any]]:
+    """Map each workspace (hồ sơ) to its OWN dedicated Chrome profile.
+
+    Chrome keeps cookies and logins per profile, so two workspaces sharing one
+    profile would share every logged-in session. LHM_OPENCLI_PROFILES is JSON
+    {"<workspace>": {"profile": "<alias>", "hosts": ["host", ...]}}. A profile
+    mapped to two workspaces or malformed config fails closed for everyone.
+    Legacy LHM_OPENCLI_PROFILE serves ONLY LHM_OPENCLI_WORKSPACE (default demo).
+    """
+    raw=os.getenv("LHM_OPENCLI_PROFILES","").strip()
+    if not raw:
+        profile=os.getenv("LHM_OPENCLI_PROFILE","").strip()
+        if not profile:
+            return {}
+        owner=os.getenv("LHM_OPENCLI_WORKSPACE","").strip() or "demo"
+        return {owner:{"profile":profile,"hosts":_hosts(os.getenv("LHM_OPENCLI_ALLOWED_HOSTS",""))}}
+    try:
+        data=json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(409,"Cấu hình Chrome profile theo hồ sơ không hợp lệ") from exc
+    if not isinstance(data,dict) or len(data)>50:
+        raise HTTPException(409,"Cấu hình Chrome profile theo hồ sơ không hợp lệ")
+    mapping: dict[str,dict[str,Any]]={}
+    seen: set[str]=set()
+    for ws,entry in data.items():
+        if not isinstance(ws,str) or not _ID.fullmatch(ws) or not isinstance(entry,dict):
+            raise HTTPException(409,"Cấu hình Chrome profile theo hồ sơ không hợp lệ")
+        profile=entry.get("profile")
+        hosts=entry.get("hosts",[])
+        if isinstance(hosts,str):
+            hosts=hosts.split(",")
+        if (not isinstance(profile,str) or not _PROFILE.fullmatch(profile)
+                or not isinstance(hosts,list) or not all(isinstance(h,str) for h in hosts)):
+            raise HTTPException(409,"Cấu hình Chrome profile theo hồ sơ không hợp lệ")
+        if profile.casefold() in seen:
+            raise HTTPException(409,"Một Chrome profile không được dùng chung cho hai hồ sơ")
+        seen.add(profile.casefold())
+        mapping[ws]={"profile":profile,"hosts":_hosts(",".join(hosts))}
+    return mapping
+
+
+def workspace_profile(ws: str) -> dict[str,Any]:
+    entry=workspace_profiles().get(ws)
+    if not entry:
+        raise HTTPException(409,"Hồ sơ này chưa có Chrome profile OpenCLI riêng")
+    return entry
+
+
+def configured_for(ws: str) -> bool:
+    try:
+        return bool(workspace_profiles().get(ws))
+    except HTTPException:
+        return False
+
+
+def allowed_url(url: str, role: str | None = None, workspace: str | None = None) -> bool:
     if not isinstance(url,str) or len(url)>1500 or any(ord(c)<32 for c in url):
         return False
     try:
         u=urlsplit(url)
         host=(u.hostname or "").lower().rstrip(".")
-        global_hosts={h.strip().lower().rstrip(".") for h in
-                      os.getenv("LHM_COMPUTER_ALLOWED_HOSTS","").split(",") if h.strip()}
-        tool_hosts={h.strip().lower().rstrip(".") for h in
-                    os.getenv("LHM_OPENCLI_ALLOWED_HOSTS","").split(",") if h.strip()}
+        global_hosts=_hosts(os.getenv("LHM_COMPUTER_ALLOWED_HOSTS",""))
+        # With a workspace, only THAT workspace's own profile host list counts.
+        if workspace is None:
+            tool_hosts=_hosts(os.getenv("LHM_OPENCLI_ALLOWED_HOSTS",""))
+        else:
+            try:
+                tool_hosts=set(workspace_profiles().get(workspace,{}).get("hosts",set()))
+            except HTTPException:
+                return False
         # Specialist Agents require an explicit role-scoped host list; the
         # global/OpenCLI allowlists alone never grant a pilot Agent access.
         allow=global_hosts & tool_hosts
@@ -57,7 +121,7 @@ def allowed_url(url: str, role: str | None = None) -> bool:
         return False
 
 
-def validate(role: str,tool: str,args: dict[str,Any]) -> None:
+def validate(role: str,tool: str,args: dict[str,Any],workspace: str | None = None) -> None:
     if role not in READ_ROLES or tool not in ALL_TOOLS:
         raise HTTPException(403,"Agent không có quyền OpenCLI")
     if tool in WRITE_TOOLS and role not in WRITE_ROLES:
@@ -69,13 +133,13 @@ def validate(role: str,tool: str,args: dict[str,Any]) -> None:
               "opencli_fill":{"ref","url","label","text"}}[tool]
     if set(args)!=expected:
         raise HTTPException(422,"OpenCLI tool arguments do not match the allowlist")
-    if tool=="opencli_open" and not allowed_url(args.get("url"),role):
+    if tool=="opencli_open" and not allowed_url(args.get("url"),role,workspace):
         raise HTTPException(403,"OpenCLI URL không thuộc danh sách HTTPS được cấp quyền")
     if tool in WRITE_TOOLS:
         n=args.get("ref")
         if type(n) is not int or not 1<=n<=3000:
             raise HTTPException(422,"OpenCLI requires a numeric ref from a recent state")
-        if not allowed_url(args.get("url"),role):
+        if not allowed_url(args.get("url"),role,workspace):
             raise HTTPException(403,"OpenCLI click/fill URL must be allowlisted")
         label=args.get("label")
         if (not isinstance(label,str) or not 2<=len(label.strip())<=120
@@ -137,10 +201,10 @@ def _toolchain() -> tuple[str,str]:
     raise HTTPException(503,"Cài OpenCLI 2.0.2 bằng npm -g trong Windows; Node global prefix chưa được nhận diện")
 
 
-def _configuration() -> tuple[str,str,str]:
+def _configuration(ws: str) -> tuple[str,str,str]:
     if os.getenv("LHM_OPENCLI_ENABLED")!="1":
         raise HTTPException(403,"OpenCLI chưa bật trong Thiết lập Robot")
-    profile=os.getenv("LHM_OPENCLI_PROFILE","").strip()
+    profile=workspace_profile(ws)["profile"]
     if not _PROFILE.fullmatch(profile):
         raise HTTPException(409,"Chọn Chrome profile riêng đã kết nối OpenCLI")
     node,entry=_toolchain()
@@ -188,10 +252,10 @@ def _url_from_response(response: dict[str,Any]) -> str:
     return data.get("url","") if isinstance(data,dict) else ""
 
 
-def _state(response: dict[str,Any], role: str | None = None) -> dict[str,Any]:
+def _state(response: dict[str,Any], role: str | None = None, workspace: str | None = None) -> dict[str,Any]:
     data=response.get("data")
     url=_url_from_response(response)
-    if not allowed_url(url,role):
+    if not allowed_url(url,role,workspace):
         raise HTTPException(409,"OpenCLI page moved outside approved hosts; stop and inspect")
     snapshot=data.get("snapshot") if isinstance(data,dict) else None
     if not isinstance(snapshot,str):
@@ -201,10 +265,10 @@ def _state(response: dict[str,Any], role: str | None = None) -> dict[str,Any]:
 
 
 async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | None = None) -> dict[str,Any]:
-    validate(role,tool,args)
     if not _ID.fullmatch(ws) or not _ID.fullmatch(role):
         raise HTTPException(422,"Invalid workspace or role")
-    node,entry,profile=_configuration()
+    validate(role,tool,args,ws)
+    node,entry,profile=_configuration(ws)
     # A distinct Computer Run must not reuse another run\'s active tab.
     # Direct/manual tool calls without run_id preserve legacy role scope.
     if run_id is not None and not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",run_id):
@@ -214,11 +278,11 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | 
         return await _invoke(node,entry,profile,session,action,*rest)
     if tool=="opencli_open":
         res=await call("open",args["url"])
-        if not allowed_url(_url_from_response(res),role):
+        if not allowed_url(_url_from_response(res),role,ws):
             raise HTTPException(409,"OpenCLI navigation redirected outside approved hosts")
         return {"url":_url_from_response(res),"opened":True,"provider":"OpenCLI",
                 "verified_navigation":True}
-    before=_state(await call("state"),role)
+    before=_state(await call("state"),role,ws)
     if tool=="opencli_state":
         return {**before,"provider":"OpenCLI","read_only":True}
     # Manual approval binds the URL and semantic label, not only an ordinal.
@@ -243,7 +307,7 @@ async def execute(ws: str,role: str,tool: str,args: dict[str,Any],run_id: str | 
             raise HTTPException(409,"OpenCLI fill not confirmed; do not auto retry")
     # Postflight verifies current URL. This does not prove an external post,
     # purchase, or CRM mutation took place.
-    after=_state(await call("state"),role)
+    after=_state(await call("state"),role,ws)
     return {"provider":"OpenCLI","action":tool,
             "url_before":before["url"],"url_after":after["url"],
             "confirmed_by_cli":True,"external_effect_verified":False,

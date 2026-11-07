@@ -94,7 +94,7 @@ class OpenCLIPolicyTests(unittest.TestCase):
             with patch.object(bridge,"_windows",return_value=True):
                 with patch.object(bridge.shutil,"which",return_value=str(node)):
                     with patch.dict(os.environ,{"APPDATA":str(Path(tmp)/"elsewhere")}):
-                        result=bridge._configuration()
+                        result=bridge._configuration("demo")
             self.assertEqual(result,(str(node),str(entry),"lhm-work"))
             (pkg/"package.json").write_text(json.dumps({
                 "name":"attacker/fake-cli","version":"2.0.2"}),encoding="utf-8")
@@ -102,7 +102,7 @@ class OpenCLIPolicyTests(unittest.TestCase):
                 with patch.object(bridge.shutil,"which",return_value=str(node)):
                     with patch.dict(os.environ,{"APPDATA":str(Path(tmp)/"elsewhere")}):
                         with self.assertRaises(HTTPException):
-                            bridge._configuration()
+                            bridge._configuration("demo")
 
     def test_bundle_is_preferred_without_system_node_or_user_npm(self):
         with tempfile.TemporaryDirectory(prefix="lhm-bundle-") as tmp:
@@ -117,7 +117,7 @@ class OpenCLIPolicyTests(unittest.TestCase):
             with patch.object(bridge,"_windows",return_value=True):
                 with patch.dict(os.environ,{"LHM_OPENCLI_BUNDLE_DIR":str(root)}):
                     with patch.object(bridge.shutil,"which",return_value=None) as which:
-                        node,script,alias=bridge._configuration()
+                        node,script,alias=bridge._configuration("demo")
                         which.assert_not_called()
             self.assertEqual((node,script,alias),(str(root/"node.exe"),str(entry),"lhm-work"))
             (package/"package.json").write_text(json.dumps({
@@ -125,18 +125,18 @@ class OpenCLIPolicyTests(unittest.TestCase):
             with patch.object(bridge,"_windows",return_value=True):
                 with patch.dict(os.environ,{"LHM_OPENCLI_BUNDLE_DIR":str(root)}):
                     with self.assertRaises(HTTPException) as exc:
-                        bridge._configuration()
+                        bridge._configuration("demo")
             self.assertEqual(exc.exception.status_code,503)
 
     def test_no_implicit_profile_or_missing_cli(self):
         with patch.object(bridge,"_windows",return_value=True):
             with patch.dict(os.environ,{"LHM_OPENCLI_PROFILE":""}):
                 with self.assertRaises(HTTPException) as err:
-                    bridge._configuration()
+                    bridge._configuration("demo")
                 self.assertEqual(err.exception.status_code,409)
             with patch.object(bridge.shutil,"which",return_value=None):
                 with self.assertRaises(HTTPException) as err:
-                    bridge._configuration()
+                    bridge._configuration("demo")
                 self.assertEqual(err.exception.status_code,503)
 
 

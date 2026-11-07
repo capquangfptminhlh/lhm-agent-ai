@@ -7,7 +7,7 @@
 p{font-size:12px;color:#678097;line-height:1.55}main{max-width:650px;margin:0 auto}
 .card{background:white;border:1px solid #dae4f0;border-radius:13px;padding:18px;margin-top:14px}
 h2{font-size:15px;margin:0 0 10px}label{font-size:12px;color:#4c6681;font-weight:650;display:grid;gap:5px;margin:11px 0}
-input,select{font:inherit;width:100%;border-radius:8px;border:1px solid #c9d8e9;padding:9px 11px;color:#233f5b;background:white}
+input,select,textarea{font:inherit;width:100%;border-radius:8px;border:1px solid #c9d8e9;padding:9px 11px;color:#233f5b;background:white}
 button{border:0;background:#2074d2;padding:12px 18px;border-radius:8px;color:white;font-weight:750;cursor:pointer}
 label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 .notice{border-radius:9px;background:#fff7e7;border:1px solid #f1dfa9;color:#845e21;font-size:11px;padding:12px}
@@ -58,6 +58,8 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <div class="card"><h2>6. Windows Controller</h2>
 <label>Tên ứng dụng được robot phép điều khiển (EXE chính xác, cách nhau dấu phẩy)<input id="allowedApps" placeholder="notepad.exe, code.exe"></label>
 <p>Để trống = không cho thao tác bất kỳ ứng dụng Windows nào. Robot chỉ hiển thị các cửa sổ thuộc ứng dụng trong danh sách.</p>
+<label>Hồ sơ sở hữu màn hình máy này<input id="desktopWorkspace" placeholder="demo" autocomplete="off" maxlength="49"></label>
+<p>Cửa sổ trên màn hình (Firefox, Chrome, Edge, Cốc Cốc, Zalo, Explorer…) giữ đăng nhập cá nhân của anh nên không tách được theo hồ sơ. Chỉ hồ sơ này được nhìn và thao tác màn hình, thiết bị Android; hồ sơ khác chỉ dùng sandbox, trình duyệt và Chrome profile riêng của nó.</p>
 <label>Website HTTPS được phép mở bằng browser automation<input id="allowedHosts" placeholder="example.com, docs.example.com"></label>
 <p>Để trống = robot không được mở website ngoài. Không sử dụng IP, wildcard hoặc localhost.</p>
 <label>Website dành riêng cho Content Agent<input id="contentHosts" placeholder="example.com, blog.example.com" autocomplete="off"></label>
@@ -73,6 +75,9 @@ label.check{display:flex;gap:8px;align-items:center}.check input{width:auto}
 <select id="opencliProfileSelect" aria-label="Chọn Chrome profile của LHM"><option value="">Chọn Chrome profile riêng…</option></select>
 <label>Profile OpenCLI đã chọn<input id="opencliProfile" placeholder="Chọn từ danh sách bên trên" autocomplete="off" maxlength="80"></label>
 <label>Website OpenCLI được phép (phải có trong danh sách HTTPS bên trên)<input id="opencliHosts" placeholder="example.com, docs.example.com" autocomplete="off"></label>
+<label>Hồ sơ dùng profile trên<input id="opencliWorkspace" placeholder="demo" autocomplete="off" maxlength="49"></label>
+<label>Chrome profile riêng cho hồ sơ khác (mỗi dòng: hồ_sơ = profile | website, website)<textarea id="opencliExtraProfiles" rows="3" placeholder="shop-b = lhm-shop-b | shopb.example.com" autocomplete="off"></textarea></label>
+<p>Mỗi hồ sơ một Chrome profile riêng: cookie và đăng nhập không dùng chung. Hai hồ sơ trùng profile sẽ bị từ chối; hồ sơ chưa có profile không dùng được OpenCLI.</p>
 <p>Không tự sao chép Chrome cá nhân. Node/OpenCLI đã nằm trong bộ cài Windows. Anh chỉ cần tự cài Browser Bridge extension vào Chrome profile riêng và đăng nhập nền tảng bằng tay. Robot chỉ mở/đọc trang được phép; Content Agent muốn click/điền phải được anh duyệt từng lần. Không có quyền chạy JavaScript, API ẩn, plugin hoặc gửi bài hàng loạt. Thiết lập yêu cầu khởi động lại.</p></div>
 </div>
 <div class="card"><h2>7. Android MCP · Đọc dữ liệu thiết bị (tùy chọn)</h2>

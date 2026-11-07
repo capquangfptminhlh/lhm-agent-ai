@@ -60,6 +60,21 @@ test("OpenCLI is explicit opt-in with dedicated Chrome profile and host scope",(
    assert.match(js,new RegExp(field));
  }
 });
+test("Each workspace gets its own Chrome profile; the desktop belongs to one workspace",()=>{
+ const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
+ const html=fs.readFileSync(path.join(root,"settings.html"),"utf8");
+ const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
+ assert.match(main,/LHM_OPENCLI_PROFILES:/);
+ assert.match(main,/LHM_DESKTOP_WORKSPACE:/);
+ // The native runner executes OpenCLI and Windows tools: it must receive both.
+ assert.match(main,/"LHM_OPENCLI_WORKSPACE","LHM_OPENCLI_PROFILES","LHM_DESKTOP_WORKSPACE"/);
+ assert.match(main,/new Set\(usedProfiles\)\.size!==usedProfiles\.length/);
+ assert.match(main,/hosts\.some\(x=>!allowedHosts\.includes\(x\)\)/);
+ for(const field of ["desktopWorkspace","opencliWorkspace","opencliExtraProfiles"]){
+   assert.match(html,new RegExp('id="'+field+'"'));
+   assert.match(js,new RegExp(field));
+ }
+});
 test("Windows owner can scope Content Sales Quality domains; no implicit global inheritance",()=>{
  const main=fs.readFileSync(path.join(root,"main.cjs"),"utf8");
  const js=fs.readFileSync(path.join(root,"settings.js"),"utf8");
