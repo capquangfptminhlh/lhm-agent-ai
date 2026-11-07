@@ -148,6 +148,21 @@ def main() -> None:
                                           "tool":tool,"args":args}
                                 )
                             if response.status_code!=200:
+                                # CI fixture: Windows Runner uses fixed
+                                # diagnostic error strings without arguments.
+                                # Log only a small, explicitly known reason.
+                                detail=response.json().get("detail","")
+                                safe_reasons={
+                                    "Browser Find input missing or ambiguous",
+                                    "Browser Find input changed; refresh UIA snapshot",
+                                    "Target window is no longer foreground",
+                                    "Windows denied foreground focus. Click the app manually and retry.",
+                                    "Browser Find field did not accept keyboard input",
+                                    "Windows UIA could not fill browser Find input",
+                                }
+                                reason=detail if detail in safe_reasons else "unclassified"
+                                print("EDGE_RUNNER_DENIAL",tool,response.status_code,reason,
+                                      flush=True)
                                 raise HTTPException(502,
                                     "Headed Edge native Runner rejected "+tool+
                                     ": HTTP "+str(response.status_code))
