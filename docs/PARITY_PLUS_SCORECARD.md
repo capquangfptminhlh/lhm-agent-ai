@@ -119,3 +119,9 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - Sau khôi phục cửa sổ đã thu nhỏ, đọc lại hình chữ nhật và xác nhận allowlist, tránh dùng tọa độ `-32000` cũ. `windows_launch` chỉ trả receipt `verified_visible=false`, buộc Agent quan sát `windows_list` trước khi kết luận.
 - Test chính sách offline `tests/test_p4_windows_launcher.py`; kiểm thử thật trên GitHub-hosted Windows `scripts/windows_launch_smoke.py` yêu cầu auth, chặn Emergency Pause, cấm cmd.exe, mở Notepad và quan sát HWND mới. **Không thay thế** 10 tác vụ P4 trên Windows chủ và không tự nhận OWNER_WINDOWS_PASS.
 - Trạng thái commit: **CODED**, chờ CI. Vẫn cần kiểm thử Calculator trên máy chủ, Notepad tiếng Việt, Explorer và hộp thoại thật.
+
+## L. P4/T04 — nhận diện email mẫu trong Free privacy gate (07/11/2026)
+
+- Khi thử điền form, `test@example.com` bị hiểu sai là email liên hệ thật; cổng OpenRouter Free chặn từ bước đầu. Sửa để chỉ bỏ qua các miền dự trữ RFC 2606/6761 (`example.com/net/org`, các miền con và TLD `.example`, `.test`, `.invalid`, `.localhost`).
+- Tất cả email không nằm trong miền thử nghiệm, số điện thoại (kể cả kết hợp email mẫu + thông tin thật) **vẫn bị chặn** nếu chưa có opt-in `LHM_OPENROUTER_ALLOW_CONTACT_DATA`. Không thêm khả năng gửi biểu mẫu và không thay đổi cổng duyệt Submit/Publish.
+- Test `tests/test_p4_reserved_test_contacts.py` chứng minh nhận diện miền thử nghiệm và từ chối địa chỉ thật trước HTTP; không gọi mạng/không có model live. Workflow Windows được cấu hình chạy lại cho thay đổi module này. T04 trên máy Windows của chủ vẫn **chưa nghiệm thu**.
