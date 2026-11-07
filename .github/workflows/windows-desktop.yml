@@ -201,6 +201,11 @@ jobs:
         timeout-minutes: 5
         run: python scripts/windows_uia_gui_e2e.py
 
+      - name: Real Windows allowlisted app launcher acceptance (Notepad HWND)
+        shell: pwsh
+        timeout-minutes: 3
+        run: python scripts/windows_launch_smoke.py
+
       - name: Real multi-step Computer Agent acceptance (approval, Runner, UIA, SQLite)
         shell: pwsh
         timeout-minutes: 4

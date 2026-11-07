@@ -47,6 +47,7 @@ TOOLS = {
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
   "windows_list":"List Windows app HWNDs whose executables are allowed by the local operator; {}",
+  "windows_launch":"Start only owner-allowlisted notepad.exe, explorer.exe or calc.exe, then call windows_list to verify a visible window. Explorer folder must stay inside Documents; {app:string, folder?:Documents subfolder}. Always needs owner approval.",
   "windows_snapshot":"Read up to 60 UI Automation controls with type, label (redacted for editable/password fields), automation_id and visible center {x,y} local to the allowed HWND; use an observed center with windows_click, never invent coordinates; {hwnd: integer}",
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
@@ -65,7 +66,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_launch","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -76,7 +77,7 @@ SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run",
 # post content and a fill can place data into an external form — the
 # decision's "send/post data out" category — and the two cannot be told
 # apart from routine clicks in advance, so the whole surface stays gated.
-ALWAYS_APPROVAL_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_click_element",
+ALWAYS_APPROVAL_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","run_command","sandbox_run","vision_observe","vision_locate","windows_launch","windows_click_element",
                        "windows_desktop_click","windows_desktop_drag",
                        "windows_desktop_scroll","windows_desktop_screenshot",
                        "browser_click","browser_fill"}
@@ -571,7 +572,7 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
 def _precheck_args(tool: str,args: dict) -> str | None:
     """Reject predictable runner errors before doing anything on the PC."""
     if tool.startswith("windows_") and not tool.startswith("windows_desktop_") \
-            and tool!="windows_list" and type(args.get("hwnd")) is not int:
+            and tool not in ("windows_list","windows_launch") and type(args.get("hwnd")) is not int:
         return "hwnd must be an integer from an observed windows_list result"
     if tool=="browser_scroll":
         pixels=args.get("pixels",450)
@@ -583,6 +584,14 @@ def _precheck_args(tool: str,args: dict) -> str | None:
         amount=args.get("steps",3)
         if type(amount) is not int or not -8<=amount<=8 or amount==0:
             return "steps must be an integer from -8 through 8 excluding zero"
+    if tool=="windows_launch":
+        from windows_native import LAUNCHABLE
+        if args.get("app") not in LAUNCHABLE:
+            return "app must be one of "+", ".join(sorted(LAUNCHABLE))
+        if set(args)-{"app","folder"}:
+            return "windows_launch accepts only app and optional folder"
+        if "folder" in args and args["app"]!="explorer.exe":
+            return "only Explorer may receive a folder"
     if tool=="windows_hotkey":
         from windows_native import _validate_hotkey
         try:
