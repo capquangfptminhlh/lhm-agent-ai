@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 from pathlib import Path
 import sys
 import tempfile
@@ -42,7 +43,8 @@ header { padding: 36px; font-size: 24px; background: #eef2f9; }
 <div class="footer"></div></body></html>
 """
 TOOLS=("windows_list","windows_activate","windows_hotkey",
-       "windows_type","windows_hotkey","windows_hotkey","windows_screenshot")
+       "windows_snapshot","windows_click","windows_type",
+       "windows_hotkey","windows_hotkey","windows_screenshot")
 
 
 def main() -> None:
@@ -173,14 +175,39 @@ def main() -> None:
                                 elif n==2:
                                     action=("windows_hotkey",{"hwnd":hwnd,"keys":"CTRL+F"})
                                 elif n==3:
-                                    action=("windows_type",{"hwnd":hwnd,"text":NEEDLE})
+                                    action=("windows_snapshot",{"hwnd":hwnd})
                                 elif n==4:
-                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ENTER"})
+                                    snapshot=steps[3]["result"]
+                                    window=snapshot["window"]
+                                    assert window["hwnd"]==hwnd
+                                    # Two browser-chrome Edits: the upper
+                                    # address bar and the lower Ctrl+F input.
+                                    # Select ONLY after fresh UIA observation.
+                                    edits=[c for c in snapshot["controls"]
+                                        if c.get("type")=="Edit"
+                                        and re.fullmatch(r"view_[0-9]{1,8}",
+                                              str(c.get("automation_id","")))
+                                        and isinstance(c.get("center"),dict)
+                                        and 0<c["center"]["y"]<220]
+                                    edits.sort(key=lambda c:c["center"]["y"])
+                                    assert len(edits)==2,(
+                                        "Cannot distinguish Edge Find and address bar: "+
+                                        repr([(c.get("automation_id"),
+                                               c.get("center")) for c in edits]))
+                                    assert (edits[1]["center"]["y"]-
+                                            edits[0]["center"]["y"])>=18,(
+                                        "Edge find/address bar geometry ambiguous")
+                                    action=("windows_click",{"hwnd":hwnd,
+                                        **edits[1]["center"]})
                                 elif n==5:
-                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ESC"})
+                                    action=("windows_type",{"hwnd":hwnd,"text":NEEDLE})
                                 elif n==6:
-                                    action=("windows_screenshot",{"hwnd":hwnd})
+                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ENTER"})
                                 elif n==7:
+                                    action=("windows_hotkey",{"hwnd":hwnd,"keys":"ESC"})
+                                elif n==8:
+                                    action=("windows_screenshot",{"hwnd":hwnd})
+                                elif n==9:
                                     action=("finish",{
                                         "summary":"Đã gửi Ctrl+F tới Edge thử nghiệm; cần đối chiếu kết quả độc lập.",
                                         "evidence":"Giao diện Windows thật và hậu kiểm DOM tách riêng."
@@ -213,7 +240,7 @@ def main() -> None:
                                 assert out.get("last_tool")==expected,(expected,out)
                                 assert out["status"]=="queued",(expected,out)
 
-                                if number==4:
+                                if number==6:
                                     # Chromium/Edge may only commit a find
                                     # after ENTER. Never mark success from
                                     # the hotkey receipt alone.
