@@ -54,6 +54,8 @@ def _user32():
     u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
     u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
     u.GetWindow.restype=wintypes.HWND
+    u.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
+    u.GetAncestor.restype=wintypes.HWND
     u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
     u.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
     u.SetForegroundWindow.argtypes=[wintypes.HWND]
@@ -272,6 +274,33 @@ def _foreground(hwnd):
         raise HTTPException(409,"Target window is no longer foreground")
     return i
 
+def _foreground_owned_browser_find_popup(hwnd):
+    """Allow ONLY an OS-owned, same-PID Edge Find popup for focused text.
+
+    Browsers expose their Ctrl+F popup as a separate foreground HWND.
+    The strict native foreground requirement remains for every other tool:
+    no shared-process or unrelated-profile browser window is accepted.
+    """
+    main=_window_info(hwnd)
+    if main["process"] not in _BROWSER_UIA_APPS:
+        raise HTTPException(403,"Only selected Edge/Chrome Find has popup exception")
+    u=_user32()
+    fg=int(u.GetForegroundWindow() or 0)
+    if fg==hwnd:
+        return main
+    try:
+        popup=_window_info(fg)
+        owner=int(u.GetWindow(wintypes.HWND(fg),GW_OWNER) or 0)
+        rootowner=int(u.GetAncestor(wintypes.HWND(fg),3) or 0)
+    except Exception as exc:
+        raise HTTPException(409,"Browser Find popup is not a valid owned window") from exc
+    if (popup["pid"]!=main["pid"] or
+            popup["process"]!=main["process"] or
+            owner!=hwnd or rootowner!=hwnd):
+        raise HTTPException(409,"Foreground is not the selected browser Find popup")
+    return main
+
+
 def _foreground_or_refocus(hwnd):
     """Foreground check for interaction tools, with ONE bounded re-focus.
 
@@ -401,7 +430,47 @@ def _type_unicode(text):
             raise HTTPException(502,"Windows rejected injected key events")
 
 
-# Deliberately narrow keyboard allowlist. OS shortcuts, Run dialogs and shell
+# Some Chromium browser chrome fields (notably Ctrl+F) need physical virtual
+# key-down events; KEYEVENTF_UNICODE is correct for Vietnamese Notepad text but
+# may not dispatch to an Edge browser toolbar Edit. Only a narrow, explicitly
+# chosen ASCII input mode is supported, and only inside an allowlisted browser
+# HWND. No clipboard, arbitrary controls or shell keyboard shortcuts.
+_PHYSICAL_ASCII_RE=re.compile(r"[A-Za-z0-9 ]{1,120}\Z")
+
+
+def _validate_physical_ascii(value):
+    if not isinstance(value,str) or _PHYSICAL_ASCII_RE.fullmatch(value) is None:
+        raise HTTPException(422,"Physical browser typing supports only 1-120 ASCII letters, digits and spaces")
+    return value
+
+
+def _type_browser_ascii_keys(text: str, hwnd: int, *, owned_find_popup: bool=False):
+    text=_validate_physical_ascii(text)
+    u=_user32()
+    caps=bool(u.GetKeyState(0x14)&1) if hasattr(u,"GetKeyState") else False
+    for ch in text:
+        # The only exception to exact HWND foreground is the verified
+        # same-PID popup owned by THIS selected browser window.
+        if owned_find_popup:
+            _foreground_owned_browser_find_popup(hwnd)
+        else:
+            _foreground(hwnd)
+        vk=0x20 if ch==" " else ord(ch.upper())
+        shift=ch.isalpha() and (ch.isupper() != caps)
+        try:
+            if shift:
+                u.keybd_event(0x10,0,0,0)
+            try:
+                u.keybd_event(vk,0,0,0)
+            finally:
+                u.keybd_event(vk,0,0x0002,0)
+        finally:
+            if shift:
+                u.keybd_event(0x10,0,0x0002,0)
+        time.sleep(0.015)
+
+
+# Deliberately narrow keyboard allowlist. OS shortcuts, Run dialogs, shell
 # launchers are excluded. Every call must be explicitly approved by a human.
 KEYS = {
     "ENTER": 0x0D, "ESC": 0x1B, "TAB": 0x09, "BACKSPACE": 0x08,
@@ -575,6 +644,101 @@ def _prioritize_dialog_filename(items: list[dict], limit: int=60) -> list[dict]:
     return result
 
 
+# Chromium/Edge's Find-on-page Edit may be deeper than the standard first
+# 60 UIA descendants (address bar is early, Find bar is late). Only expose
+# extra browser chrome Edit *metadata* with empty labels, never entered text,
+# passwords, page rows or arbitrary downstream controls.
+_BROWSER_UIA_APPS=frozenset({"msedge.exe","chrome.exe"})
+_BROWSER_CHROME_EDIT_RE=re.compile(r"view_[0-9]{1,8}\Z")
+
+
+def _is_browser_chrome_edit_meta(kind: str, automation_id: str) -> bool:
+    return kind=="Edit" and _BROWSER_CHROME_EDIT_RE.fullmatch(automation_id) is not None
+
+
+def _prioritize_browser_chrome_edits(items: list[dict],limit: int=60) -> list[dict]:
+    pinned=[x for x in items if _is_browser_chrome_edit_meta(
+        str(x.get("type") or ""),str(x.get("automation_id") or ""))
+        and isinstance(x.get("center"),dict)]
+    seen=set()
+    result=[]
+    for item in pinned+items:
+        identity=id(item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(item)
+        if len(result)>=limit:
+            break
+    return result
+
+
+def _fill_browser_find(hwnd: int,args: dict) -> dict:
+    """Fill ONLY the freshly observed browser Find-on-page Edit via UIA.
+
+    Browser chrome has a higher address-bar Edit and a lower Find Edit.
+    Any missing/ambiguous control, wrong process, stale automation ID or
+    unexpected geometry fails before writing. No DOM fields are writable.
+    """
+    window=_foreground_or_refocus(hwnd)
+    if window["process"] not in _BROWSER_UIA_APPS:
+        raise HTTPException(403,"Find input is restricted to allowlisted Edge/Chrome")
+    if not isinstance(args,dict) or set(args)!={"hwnd","automation_id","text"}:
+        raise HTTPException(422,"Find input requires exact hwnd, automation_id and text")
+    text=_validate_physical_ascii(args.get("text"))
+    wanted=args.get("automation_id")
+    if not isinstance(wanted,str) or not _is_browser_chrome_edit_meta("Edit",wanted):
+        raise HTTPException(422,"Find input requires a fresh browser chrome Edit id")
+    try:
+        from pywinauto import Desktop
+        browser=Desktop(backend="uia").window(handle=hwnd)
+        candidates=[]
+        for child in browser.descendants()[:320]:
+            info=child.element_info
+            kind=str(getattr(info,"control_type","") or "")
+            control_id=str(getattr(info,"automation_id","") or "")
+            if not _is_browser_chrome_edit_meta(kind,control_id):
+                continue
+            rect=getattr(info,"rectangle",None)
+            if rect is None:
+                continue
+            top=int(rect.top)-window["y"]
+            bottom=int(rect.bottom)-window["y"]
+            left=int(rect.left)-window["x"]
+            right=int(rect.right)-window["x"]
+            if (0<=left<right<=window["width"] and
+                    0<top<bottom<min(window["height"],220)):
+                candidates.append((top+(bottom-top)//2,control_id,child))
+        # Never guess between a page input, omnibox and Find bar.
+        candidates.sort(key=lambda x:x[0])
+        if len(candidates)!=2 or candidates[1][0]-candidates[0][0]<18:
+            raise HTTPException(409,"Browser Find input missing or ambiguous")
+        if candidates[1][1]!=wanted:
+            raise HTTPException(409,"Browser Find input changed; refresh UIA snapshot")
+        _foreground(hwnd)  # Recheck process owner/foreground before filling
+        # Chromium's UIA ValuePattern.SetValue updates visible text but may
+        # NOT dispatch Find-on-page input/change events. First clear and
+        # focus the verified browser-chrome Edit, then send real ASCII
+        # virtual-key down/up input to that element.
+        candidates[1][2].set_edit_text("")
+        candidates[1][2].set_focus()
+        _foreground_owned_browser_find_popup(hwnd)
+        _type_browser_ascii_keys(text,hwnd,owned_find_popup=True)
+        # Compare only the field we just typed, in memory. Never return
+        # or log its contents; do not press Enter unless it retained input.
+        if candidates[1][2].get_value()!=text:
+            raise HTTPException(502,"Browser Find field did not accept keyboard input")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502,"Windows UIA could not fill browser Find input") from exc
+    # UIA SetValue is local browser-chrome input only, not proof that DOM
+    # search moved or that any external network effect occurred.
+    return {"filled":True,"characters":len(text),"hwnd":hwnd,
+            "target":"browser_find","field_value_verified":True,
+            "search_result_verified":False}
+
+
 def execute(tool: str,args: dict):
     """All native actions are invoked from the authenticated Runner process."""
     _require_windows()
@@ -632,15 +796,18 @@ def execute(tool: str,args: dict):
                     is_dialog=_window_class(_user32(),hwnd)==DIALOG_CLASS
                 except Exception:
                     is_dialog=False
-            scan_limit=320 if is_dialog else 60
+            is_browser=i["process"] in _BROWSER_UIA_APPS
+            scan_limit=320 if is_dialog or is_browser else 60
             for index,child in enumerate(target.descendants()[:scan_limit]):
                 try:
                     meta=child.element_info
                     kind=str(meta.control_type or "")[:70]
                     automation_id=str(getattr(meta,"automation_id","") or "")[:100]
-                    if index>=60 and (not is_dialog or
-                                      not _is_filename_meta(kind,automation_id)):
-                        # No values or labels of beyond-limit rows are read.
+                    if index>=60 and not (
+                            (is_dialog and _is_filename_meta(kind,automation_id)) or
+                            (is_browser and _is_browser_chrome_edit_meta(kind,automation_id))):
+                        # Beyond 60 we only inspect type and automation_id
+                        # of a bounded set; never read labels or values.
                         continue
                     # Never inspect values or read text from editable/document/password fields.
                     secret=kind.lower() in ("edit","document","password") or bool(
@@ -661,7 +828,9 @@ def execute(tool: str,args: dict):
                     items.append(item)
                 except (AttributeError,TypeError,ValueError,OverflowError):
                     continue
-            visible=_prioritize_dialog_filename(items) if is_dialog else items[:60]
+            visible=(_prioritize_dialog_filename(items) if is_dialog else
+                     _prioritize_browser_chrome_edits(items) if is_browser else
+                     items[:60])
             return {"window":i,"controls":visible}
         except Exception:
             return {"window":i,"controls":[],"note":"UI Automation controls unavailable"}
@@ -672,6 +841,8 @@ def execute(tool: str,args: dict):
         return {"focused":True,"window":i}
     if tool=="windows_click_element":
         return _click_uia_control(hwnd,args)
+    if tool=="windows_fill_find":
+        return _fill_browser_find(hwnd,args)
     if tool=="windows_click":
         i=_foreground_or_refocus(hwnd)
         x,y=_coordinates(i,args)
@@ -705,19 +876,36 @@ def execute(tool: str,args: dict):
                 "from":{"x":args["x"],"y":args["y"]},
                 "to":{"x":args["to_x"],"y":args["to_y"]}}
     if tool=="windows_hotkey":
-        _foreground_or_refocus(hwnd)
         combo=_validate_hotkey(args.get("keys"))
+        # Chromium's Find bar may be a separate OS-owned popup HWND.
+        # Only Enter/Escape can pass through it; all other hotkeys still
+        # require the original selected HWND to be foreground.
+        window=_window_info(hwnd)
+        if combo in ("ENTER","ESC") and window["process"] in _BROWSER_UIA_APPS:
+            _foreground_owned_browser_find_popup(hwnd)
+        else:
+            _foreground_or_refocus(hwnd)
         _press_hotkey(combo)
         return {"pressed":combo,"hwnd":hwnd}
     if tool=="windows_type":
-        _foreground_or_refocus(hwnd)
+        window=_foreground_or_refocus(hwnd)
         text=args.get("text")
         if not isinstance(text,str) or not text or len(text)>MAX_TEXT or any(
             ord(ch)<32 and ch not in ("\n","\t") for ch in text):
             raise HTTPException(422,"Text must be <=750 printable characters")
-        _type_unicode(text)
+        method=args.get("input_method","unicode")
+        if method=="physical_ascii":
+            _validate_physical_ascii(text)
+            if window["process"] not in _BROWSER_UIA_APPS:
+                raise HTTPException(403,"Physical ASCII input is restricted to allowlisted Edge/Chrome HWNDs")
+            _type_browser_ascii_keys(text,hwnd)
+        elif method=="unicode":
+            _type_unicode(text)
+        else:
+            raise HTTPException(422,"Unknown Windows text input method")
         # Do not echo typed text; it could be confidential.
-        return {"typed":True,"characters":len(text),"hwnd":hwnd}
+        return {"typed":True,"characters":len(text),"hwnd":hwnd,
+                "input_method":method}
     if tool=="windows_scroll":
         i=_foreground_or_refocus(hwnd)
         amount=args.get("steps",3)
