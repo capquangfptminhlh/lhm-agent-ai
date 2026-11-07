@@ -114,6 +114,13 @@ def prepare_db() -> None:
           UNIQUE(run_id,number)
         );
         CREATE INDEX IF NOT EXISTS ix_computer_queue ON computer_runs(status,next_run_at,created_at);
+        CREATE TABLE IF NOT EXISTS computer_step_decisions (
+          step_id TEXT PRIMARY KEY REFERENCES computer_steps(id),
+          run_id TEXT NOT NULL REFERENCES computer_runs(id),
+          decision TEXT NOT NULL CHECK(decision IN ('approved','rejected')),
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_computer_step_decisions_run ON computer_step_decisions(run_id);
         """)
         # Additive migration for databases created before run modes existed.
         cols={r[1] for r in c.execute("PRAGMA table_info(computer_runs)").fetchall()}
@@ -281,6 +288,133 @@ def list_computer_runs(ws: str):
                        (ws,)).fetchall()
         return {"runs":[_view(c,x) for x in rows]}
 
+# Replay is a READ-ONLY evidence timeline, never a re-execution of GUI actions.
+# No args, form values, screenshots, file bodies, page titles, paths or audit
+# summaries ever leave this endpoint. Older runs may lack decision receipts.
+_REPLAY_EVENT_LIMIT=2000
+_REPLAY_METHODS=frozenset({"read_back","read_back_prefix","state_pair",
+                           "preflight","unavailable"})
+_REPLAY_EVENT=re.compile(r"^computer\.[a-z_]{1,64}$")
+_REPLAY_TOOL=re.compile(r"^[a-z_]{1,64}$")
+
+
+def _replay_state(state: Any) -> dict | None:
+    """Return only process identity, UIA digest and public host, no page path."""
+    if not isinstance(state,dict):
+        return None
+    safe={}
+    for field in ("hwnd","pid","controls"):
+        v=state.get(field)
+        if type(v) is int and 0<=v<=2**64-1:
+            safe[field]=v
+    process=state.get("process")
+    if isinstance(process,str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,70}\.exe",process):
+        safe["process"]=process
+    digest=state.get("uia_fingerprint")
+    if isinstance(digest,str) and re.fullmatch(r"[a-f0-9]{20,64}",digest):
+        safe["uia_fingerprint"]=digest
+    url=state.get("url")
+    if isinstance(url,str):
+        try:
+            parsed=urlsplit(url)
+            if parsed.scheme=="https" and parsed.hostname:
+                hostname=parsed.hostname.lower()
+                if re.fullmatch(r"[a-z0-9.-]{1,253}",hostname):
+                    safe["https_host"]=hostname
+        except ValueError:
+            pass
+    return safe or None
+
+
+def _replay_verification(result_json: str | None) -> dict:
+    try:
+        result=json.loads(result_json or "{}")
+    except (TypeError,ValueError):
+        return {"level":"unknown","method":"unavailable"}
+    if not isinstance(result,dict):
+        return {"level":"unknown","method":"unavailable"}
+    verify=result.get("_verification")
+    if not isinstance(verify,dict):
+        # CLI can acknowledge dispatch; that is NEVER proof of an external
+        # post/payment/message nor of semantic application success.
+        info={"level":"not_verified","method":"not_recorded"}
+        if result.get("external_effect_verified") is False:
+            info["external_effect_verified"]=False
+        if result.get("requires_owner_reconciliation") is True:
+            info["requires_owner_reconciliation"]=True
+        return info
+    method=verify.get("method")
+    method=method if method in _REPLAY_METHODS else "unavailable"
+    ok=verify.get("ok")
+    if ok is True and verify.get("partial") is not True:
+        level="deterministic_pass" if method=="read_back" else "observed_only"
+    elif ok is False:
+        level="failed"
+    else:
+        level="not_verified"
+    out={"level":level,"method":method}
+    if verify.get("partial") is True:
+        out["partial"]=True
+    if verify.get("requires_owner_reconciliation") is True:
+        out["requires_owner_reconciliation"]=True
+    if verify.get("action_executed") is False:
+        out["action_executed"]=False
+    if type(verify.get("observed_change")) is bool:
+        out["observed_change"]=verify["observed_change"]
+    if method=="state_pair":
+        out["pre"]=_replay_state(verify.get("pre"))
+        out["post"]=_replay_state(verify.get("post"))
+    return out
+
+
+@router.get("/workspaces/{ws}/computer/runs/{rid}/replay")
+def computer_run_replay(ws: str,rid: str):
+    """Redacted, chronological local evidence; NEVER sends Runner commands.
+
+    Do not conflate a UI state change or an operator acknowledgment with a
+    business outcome. Decision receipts are immutable from this version on;
+    older approvals have no recoverable per-step proof and are marked unknown.
+    """
+    prepare_db()
+    with db() as c:
+        run=c.execute("SELECT id,workspace_id,role,model,mode,status,step_count,created_at,updated_at "
+                      "FROM computer_runs WHERE id=? AND workspace_id=?",(rid,ws)).fetchone()
+        if run is None:
+            raise HTTPException(404,"Computer replay session not found")
+        rows=c.execute("""
+          SELECT s.number,s.tool,s.status,s.created_at,s.updated_at,s.result_json,
+                 d.decision,d.created_at AS decided_at
+          FROM computer_steps s LEFT JOIN computer_step_decisions d ON d.step_id=s.id
+          WHERE s.run_id=? ORDER BY s.number
+        """,(rid,)).fetchall()
+        events=c.execute("""
+          SELECT id,event_type,created_at FROM events
+          WHERE workspace_id=? AND task_id=? AND event_type LIKE 'computer.%'
+          ORDER BY id ASC LIMIT ?
+        """,(ws,rid,_REPLAY_EVENT_LIMIT+1)).fetchall()
+    steps=[]
+    for row in rows:
+        tool=row["tool"]
+        steps.append({"number":row["number"],
+                      "tool":tool if isinstance(tool,str) and _REPLAY_TOOL.fullmatch(tool) else "unknown",
+                      "status":row["status"],
+                      "created_at":row["created_at"],"updated_at":row["updated_at"],
+                      "decision":row["decision"] or "not_recorded",
+                      "decided_at":row["decided_at"],
+                      "verification":_replay_verification(row["result_json"])})
+    records=[{"id":row["id"],"type":row["event_type"]
+              if _REPLAY_EVENT.fullmatch(row["event_type"]) else "computer.unknown",
+              "at":row["created_at"]} for row in events[:_REPLAY_EVENT_LIMIT]]
+    return {"format":"computer-redacted-replay-v1","read_only":True,
+            "actions_reexecuted":False,"outcome_independently_verified":False,
+            "run":dict(run),"steps":steps,"events":records,
+            "events_truncated":len(events)>_REPLAY_EVENT_LIMIT,
+            "limitations":["No screenshot/video persistence or visual playback.",
+                           "Approval receipts for legacy steps may be unavailable.",
+                           "UIA/browser state changes are not semantic proof of success.",
+                           "Sensitive arguments, file contents, titles and event summaries are redacted."]}
+
+
 @router.get("/computer/runs/{rid}")
 def get_computer_run(rid: str):
     prepare_db()
@@ -314,6 +448,10 @@ def approve_computer_step(rid: str,sid: str):
             prior=[x for x in _steps(c,rid) if x["number"]<step["number"]]
             _android_tap_preview(json.loads(step["args_json"]),prior)
         c.execute("UPDATE computer_steps SET status='approved',updated_at=? WHERE id=?",(now(),sid))
+        # Immutable decision receipt remains even after the step moves to
+        # completed/needs_review. Never store arguments or private contents.
+        c.execute("INSERT INTO computer_step_decisions(step_id,run_id,decision,created_at) VALUES(?,?,?,?)",
+                  (sid,rid,"approved",now()))
         c.execute("UPDATE computer_runs SET status='queued',error=NULL,updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.step_approved",f"{step['tool']} approved for sandbox runner",rid)
         return _view(c,_get(c,rid))
@@ -385,6 +523,8 @@ def reject_computer_step(rid: str,sid: str):
             raise HTTPException(409,"Không có lệnh phù hợp đang chờ duyệt")
         c.execute("UPDATE computer_steps SET status='rejected',error=?,updated_at=? WHERE id=?",
                   ("Human rejected action",now(),sid))
+        c.execute("INSERT INTO computer_step_decisions(step_id,run_id,decision,created_at) VALUES(?,?,?,?)",
+                  (sid,rid,"rejected",now()))
         c.execute("UPDATE computer_runs SET status='queued',updated_at=? WHERE id=?",(now(),rid))
         audit(c,r["workspace_id"],"computer.step_rejected",f"{step['tool']} rejected",rid)
         return _view(c,_get(c,rid))
