@@ -590,14 +590,21 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
     try:
         if tool in ("browser_click","browser_fill"):
             snap=await runner_call(run,"browser_snapshot",{})
-            return {"url":snap.get("url"),"title":str(snap.get("title") or "")[:120]}
+            if not isinstance(snap,dict) or not isinstance(snap.get("url"),str) or not snap["url"]:
+                return None
+            return {"url":snap["url"],"title":str(snap.get("title") or "")[:120]}
         if tool.startswith("windows_"):
             hwnd=args.get("hwnd")
             if type(hwnd) is int:
                 snap=await runner_call(run,"windows_snapshot",{"hwnd":hwnd})
                 window=snap.get("window") if isinstance(snap,dict) else None
                 controls=snap.get("controls") if isinstance(snap,dict) else None
-                if not isinstance(window,dict) or not isinstance(controls,list):
+                if (not isinstance(window,dict) or not isinstance(controls,list)
+                        or snap.get("note") == "UI Automation controls unavailable"
+                        or window.get("hwnd") != hwnd
+                        or type(window.get("pid")) is not int or window["pid"]<=0
+                        or not isinstance(window.get("process"),str)
+                        or not window["process"]):
                     return None
                 # Store a compact digest, not labels or user-entered values.
                 # A changed digest shows UIA structure changed, NOT that a
