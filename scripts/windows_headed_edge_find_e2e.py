@@ -200,7 +200,8 @@ def main() -> None:
                                     action=("windows_click",{"hwnd":hwnd,
                                         **edits[1]["center"]})
                                 elif n==5:
-                                    action=("windows_type",{"hwnd":hwnd,"text":NEEDLE})
+                                    action=("windows_type",{"hwnd":hwnd,"text":NEEDLE,
+                                        "input_method":"physical_ascii"})
                                 elif n==6:
                                     action=("windows_hotkey",{"hwnd":hwnd,"keys":"ENTER"})
                                 elif n==7:
