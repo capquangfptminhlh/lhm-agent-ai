@@ -196,7 +196,7 @@ class TrustedModeApiTests(unittest.TestCase):
             url = "/computer/runs/" + run["id"] + "/tick"
             async def safe_native_run(run, tool, args):
                 if tool=="windows_snapshot":
-                    return {"window":{"process":"notepad.exe"},"controls":[]}
+                    return {"window":{"hwnd":7,"pid":1001,"process":"notepad.exe","title":"Notepad"},"controls":[]}
                 if tool=="windows_click":
                     return {"clicked":True}
                 raise AssertionError("Unexpected tool: "+tool)
@@ -299,7 +299,7 @@ class PostVerifyTests(unittest.TestCase):
             called.append(tool)
             if tool=="windows_snapshot":
                 label="Đã lưu" if state["clicked"] else "Lưu"
-                return {"window":{"hwnd":7,"title":"Notepad"},
+                return {"window":{"hwnd":7,"pid":1001,"process":"notepad.exe","title":"Notepad"},
                         "controls":[{"type":"Button","automation_id":"save","label":label}]}
             if tool=="windows_click_element":
                 state["clicked"]=True
@@ -336,7 +336,8 @@ class PostVerifyTests(unittest.TestCase):
             if tool == "windows_click":
                 return {"clicked": True, "hwnd": 7}
             if tool == "windows_snapshot":
-                return {"window": {"hwnd": 7, "title": "Untitled - Notepad"},
+                return {"window": {"hwnd": 7, "pid": 1001, "process": "notepad.exe",
+                                   "title": "Untitled - Notepad"},
                         "controls": [
                             {"type": "Button", "label": "Save", "automation_id": "save"},
                             {"type": "Text", "label": "Status", "automation_id": "status"},
