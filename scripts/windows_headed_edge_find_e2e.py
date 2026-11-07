@@ -289,13 +289,27 @@ def main() -> None:
                                                 if kind not in ("Edit","ComboBox"):
                                                     continue
                                                 rect=getattr(meta,"rectangle",None)
-                                                focused_edits.append({
+                                                item={
                                                     "kind":kind,
                                                     "id":str(getattr(meta,"automation_id","") or "")[:60],
+                                                    "center_x":int((rect.left+rect.right)/2)
+                                                        if rect is not None else None,
                                                     "center_y":int((rect.top+rect.bottom)/2)
                                                         if rect is not None else None,
                                                     "focused":bool(getattr(meta,"has_keyboard_focus",False)),
-                                                })
+                                                }
+                                                # Fixture-only test. Never log
+                                                # an Edit's value, even here;
+                                                # report only whether the Find
+                                                # box contains the known CI term.
+                                                if item["id"]=="view_1045":
+                                                    try:
+                                                        value=element.get_value()
+                                                        item["matches_test_term"]=(value==NEEDLE)
+                                                        item["value_length"]=len(value)
+                                                    except Exception:
+                                                        item["matches_test_term"]="unavailable"
+                                                focused_edits.append(item)
                                                 if len(focused_edits)>=20:
                                                     break
                                             print("EDGE_FOCUSED_EDIT_METADATA "+str(focused_edits),
