@@ -28,11 +28,18 @@ def _file_name_edit(controls: list[dict]) -> dict:
     """No blind focus fallback: require one grounded File Name edit rectangle."""
     editors=[c for c in controls if c.get("type")=="Edit"
              and isinstance(c.get("center"),dict)]
-    names=[c for c in editors if str(c.get("automation_id","")).casefold()
-           in ("1001","filenamecontrolhost","filename") or "filename" in
-           str(c.get("automation_id","")).casefold()]
-    if len(names)==1:
-        return names[0]
+    named=[c for c in controls
+           if c.get("type") in ("Edit","ComboBox")
+           and isinstance(c.get("center"),dict)
+           and (str(c.get("automation_id","")).casefold() in
+                ("1001","1148","filenamecontrolhost","filenameedit","filename")
+                or "filename" in str(c.get("automation_id","")).casefold())]
+    direct=[c for c in named if c.get("type")=="Edit" and
+            str(c.get("automation_id","")).casefold()=="1001"]
+    if len(direct)==1:
+        return direct[0]
+    if len(named)==1:
+        return named[0]
     if len(editors)==1:
         return editors[0]
     # UI Automation metadata only: never read field values or private text.
