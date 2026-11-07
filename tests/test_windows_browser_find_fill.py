@@ -86,7 +86,7 @@ class FindUiAGuards(unittest.TestCase):
         self.assertEqual(self.find.filled,["","Privacy"])
         self.assertEqual(self.find.get_value(),"Privacy")
         self.assertTrue(self.find.focused)
-        self.input.assert_called_once_with("Privacy",88)
+        self.input.assert_called_once_with("Privacy",88,owned_find_popup=True)
         self.assertEqual(self.address.filled,[])
 
     def test_uia_focus_failure_never_sends_keyboard_input(self):
