@@ -607,7 +607,9 @@ async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
                             for x in controls if isinstance(x,dict)]
                 digest=hashlib.sha256(json.dumps(
                     identities,ensure_ascii=False,sort_keys=True).encode("utf-8")).hexdigest()[:20]
-                return {"title":str(window.get("title") or "")[:120],
+                return {"hwnd":window.get("hwnd"),"pid":window.get("pid"),
+                        "process":window.get("process"),
+                        "title":str(window.get("title") or "")[:120],
                         "controls":len(identities),"uia_fingerprint":digest}
     except Exception:
         return None
@@ -642,11 +644,25 @@ async def _post_verify(run: dict,tool: str,args: dict,result: dict,
             return {"method":"read_back","ok":new in got}
         if tool in ("browser_click","browser_fill") or tool.startswith("windows_"):
             post=await _capture_ui_state(run,tool,args)
-            if post is None and pre_state is None:
-                return {"method":"state_pair","ok":None,"detail":"state capture unavailable"}
+            # An action may have happened even if postflight failed. Never
+            # queue the next AI step or retry a blind click on a lost window.
+            if pre_state is None or post is None:
+                return {"method":"state_pair","ok":None,"pre":pre_state,"post":post,
+                        "requires_owner_reconciliation":True,
+                        "detail":"UI pre/post capture unavailable; owner must inspect"}
+            if tool.startswith("windows_") and any(
+                    pre_state.get(key)!=post.get(key)
+                    for key in ("hwnd","pid","process")):
+                return {"method":"state_pair","ok":None,"pre":pre_state,"post":post,
+                        "requires_owner_reconciliation":True,
+                        "detail":"Windows target identity changed; owner must inspect"}
             return {"method":"state_pair","ok":None,"pre":pre_state,"post":post,
-                    "observed_change":(pre_state!=post) if pre_state is not None and post is not None else None}
+                    "observed_change":pre_state!=post}
     except Exception:
+        if tool in ("browser_click","browser_fill") or tool.startswith("windows_"):
+            return {"method":"unavailable","ok":None,
+                    "requires_owner_reconciliation":True,
+                    "detail":"UI postflight failed; owner must inspect"}
         return {"method":"unavailable","ok":None}
     return None
 
@@ -777,13 +793,31 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         # step to failed so the model sees it in history and can correct
         # the work (bounded by max_steps) instead of claiming success.
         verify_failed=False
+        needs_reconciliation=False
         if step_status=="completed" and tool in VERIFY_TOOLS:
             verification=await _post_verify(run,tool,args,result,pre_state)
             if verification is not None:
                 result={**result,"_verification":verification}
                 verify_failed=verification.get("ok") is False
+                needs_reconciliation=verification.get("requires_owner_reconciliation") is True
                 if verify_failed:
                     step_status="failed"
+        if needs_reconciliation:
+            # A click/type/fill may already have changed the app. Preserve
+            # the receipt, stop ALL following actions, and require manual
+            # reconciliation instead of retrying or treating the step as done.
+            clean=json.dumps(result,ensure_ascii=False)[:MAX_OUTPUT_CHARS]
+            detail="UI state unavailable or target changed after action; owner inspection required"
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("UPDATE computer_steps SET status='needs_review',result_json=?,error=?,updated_at=? WHERE id=?",
+                          (clean,detail,now(),sid))
+                c.execute("UPDATE computer_runs SET status='awaiting_reconciliation',error=?,updated_at=? WHERE id=?",
+                          (detail,now(),rid))
+                audit(c,run["workspace_id"],"computer.ui_reconciliation_required",
+                      tool+" outcome uncertain; no automatic retry",rid)
+            return {"status":"awaiting_reconciliation","id":rid,
+                    "last_tool":tool,"step_status":"needs_review"}
         # The CLI confirming a Chrome click is NOT evidence that a provider
         # accepted a post, order or message. Pause the loop before the LLM
         # can propose another action or claim an external success.
