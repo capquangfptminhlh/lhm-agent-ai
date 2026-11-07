@@ -54,6 +54,8 @@ def _user32():
     u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
     u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
     u.GetWindow.restype=wintypes.HWND
+    u.GetAncestor.argtypes=[wintypes.HWND,wintypes.UINT]
+    u.GetAncestor.restype=wintypes.HWND
     u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
     u.GetWindowThreadProcessId.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.DWORD)]
     u.SetForegroundWindow.argtypes=[wintypes.HWND]
@@ -272,6 +274,33 @@ def _foreground(hwnd):
         raise HTTPException(409,"Target window is no longer foreground")
     return i
 
+def _foreground_owned_browser_find_popup(hwnd):
+    """Allow ONLY an OS-owned, same-PID Edge Find popup for focused text.
+
+    Browsers expose their Ctrl+F popup as a separate foreground HWND.
+    The strict native foreground requirement remains for every other tool:
+    no shared-process or unrelated-profile browser window is accepted.
+    """
+    main=_window_info(hwnd)
+    if main["process"] not in _BROWSER_UIA_APPS:
+        raise HTTPException(403,"Only selected Edge/Chrome Find has popup exception")
+    u=_user32()
+    fg=int(u.GetForegroundWindow() or 0)
+    if fg==hwnd:
+        return main
+    try:
+        popup=_window_info(fg)
+        owner=int(u.GetWindow(wintypes.HWND(fg),GW_OWNER) or 0)
+        rootowner=int(u.GetAncestor(wintypes.HWND(fg),3) or 0)
+    except Exception as exc:
+        raise HTTPException(409,"Browser Find popup is not a valid owned window") from exc
+    if (popup["pid"]!=main["pid"] or
+            popup["process"]!=main["process"] or
+            owner!=hwnd or rootowner!=hwnd):
+        raise HTTPException(409,"Foreground is not the selected browser Find popup")
+    return main
+
+
 def _foreground_or_refocus(hwnd):
     """Foreground check for interaction tools, with ONE bounded re-focus.
 
@@ -415,13 +444,17 @@ def _validate_physical_ascii(value):
     return value
 
 
-def _type_browser_ascii_keys(text: str, hwnd: int):
+def _type_browser_ascii_keys(text: str, hwnd: int, *, owned_find_popup: bool=False):
     text=_validate_physical_ascii(text)
     u=_user32()
     caps=bool(u.GetKeyState(0x14)&1) if hasattr(u,"GetKeyState") else False
     for ch in text:
-        # Stop before each letter if the selected browser loses foreground.
-        _foreground(hwnd)
+        # The only exception to exact HWND foreground is the verified
+        # same-PID popup owned by THIS selected browser window.
+        if owned_find_popup:
+            _foreground_owned_browser_find_popup(hwnd)
+        else:
+            _foreground(hwnd)
         vk=0x20 if ch==" " else ord(ch.upper())
         shift=ch.isalpha() and (ch.isupper() != caps)
         try:
@@ -689,7 +722,8 @@ def _fill_browser_find(hwnd: int,args: dict) -> dict:
         # virtual-key down/up input to that element.
         candidates[1][2].set_edit_text("")
         candidates[1][2].set_focus()
-        _type_browser_ascii_keys(text,hwnd)
+        _foreground_owned_browser_find_popup(hwnd)
+        _type_browser_ascii_keys(text,hwnd,owned_find_popup=True)
         # Compare only the field we just typed, in memory. Never return
         # or log its contents; do not press Enter unless it retained input.
         if candidates[1][2].get_value()!=text:
@@ -842,8 +876,15 @@ def execute(tool: str,args: dict):
                 "from":{"x":args["x"],"y":args["y"]},
                 "to":{"x":args["to_x"],"y":args["to_y"]}}
     if tool=="windows_hotkey":
-        _foreground_or_refocus(hwnd)
         combo=_validate_hotkey(args.get("keys"))
+        # Chromium's Find bar may be a separate OS-owned popup HWND.
+        # Only Enter/Escape can pass through it; all other hotkeys still
+        # require the original selected HWND to be foreground.
+        window=_window_info(hwnd)
+        if combo in ("ENTER","ESC") and window["process"] in _BROWSER_UIA_APPS:
+            _foreground_owned_browser_find_popup(hwnd)
+        else:
+            _foreground_or_refocus(hwnd)
         _press_hotkey(combo)
         return {"pressed":combo,"hwnd":hwnd}
     if tool=="windows_type":
