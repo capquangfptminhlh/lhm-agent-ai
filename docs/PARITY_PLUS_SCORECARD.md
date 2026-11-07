@@ -87,3 +87,10 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - **PR đang kiểm tra:** #23 — bổ sung khóa browser, cặp pre/post, khôi phục P4 gốc và test GUI thật ở runner; **chưa merge** tại thời điểm lập bảng. Không ghi PASS nếu Windows CI vẫn đỏ.
 
 **Tất cả Agent bắt buộc đọc lại HEAD/main + CI + Issue #20 ở đầu mỗi lượt; cập nhật bảng khi và chỉ khi có bằng chứng mới.**
+
+## H. G6 / P3 — cổng dừng khi mất trạng thái UI (07/11/2026)
+
+- **PR:** [#81](https://github.com/capquangfptminhlh/lhm-agent-ai/pull/81), mức **CODED**; không tự suy ra CI_PASS/OWNER_WINDOWS_PASS.
+- **Bất biến:** thao tác browser/Windows đã gửi đi nhưng không có cả cặp snapshot trước/sau, hoặc cửa sổ đích đổi HWND/PID/process, thì run phải thành `awaiting_reconciliation`, step `needs_review`; không chạy bước tiếp hay retry thao tác mơ hồ.
+- **Đơn vị kiểm thử:** `tests/test_computer_ui_reconciliation.py` kiểm tra cửa sổ biến mất sau khi fill, đường chạy bình thường, PID đổi và thiếu preflight. Đây là bài test offline mô phỏng response, **không phải thực thi Windows/AVD thật**.
+- **Còn thiếu:** khi CI đạt, phải nghiệm thu T10 bằng thao tác Windows thật (cố ý đóng ứng dụng giữa chừng, chứng minh dừng an toàn, audit trước/sau); chưa đạt replay, ảnh/vision và đủ 10 bài P4.
