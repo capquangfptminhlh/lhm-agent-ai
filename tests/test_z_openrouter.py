@@ -76,7 +76,7 @@ class FreeRouterTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as err:
                 asyncio.run(self.router.call_free_model(
                     "content", {"industry":"general","business_context":""},
-                    "Gửi phản hồi cho example@example.com",
+                    "Gửi phản hồi cho khach.hang@gmail.com",
                     "", "openrouter/free"))
         self.assertEqual(err.exception.status_code, 422)
 
