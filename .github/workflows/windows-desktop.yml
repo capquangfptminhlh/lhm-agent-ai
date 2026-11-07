@@ -64,6 +64,7 @@ on:
       - 'openrouter_user_allowlist.py'
       - 'scripts/windows_uia_gui_e2e.py'
       - 'scripts/windows_agent_multistep_e2e.py'
+      - 'scripts/windows_unicode_save_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -127,6 +128,7 @@ on:
       - 'openrouter_user_allowlist.py'
       - 'scripts/windows_uia_gui_e2e.py'
       - 'scripts/windows_agent_multistep_e2e.py'
+      - 'scripts/windows_unicode_save_e2e.py'
       - 'scripts/windows_packaged_e2e.py'
       - 'scripts/windows_electron_gui_e2e.py'
       - '.github/workflows/windows-desktop.yml'
@@ -214,6 +216,11 @@ jobs:
         shell: pwsh
         timeout-minutes: 4
         run: python scripts/windows_agent_multistep_e2e.py
+
+      - name: Real GUI Vietnamese Unicode type + file save acceptance (WinForms)
+        shell: pwsh
+        timeout-minutes: 6
+        run: python scripts/windows_unicode_save_e2e.py
 
       - name: Run Python runtime import test
         env:

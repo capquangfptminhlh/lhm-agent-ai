@@ -125,3 +125,10 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - Khi thử điền form, `test@example.com` bị hiểu sai là email liên hệ thật; cổng OpenRouter Free chặn từ bước đầu. Sửa để chỉ bỏ qua các miền dự trữ RFC 2606/6761 (`example.com/net/org`, các miền con và TLD `.example`, `.test`, `.invalid`, `.localhost`).
 - Tất cả email không nằm trong miền thử nghiệm, số điện thoại (kể cả kết hợp email mẫu + thông tin thật) **vẫn bị chặn** nếu chưa có opt-in `LHM_OPENROUTER_ALLOW_CONTACT_DATA`. Không thêm khả năng gửi biểu mẫu và không thay đổi cổng duyệt Submit/Publish.
 - Test `tests/test_p4_reserved_test_contacts.py` chứng minh nhận diện miền thử nghiệm và từ chối địa chỉ thật trước HTTP; không gọi mạng/không có model live. Workflow Windows được cấu hình chạy lại cho thay đổi module này. T04 trên máy Windows của chủ vẫn **chưa nghiệm thu**.
+
+## M. P4/T01 — thao tác GUI gõ tiếng Việt và lưu tệp thật (07/11/2026)
+
+- Kiểm thử `scripts/windows_unicode_save_e2e.py`: trên **GitHub-hosted Windows**, dựng ứng dụng WinForms thử nghiệm có một ô gõ và nút Save; Agent qua Runner được xác thực liệt kê HWND, quan sát UIA, kích hoạt cửa sổ, chọn ô gõ, gửi **Windows SendInput UTF-16 cho nguyên văn tiếng Việt T01**, bấm nút Save sau khi phê duyệt, đọc lại cửa sổ và đối chiếu **byte UTF-8 trên ổ đĩa** với đoạn văn gốc.
+- Bài test dùng `computer_tick`, API phê duyệt, audit SQLite và native Win32/UIA thật. **Chỉ có AI planner được lập trình kịch bản**, không dùng Free model live hay Notepad của chủ. Bằng chứng file được ghi bởi WinForms sau click, **không phải** Python ghi thay để tạo PASS giả.
+- Bài test phải FAIL khi click chưa được duyệt, không đọc được UIA, gõ sai dấu/thiếu ký tự, Save không tạo file, ghi sai UTF-8, mất audit, hoặc Robot đánh đồng UIA click với xác minh cuối cùng. 
+- Đây là bước tiến ở tầng **CODED / CI_PASS khi workflow đạt**. **T01 theo đề gốc vẫn chưa đạt OWNER_WINDOWS_PASS**: cần chạy Notepad thật trên máy chủ, lưu Documents\LHM-P4\bai1.txt và đóng app bằng GUI; đồng thời 9/10 + T10, phát lại audit vẫn chưa có chứng cứ. Không tự nâng Parity.
