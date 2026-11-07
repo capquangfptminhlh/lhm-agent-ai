@@ -326,7 +326,7 @@ def _replay_state(state: Any) -> dict | None:
     return safe or None
 
 
-def _replay_verification(result_json: str | None) -> dict:
+def _replay_verification(result_json: str | None, tool: str) -> dict:
     try:
         result=json.loads(result_json or "{}")
     except (TypeError,ValueError):
@@ -347,7 +347,9 @@ def _replay_verification(result_json: str | None) -> dict:
     method=method if isinstance(method,str) and method in _REPLAY_METHODS else "unavailable"
     ok=verify.get("ok")
     if ok is True and verify.get("partial") is not True:
-        level="deterministic_pass" if method=="read_back" else "observed_only"
+        # edit_file confirms a new substring exists, not full exact file
+        # equality. Full read-back equality is proved only by write_file.
+        level="deterministic_pass" if method=="read_back" and tool=="write_file" else "observed_only"
     elif ok is False:
         level="failed"
     else:
@@ -401,7 +403,7 @@ def computer_run_replay(ws: str,rid: str):
                       "created_at":row["created_at"],"updated_at":row["updated_at"],
                       "decision":row["decision"] or "not_recorded",
                       "decided_at":row["decided_at"],
-                      "verification":_replay_verification(row["result_json"])})
+                      "verification":_replay_verification(row["result_json"],tool)})
     records=[{"id":row["id"],"type":row["event_type"]
               if _REPLAY_EVENT.fullmatch(row["event_type"]) else "computer.unknown",
               "at":row["created_at"]} for row in events[:_REPLAY_EVENT_LIMIT]]
