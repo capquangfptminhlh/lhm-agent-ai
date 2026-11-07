@@ -43,6 +43,7 @@ TOOLS = {
   "sandbox_run":"Run pre-approved argv within optional networkless ephemeral Docker container, never host Windows; {argv: list[str]}; requires human approval",
   "browser_open":"Open an operator-allowlisted HTTPS website; {url: string}",
   "browser_snapshot":"Read current page title, content, links and controls; {}",
+  "browser_find":"Find visible text on the current allowlisted HTTPS page and scroll it into view without clicking or submitting; {text:1-120 printable characters}. Returns observed geometry, not click authorization.",
   "browser_scroll":"Scroll current browser viewport; {direction: up/down, pixels: 1-1100}",
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",

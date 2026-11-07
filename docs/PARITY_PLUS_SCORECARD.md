@@ -132,3 +132,10 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - Bài test dùng `computer_tick`, API phê duyệt, audit SQLite và native Win32/UIA thật. **Chỉ có AI planner được lập trình kịch bản**, không dùng Free model live hay Notepad của chủ. Bằng chứng file được ghi bởi WinForms sau click, **không phải** Python ghi thay để tạo PASS giả.
 - Bài test phải FAIL khi click chưa được duyệt, không đọc được UIA, gõ sai dấu/thiếu ký tự, Save không tạo file, ghi sai UTF-8, mất audit, hoặc Robot đánh đồng UIA click với xác minh cuối cùng. 
 - Đây là bước tiến ở tầng **CODED / CI_PASS khi workflow đạt**. **T01 theo đề gốc vẫn chưa đạt OWNER_WINDOWS_PASS**: cần chạy Notepad thật trên máy chủ, lưu Documents\LHM-P4\bai1.txt và đóng app bằng GUI; đồng thời 9/10 + T10, phát lại audit vẫn chưa có chứng cứ. Không tự nâng Parity.
+
+## N. P4/T03 + T07 — tìm chữ trên trang web được phép (07/11/2026)
+
+- `browser_find` cho phép tìm văn bản hiển thị trong một trang HTTPS **đã có trong allowlist**, cuộn phần tử tìm thấy vào viewport và trả vị trí quan sát được; **không click, không nhấn Enter, không gửi form**, không cấp quyền click theo tọa độ.
+- Đầu vào là chữ thuần 1–120 ký tự in được (không CSS, script, phím tắt, hoặc dấu điều khiển); tìm trong tối đa 40 ứng viên và ghi rõ `limited` nếu chưa khảo sát hết, không báo chắc chắn trang không có chữ khi vượt giới hạn.
+- Bài test `scripts/smoke_computer_browser.py` dùng Chromium thật + trang mẫu local fixture phát qua Playwright route; xác minh tìm chữ `Privacy` nằm ngoài viewport, thật sự cuộn trang, không thay form hoặc điều hướng ra ngoài. Unit `tests/test_browser_find.py` kiểm tra giới hạn công cụ.
+- Đây là **CODED**, chờ CI; browser hiện còn chạy headless trong Sidecar, nên **chưa đạt T03/T07 trên trình duyệt Windows hiển thị của chủ**, chưa có Ctrl+F và ảnh nghiệm thu thực. Không tự nâng `OWNER_WINDOWS_PASS` hay Parity.

@@ -33,7 +33,7 @@ WINDOWS_TOOLS = {"windows_list","windows_launch","windows_snapshot","windows_scr
                  "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
                  "windows_drag","windows_desktop_click","windows_desktop_drag","windows_desktop_scroll"}
 ALLOWED_TOOLS = {"android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
-                 "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
+                 "browser_snapshot","browser_find","browser_click","browser_fill","browser_scroll","browser_screenshot"} | WINDOWS_TOOLS
 PAUSED = False
 MUTATIONS = {"android_mcp_tap","opencli_click","opencli_fill","write_file","edit_file","run_command","sandbox_run","browser_click","browser_fill",
              "windows_launch","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
@@ -50,7 +50,7 @@ class ToolRequest(BaseModel):
     run_id: str | None = Field(default=None,pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
     role: str = Field(pattern=r"^[a-z][a-z0-9_]{1,39}$")
     tool: Literal["android_mcp_tap","android_mcp_devices","android_mcp_inspect","opencli_open","opencli_state","opencli_click","opencli_fill","agent_reach_search","list_files","read_file","write_file","edit_file","run_command","sandbox_run","browser_open",
-                  "browser_snapshot","browser_click","browser_fill","browser_scroll","browser_screenshot",
+                  "browser_snapshot","browser_find","browser_click","browser_fill","browser_scroll","browser_screenshot",
                   "windows_list","windows_launch","windows_snapshot","windows_screenshot","windows_activate",
                   "windows_click","windows_click_element","windows_type","windows_scroll",
                   "windows_right_click","windows_double_click","windows_hotkey","windows_desktop_screenshot",
@@ -149,6 +149,14 @@ async def _command(ws: str,role: str,args: dict[str,Any]) -> dict:
             "stdout":stdout[:MAX_OUTPUT_CHARS].decode("utf-8","replace"),
             "stderr":stderr[:MAX_OUTPUT_CHARS].decode("utf-8","replace")}
 
+def _validate_find_text(value: Any) -> str:
+    """Search text is plain text, never a selector or executable script."""
+    if (not isinstance(value,str) or not 1<=len(value)<=120
+            or not value.strip() or not all(ch.isprintable() for ch in value)):
+        raise HTTPException(422,"Browser search needs 1-120 printable characters")
+    return value
+
+
 async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
     global _PLAYWRIGHT
     try:
@@ -187,6 +195,32 @@ async def _browser(ws: str,role: str,tool: str,args: dict[str,Any]) -> dict:
             if not isinstance(url,str) or not _allowed_domain(url, role):
                 raise HTTPException(422,"Browser URL must match an admin-approved HTTPS host")
             await page.goto(url,wait_until="domcontentloaded",timeout=16000)
+        elif tool=="browser_find":
+            # Find text in the current owner-allowlisted page and scroll it
+            # into view, without keyboard input, click, form submit or JS.
+            if not _allowed_domain(page.url,role):
+                raise HTTPException(403,"Browser page not on approved HTTPS host")
+            needle=_validate_find_text(args.get("text"))
+            matches=page.get_by_text(needle,exact=False)
+            total=await matches.count()
+            examined=min(total,40)
+            for idx in range(examined):
+                element=matches.nth(idx)
+                if not await element.is_visible():
+                    continue
+                try:
+                    await element.scroll_into_view_if_needed(timeout=6000)
+                    bounds=await element.bounding_box(timeout=6000)
+                except Exception:
+                    continue
+                if bounds:
+                    # Return geometry of an observed element only; coordinates
+                    # are not authority to click or submit anything.
+                    return {"found":True,"query":needle,"url":page.url,
+                            "bounds":{k:round(bounds[k],1) for k in ("x","y","width","height")},
+                            "matches_examined":idx+1,"limited":total>40}
+            return {"found":False,"query":needle,"url":page.url,
+                    "matches_examined":examined,"limited":total>40}
         elif tool=="browser_scroll":
             direction=args.get("direction","down")
             if direction not in ("up","down"):
