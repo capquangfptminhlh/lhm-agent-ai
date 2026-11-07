@@ -246,6 +246,34 @@ def main() -> None:
                                             "uia_status":metadata.status_code
                                         }
                                         print("EDGE_NATIVE_FIND_DIAG "+str(diagnostic),flush=True)
+                                        # The normal snapshot caps 60 controls.
+                                        # Inspect ONLY type, automation ID,
+                                        # safe coordinates and focus for the
+                                        # CI-only Edge profile. Never UIA
+                                        # text/value and never screenshot bytes.
+                                        try:
+                                            from pywinauto import Desktop
+                                            target=Desktop(backend="uia").window(handle=target_hwnd)
+                                            focused_edits=[]
+                                            for element in target.descendants()[:260]:
+                                                meta=element.element_info
+                                                kind=str(getattr(meta,"control_type","") or "")
+                                                if kind not in ("Edit","ComboBox"):
+                                                    continue
+                                                rect=getattr(meta,"rectangle",None)
+                                                focused_edits.append({
+                                                    "kind":kind,
+                                                    "id":str(getattr(meta,"automation_id","") or "")[:60],
+                                                    "center_y":int((rect.top+rect.bottom)/2)
+                                                        if rect is not None else None,
+                                                    "focused":bool(getattr(meta,"has_keyboard_focus",False)),
+                                                })
+                                                if len(focused_edits)>=20:
+                                                    break
+                                            print("EDGE_FOCUSED_EDIT_METADATA "+str(focused_edits),
+                                                  flush=True)
+                                        except Exception as exc:
+                                            print("EDGE_UIA_DIAG_ERROR "+type(exc).__name__,flush=True)
                                         raise
                                     rect=page.locator("#target").bounding_box()
                                     assert rect and 0<=rect["y"]<=720,rect
