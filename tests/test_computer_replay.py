@@ -182,6 +182,18 @@ class ComputerEvidenceReplayTests(unittest.TestCase):
                                                 "action_executed":False})
         self.assertEqual(step["decision"],"not_recorded")
 
+    def test_edit_file_substring_is_not_full_file_verification(self):
+        receipt=json.dumps({"_verification":{"method":"read_back","ok":True}})
+        output=agent._replay_verification(receipt,"edit_file")
+        self.assertEqual(output,{"level":"observed_only","method":"read_back"})
+        output=agent._replay_verification(receipt,"write_file")
+        self.assertEqual(output,{"level":"deterministic_pass","method":"read_back"})
+
+    def test_malformed_method_never_crashes_evidence_export(self):
+        receipt=json.dumps({"_verification":{"method":["not a string"],"ok":True}})
+        output=agent._replay_verification(receipt,"write_file")
+        self.assertEqual(output,{"level":"observed_only","method":"unavailable"})
+
     def test_broken_legacy_result_does_not_break_replay(self):
         rid=self._run("p3-replay-malformed-007")
         with core.db() as c:
