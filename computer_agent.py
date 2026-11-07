@@ -63,7 +63,7 @@ TOOLS = {
   "windows_desktop_scroll":"Scroll at ABSOLUTE desktop coordinates; requires owner full-screen consent; always human approved; {x:int,y:int,steps:int}",
   "vision_locate":"Requires explicit consent AND human approval in every mode. Locate ONE named element on an allowed browser page or selected Windows HWND via the explicit OpenRouter :free vision model and return its coordinates as an unverified observation; never clicks by itself; {source: browser|windows, hwnd?: integer, target: string}",
   "windows_desktop_screenshot":"View all monitors only with explicit Electron consent AND human step approval; no image persistence; {}",
-  "windows_type":"Type Unicode text to an allowed foreground app; {hwnd: int, text: string}; approval required",
+  "windows_type":"Type Unicode to an allowed foreground app (default). In Edge/Chrome Find box only, after windows_snapshot and approved click, input_method=physical_ascii sends 1-120 ASCII letters/digits/spaces as actual key-downs; always needs owner approval in a browser. {hwnd:int,text:string,input_method?:unicode|physical_ascii}",
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
@@ -735,6 +735,16 @@ def _precheck_args(tool: str,args: dict) -> str | None:
             return "windows_launch accepts only app and optional folder"
         if "folder" in args and args["app"]!="explorer.exe":
             return "only Explorer may receive a folder"
+    if tool=="windows_type":
+        method=args.get("input_method","unicode")
+        if method not in ("unicode","physical_ascii"):
+            return "windows_type supports unicode or physical_ascii only"
+        if method=="physical_ascii":
+            from windows_native import _validate_physical_ascii
+            try:
+                _validate_physical_ascii(args.get("text"))
+            except HTTPException:
+                return "physical_ascii requires 1-120 ASCII letters, numbers and spaces"
     if tool=="windows_hotkey":
         from windows_native import _validate_hotkey
         try:
