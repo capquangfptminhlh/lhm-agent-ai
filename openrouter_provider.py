@@ -21,6 +21,27 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 FREE_MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*:free$", re.I)
 EMAIL = re.compile(r"(?<![\w.+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![\w.-])")
 PHONE = re.compile(r"(?<!\d)(?:\+84|0)[\s.-]?(?:3|5|7|8|9)(?:[\s.-]?\d){8}(?!\d)")
+# RFC 2606/6761 names used in test fixtures. They are never real mailboxes.
+RESERVED_EMAIL_DOMAINS = frozenset({"example.com", "example.net", "example.org"})
+RESERVED_EMAIL_TLDS = (".example", ".test", ".invalid", ".localhost")
+
+
+def has_real_contact(text: str) -> bool:
+    """Block real personal contact details while allowing reserved test domains.
+
+    Explicitly reserved domains are safe for P4 form testing, but lookalikes
+    such as example.com.vn remain personal-contact data and are refused.
+    """
+    if PHONE.search(text):
+        return True
+    for match in EMAIL.finditer(text):
+        domain=match.group(0).rsplit("@",1)[1].casefold()
+        if (domain in RESERVED_EMAIL_DOMAINS or
+                any(domain.endswith("."+root) for root in RESERVED_EMAIL_DOMAINS) or
+                domain.endswith(RESERVED_EMAIL_TLDS)):
+            continue
+        return True
+    return False
 
 
 def is_free_model(model: str) -> bool:
@@ -142,7 +163,7 @@ async def call_free_model(role: str, ws: Any, instruction: str, context: str,
     # Free providers can have different retention/training rules. Refuse common
     # personal-contact markers unless an operator has explicitly opted in.
     if os.environ.get("LHM_OPENROUTER_ALLOW_CONTACT_DATA", "0") != "1":
-        if EMAIL.search(joined) or PHONE.search(joined):
+        if has_real_contact(joined):
             raise HTTPException(422, "Model free từ chối dữ liệu liên hệ cá nhân; dùng model riêng được duyệt")
     system = role_prompt(role, ws["industry"], ws["business_context"])
     user = instruction[:8000] + (
