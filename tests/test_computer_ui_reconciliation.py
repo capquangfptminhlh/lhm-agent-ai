@@ -110,5 +110,20 @@ class ComputerUiReconciliationTests(unittest.TestCase):
         self.assertIsNone(verification["ok"])
 
 
+    def test_windows_uia_backend_failure_is_not_a_valid_snapshot(self):
+        reply = {"window": {"hwnd": 111, "pid": 123, "process": "notepad.exe"},
+                 "controls": [], "note": "UI Automation controls unavailable"}
+        with patch.object(agent, "runner_call", AsyncMock(return_value=reply)):
+            captured = asyncio.run(agent._capture_ui_state(
+                {}, "windows_click_element", {"hwnd": 111}))
+        self.assertIsNone(captured)
+
+    def test_browser_snapshot_without_url_is_not_valid_evidence(self):
+        with patch.object(agent, "runner_call", AsyncMock(return_value={"title": "Loading"})):
+            captured = asyncio.run(agent._capture_ui_state(
+                {}, "browser_fill", {"selector": "#name"}))
+        self.assertIsNone(captured)
+
+
 if __name__ == "__main__":
     unittest.main()
