@@ -76,7 +76,9 @@ class FreeRouterTest(unittest.TestCase):
             with self.assertRaises(HTTPException) as err:
                 asyncio.run(self.router.call_free_model(
                     "content", {"industry":"general","business_context":""},
-                    "Gửi phản hồi cho example@example.com",
+                    # A real mailbox domain: RFC 2606 example.com is test-only
+                    # and allowed since the owner P4 run (task 4).
+                    "Gửi phản hồi cho khach.hang@gmail.com",
                     "", "openrouter/free"))
         self.assertEqual(err.exception.status_code, 422)
 

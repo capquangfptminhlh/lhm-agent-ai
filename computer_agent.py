@@ -47,6 +47,7 @@ TOOLS = {
   "browser_click":"Click a CSS selector in the browser; {selector: string}; requires human approval",
   "browser_fill":"Fill a text field; {selector: string, text: string}; requires human approval",
   "windows_list":"List Windows app HWNDs whose executables are allowed by the local operator; {}",
+  "windows_launch":"Start an operator-allowlisted app (notepad.exe, explorer.exe or calc.exe), then call windows_list to get its HWND; explorer may open a folder inside Documents; {app: string, folder?: path under Documents}",
   "windows_snapshot":"Read up to 60 UI Automation controls with type, label (redacted for editable/password fields), automation_id and visible center {x,y} local to the allowed HWND; use an observed center with windows_click, never invent coordinates; {hwnd: integer}",
   "windows_screenshot":"Capture ONLY the allowed HWND, not the entire desktop; {hwnd: integer}",
   "windows_activate":"Focus an allowed Windows app; {hwnd: integer}; approval required",
@@ -65,7 +66,7 @@ TOOLS = {
   "windows_scroll":"Scroll inside allowed foreground app; {hwnd: int, steps: int}; approval required",
   "vision_observe":"Requires explicit consent AND human approval. Observe an allowed browser or selected Windows HWND by sending only one PNG to an explicit OpenRouter :free vision model; {source: browser|windows, hwnd?: integer}"
 }
-SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
+SENSITIVE_TOOLS={"android_mcp_tap","opencli_click","opencli_fill","sandbox_run","run_command","browser_click","browser_fill","windows_launch","windows_activate","windows_click","windows_click_element","windows_type","windows_scroll",
                  "windows_right_click","windows_double_click","windows_hotkey",
                  "windows_desktop_screenshot","vision_observe",
                  "windows_drag","vision_locate"}
@@ -464,20 +465,46 @@ def _system_prompt(role: str, run_id: str | None = None, workspace_id: str | Non
       "All paths are relative to the Agent's own sandbox. "
       "Terminal is a restricted argv array, NEVER shell. "
       "Finish only after relevant successful tool evidence. "
+      "A step with status rejected was refused by the owner: never request that same action again; "
+      "choose a different action or finish with what you already observed. "
       "Browser may open only admin-allowlisted HTTPS hosts.\n"
       "Tools:\n"+choices)
 
-def _parse_action(content: str) -> tuple[str,dict]:
-    value=content.strip()
+FORMAT_ERRORS={"AI không trả JSON hành động hợp lệ","AI action phải có đúng tool và args"}
+REPEATED_REJECTION="Owner already rejected this exact action, nothing executed"
+_THINK=re.compile(r"<think>.*?(?:</think>|$)",re.S|re.I)
+
+def _extract_action_object(content: Any) -> Any:
+    """Return the action object from a free model reply.
+
+    Owner Windows run 2026-10-28: free models routinely wrap the JSON action
+    in prose, code fences or <think> blocks, and every such reply killed the
+    run. Only the FIRST JSON object carrying a "tool" key is taken; the
+    strict tool/args validation below still applies to it."""
+    value=_THINK.sub("",content if isinstance(content,str) else "").strip()
     if value.startswith("```"):
         value=re.sub(r"^```(?:json)?\s*|\s*```$","",value).strip()
     try:
-        obj=json.loads(value)
+        return json.loads(value)
     except (ValueError,TypeError):
-        raise HTTPException(502,"AI không trả JSON hành động hợp lệ")
-    if not isinstance(obj,dict) or set(obj)!={"tool","args"} or not isinstance(obj.get("args"),dict):
+        pass
+    decoder=json.JSONDecoder()
+    for match in re.finditer(r"\{",value):
+        try:
+            obj,_=decoder.raw_decode(value,match.start())
+        except ValueError:
+            continue
+        if isinstance(obj,dict) and "tool" in obj:
+            return obj
+    raise HTTPException(502,"AI không trả JSON hành động hợp lệ")
+
+def _parse_action(content: str) -> tuple[str,dict]:
+    obj=_extract_action_object(content)
+    # Extra keys such as "reason" are ignored; a missing args means {}.
+    if not isinstance(obj,dict) or not isinstance(obj.get("tool"),str) \
+            or not isinstance(obj.get("args",{}),dict):
         raise HTTPException(502,"AI action phải có đúng tool và args")
-    tool=obj["tool"];args=obj["args"]
+    tool=obj["tool"];args=obj.get("args",{})
     if tool not in TOOLS and tool!="finish":
         raise HTTPException(422,"Model yêu cầu công cụ không được cấp phép")
     if isinstance(tool,str) and tool.startswith("windows_") and os.environ.get("LHM_DESKTOP_NATIVE")!="1":
@@ -514,13 +541,61 @@ async def _next_action(run: dict,steps: list[dict]) -> tuple[str,dict]:
        json.dumps(history,ensure_ascii=False)[:13000])
     ws={"industry":"general","business_context":""}
     from app import deepseek_request
-    response=await deepseek_request(run["role"],ws,prompt,"",run["model"])
-    usage=response.get("usage",{})
-    if isinstance(usage,dict) and isinstance(usage.get("prompt_tokens"),int):
-        with db() as c:
-            store_usage(c,run["workspace_id"],None,run["model"],usage)
-    body=response["choices"][0]["message"]["content"]
-    return _parse_action(body)
+    for attempt in range(2):
+        response=await deepseek_request(run["role"],ws,prompt,"",run["model"])
+        usage=response.get("usage",{})
+        if isinstance(usage,dict) and isinstance(usage.get("prompt_tokens"),int):
+            with db() as c:
+                store_usage(c,run["workspace_id"],None,run["model"],usage)
+        body=response["choices"][0]["message"].get("content")
+        try:
+            return _parse_action(body)
+        except HTTPException as exc:
+            # One bounded re-ask for a malformed reply. Safe: no tool has run
+            # yet in this tick, and the retry still respects the free quota.
+            if attempt or exc.status_code!=502 or exc.detail not in FORMAT_ERRORS:
+                raise
+            if is_free_model(run["model"]):
+                with db() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    quota=local_free_quota(c,now())
+                    if quota["used_24h"]>=quota["limit_24h"] or quota["used_1m"]>=quota["limit_1m"]:
+                        raise
+                    c.execute("INSERT INTO openrouter_attempts(created_at) VALUES(?)",(now(),))
+            prompt+=("\n\nYour previous reply was not one valid JSON action. Reply again "
+                     "with ONLY a single JSON object {\"tool\":...,\"args\":{...}} and no other text.")
+    raise HTTPException(502,"AI không trả JSON hành động hợp lệ")
+
+def _precheck_args(tool: str,args: dict) -> str | None:
+    """Pure validation of arguments the runner would reject before acting.
+
+    A model asking for e.g. a 1200px scroll or a non-allowlisted shortcut used
+    to end the whole run (owner run 2026-10-28). These checks run before any
+    side effect, so the step is recorded as failed and the model corrects it."""
+    if tool.startswith("windows_") and not tool.startswith("windows_desktop_") \
+            and tool not in ("windows_list","windows_launch") and type(args.get("hwnd")) is not int:
+        return "hwnd must be an integer taken from windows_list"
+    if tool=="browser_scroll":
+        pixels=args.get("pixels",450)
+        if args.get("direction","down") not in ("up","down"):
+            return "direction must be up or down"
+        if type(pixels) is not int or not 1<=pixels<=1100:
+            return "pixels must be an integer 1-1100; scroll several times for longer pages"
+    if tool in ("windows_scroll","windows_desktop_scroll"):
+        amount=args.get("steps",3)
+        if type(amount) is not int or not -8<=amount<=8 or amount==0:
+            return "steps must be an integer -8..8 excluding zero"
+    if tool=="windows_hotkey":
+        from windows_native import APPROVED_SHORTCUTS, KEYS
+        keys=args.get("keys")
+        if not isinstance(keys,str) or (keys.strip().upper() not in APPROVED_SHORTCUTS
+                                        and keys.strip().upper() not in KEYS):
+            return "keys not allowed; use one of "+", ".join(sorted(APPROVED_SHORTCUTS|set(KEYS)))
+    if tool=="windows_launch":
+        from windows_native import LAUNCHABLE
+        if args.get("app") not in LAUNCHABLE:
+            return "app must be one of "+", ".join(sorted(LAUNCHABLE))
+    return None
 
 def _approval_required(tool: str, run: dict | None = None) -> bool:
     """Approval gate per the official operating decision (2026-10-27).
@@ -730,6 +805,42 @@ async def computer_tick(rid: str) -> dict[str,Any]:
                     audit(c,run["workspace_id"],"computer.ai_finished",
                           "AI self-reported completion; human should verify the tool evidence",rid)
                 return {"status":"completed_unverified","id":rid,"outcome":summary}
+            invalid=_precheck_args(tool,args)
+            if invalid:
+                with db() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    c.execute("""INSERT INTO computer_steps
+                      (id,run_id,number,tool,args_json,status,error,created_at,updated_at)
+                      VALUES (?,?,?,?,?,'failed',?,?,?)""",
+                      (new_id(),rid,len(steps)+1,tool,json.dumps(args,ensure_ascii=False),
+                       "Invalid arguments, nothing executed: "+invalid,now(),now()))
+                    c.execute("UPDATE computer_runs SET step_count=step_count+1,status='queued',updated_at=? WHERE id=?",
+                              (now(),rid))
+                    audit(c,run["workspace_id"],"computer.tool_rejected_args",
+                          f"{tool} arguments invalid; nothing executed",rid)
+                return {"status":"queued","id":rid,"last_tool":tool,"step_status":"failed"}
+            # Owner run 2026-11-05 (P4 #3): after the owner rejected a click the
+            # free model asked for the identical click again and never finished.
+            # A refused action is never put to the owner twice; repeating it
+            # again stops the run for a human instead of looping.
+            if any(s["status"]=="rejected" and s["tool"]==tool and s["args"]==args for s in steps):
+                repeated=any(s["status"]=="failed" and str(s.get("error") or "").startswith(REPEATED_REJECTION)
+                             for s in steps)
+                with db() as c:
+                    c.execute("BEGIN IMMEDIATE")
+                    c.execute("""INSERT INTO computer_steps
+                      (id,run_id,number,tool,args_json,status,error,created_at,updated_at)
+                      VALUES (?,?,?,?,?,'failed',?,?,?)""",
+                      (new_id(),rid,len(steps)+1,tool,json.dumps(args,ensure_ascii=False),
+                       REPEATED_REJECTION+"; take a different approach or finish",now(),now()))
+                    c.execute("UPDATE computer_runs SET step_count=step_count+1,status=?,error=?,updated_at=? WHERE id=?",
+                              ("needs_review" if repeated else "queued",
+                               "Agent kept requesting an action the owner rejected" if repeated else None,
+                               now(),rid))
+                    audit(c,run["workspace_id"],"computer.rejected_action_repeated",
+                          f"{tool} was already rejected; not asked again",rid)
+                return {"status":"needs_review" if repeated else "queued","id":rid,
+                        "last_tool":tool,"step_status":"failed"}
             from agent_runtime_pilot import assert_pilot_action
             assert_pilot_action(run,tool,args,steps)
             if tool.startswith("android_mcp_"):
