@@ -19,7 +19,9 @@ PAGE = """<!doctype html><html><head><title>Local Agent Browser Smoke</title></h
 <input id="search" name="query" type="text" placeholder="Gõ nội dung">
 <button id="submit" onclick="document.getElementById('result').textContent =
   'Agent typed: ' + document.getElementById('search').value">Test action</button>
-<p id="result">Not yet</p></body></html>"""
+<p id="result">Not yet</p>
+<div style="height:1550px" aria-hidden="true"></div>
+<p id="privacy">Privacy details visible down the page</p></body></html>"""
 
 async def smoke():
     with tempfile.TemporaryDirectory(prefix="lhm-browser-computer-") as temp:
@@ -48,6 +50,17 @@ async def smoke():
         await action("browser_scroll",{"direction":"down","pixels":120})
         observed=await action("browser_snapshot",{})
         assert "Agent typed: LHM live computer" in observed["text"],observed
+        # Real Chromium, fully offline page: find below-the-fold text and
+        # observe it on-screen without clicking, pressing keys or submitting.
+        located=await action("browser_find",{"text":"Privacy details"})
+        assert located["found"] is True,located
+        assert located["url"]=="https://example.com/agent-test",located
+        assert 0<=located["bounds"]["y"]<=850,located
+        viewport_scroll=await context.pages[0].evaluate("window.scrollY")
+        assert viewport_scroll>500,viewport_scroll
+        missed=await action("browser_find",{"text":"No such paragraph 2026"})
+        assert missed["found"] is False and missed["limited"] is False,missed
+        assert "Agent typed: LHM live computer" in (await action("browser_snapshot",{}))["text"]
         capture=await action("browser_screenshot",{})
         png=base64.b64decode(capture["png_base64"])
         assert png.startswith(b"\x89PNG\r\n\x1a\n") and len(png)>1000, len(png)
