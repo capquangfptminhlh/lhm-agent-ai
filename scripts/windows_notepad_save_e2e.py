@@ -35,8 +35,11 @@ def _file_name_edit(controls: list[dict]) -> dict:
         return names[0]
     if len(editors)==1:
         return editors[0]
-    raise AssertionError("Save dialog filename Edit missing or ambiguous: "+
-                         repr([(c.get("type"),c.get("automation_id")) for c in controls[:45]]))
+    # UI Automation metadata only: never read field values or private text.
+    print("SAVE_AS_UIA_METADATA",repr([
+        (c.get("type"),c.get("automation_id"),bool(c.get("center")))
+        for c in controls[:60]]),flush=True)
+    raise AssertionError("Save dialog filename Edit missing or ambiguous; no click performed")
 
 
 def _new_notepad(before: dict, listed: dict) -> dict:
