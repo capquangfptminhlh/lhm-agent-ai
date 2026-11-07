@@ -580,6 +580,15 @@ VERIFY_TOOLS={"write_file","edit_file","browser_click","browser_fill",
               "windows_drag","windows_desktop_click","windows_desktop_drag",
               "windows_desktop_scroll"}
 
+# A missing preflight means the target may have closed or the UIA/browser
+# read path is broken. Never issue these scoped actions without a live target.
+# Absolute desktop actions remain separate: they require full-screen consent
+# and per-step approval, but do not have a selected HWND to inspect.
+UI_PREFLIGHT_TOOLS={"browser_click","browser_fill",
+                    "windows_activate","windows_click","windows_click_element",
+                    "windows_type","windows_scroll","windows_right_click",
+                    "windows_double_click","windows_hotkey","windows_drag"}
+
 
 async def _capture_ui_state(run: dict,tool: str,args: dict) -> dict | None:
     """Local state evidence for a UI action (no model, no file writes).
@@ -782,6 +791,24 @@ async def computer_tick(rid: str) -> dict[str,Any]:
         pre_state=None
         if tool in VERIFY_TOOLS and (tool.startswith("windows_") or tool.startswith("browser_")):
             pre_state=await _capture_ui_state(run,tool,args)
+        if tool in UI_PREFLIGHT_TOOLS and pre_state is None:
+            # No mutation was dispatched: the application may have closed,
+            # the browser moved, or the accessibility backend may be down.
+            # Stop before any click/type/fill, including already-approved steps.
+            detail="Không đọc được UI trước thao tác; chưa bấm/gõ. Kiểm tra ứng dụng đích."
+            result={"_verification":{"method":"preflight","ok":False,
+                                     "action_executed":False,
+                                     "detail":"Target UI unavailable before mutation"}}
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                c.execute("UPDATE computer_steps SET status='failed',result_json=?,error=?,updated_at=? WHERE id=?",
+                          (json.dumps(result),detail,now(),sid))
+                c.execute("UPDATE computer_runs SET status='needs_review',error=?,updated_at=? WHERE id=?",
+                          (detail,now(),rid))
+                audit(c,run["workspace_id"],"computer.ui_preflight_blocked",
+                      tool+" blocked before any UI mutation; target not observed",rid)
+            return {"status":"needs_review","id":rid,"last_tool":tool,
+                    "step_status":"failed","action_executed":False}
         if tool=="vision_observe":
             from robot_vision import observe
             result=await observe(run,args)

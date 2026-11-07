@@ -53,7 +53,7 @@ def main() -> None:
         with patch.dict(os.environ,env):
             process=subprocess.Popen([str(exe)],cwd=str(base))
             try:
-                _accept(base)
+                _accept(base, process)
             finally:
                 process.terminate()
                 try:
@@ -63,7 +63,7 @@ def main() -> None:
                     process.wait(timeout=5)
 
 
-def _accept(base: Path) -> None:
+def _accept(base: Path, fixture_process: subprocess.Popen) -> None:
     import httpx
     from fastapi import HTTPException
     from fastapi.testclient import TestClient
@@ -211,6 +211,81 @@ def _accept(base: Path) -> None:
         print("REAL WINDOWS COMPUTER AGENT E2E PASS: authenticated runner, 4 actual tool "
               "steps, explicit approval, unique UIA click, UIA before/after fingerprint, "
               "SQLite evidence and completed_unverified")
+
+        # T10 precursor on a real GitHub-hosted Windows GUI. The Agent first
+        # observes the actual WinForms window and its Button, gets explicit
+        # owner approval, and then the app disappears BEFORE the approved
+        # click. Preflight must block the mutation; a 502 from the Runner
+        # alone is NOT enough to pass this test.
+        closed_run=api.post("/workspaces/demo/computer/runs",json={
+            "role":"research",
+            "objective":"Nhấn nút WinForms, nhưng dừng nếu ứng dụng đã đóng",
+            "mode":"supervised","max_steps":8,
+            "idempotency_key":"real-windows-t10-preflight-20261107"})
+        assert closed_run.status_code==201,closed_run.text
+        closed_id=closed_run.json()["id"]
+        closed_tick="/computer/runs/"+closed_id+"/tick"
+
+        async def plan_closed(run: dict,steps: list[dict]):
+            if len(steps)==0:
+                return "windows_list",{}
+            if len(steps)==1:
+                matches=[w for w in steps[0]["result"]["windows"]
+                         if w.get("process")=="lhmuiafixture.exe"
+                         and w.get("title")=="LHM UIA AFTER"]
+                assert len(matches)==1,matches
+                return "windows_snapshot",{"hwnd":matches[0]["hwnd"]}
+            if len(steps)==2:
+                snap=steps[1]["result"]
+                buttons=[c for c in snap["controls"]
+                         if c.get("type")=="Button"
+                         and c.get("label")=="LHM CI APPLY"
+                         and c.get("automation_id")]
+                assert len(buttons)==1,buttons
+                button=buttons[0]
+                return "windows_click_element",{
+                    "hwnd":snap["window"]["hwnd"],
+                    "automation_id":button["automation_id"],
+                    "control_type":button["type"],
+                    "label":button["label"]}
+            raise AssertionError("Closed-window flow should never request another AI action")
+
+        executed_after_close=[]
+        async def observe_after_close(run: dict,tool: str,args: dict) -> dict:
+            executed_after_close.append(tool)
+            return await through_runner(run,tool,args)
+
+        with patch.object(agent,"runner_call",new=through_runner),patch.object(
+                agent,"_next_action",new=plan_closed):
+            assert api.post(closed_tick).json()["last_tool"]=="windows_list"
+            assert api.post(closed_tick).json()["last_tool"]=="windows_snapshot"
+            waiting=api.post(closed_tick)
+            assert waiting.status_code==200 and waiting.json()["status"]=="awaiting_approval",waiting.text
+            approved=api.post(f"/computer/runs/{closed_id}/steps/{waiting.json()['step_id']}/approve")
+            assert approved.status_code==200,approved.text
+
+        fixture_process.terminate()
+        fixture_process.wait(timeout=8)
+        # This is a genuine process/window disappearance, not a mock response.
+        with patch.object(agent,"runner_call",new=observe_after_close),patch.object(
+                agent,"_next_action",new=plan_closed):
+            stopped=api.post(closed_tick)
+        assert stopped.status_code==200 and stopped.json()["status"]=="needs_review",stopped.text
+        assert stopped.json()["action_executed"] is False,stopped.text
+        assert executed_after_close==["windows_snapshot"],executed_after_close
+        closed_state=api.get("/computer/runs/"+closed_id).json()
+        last=closed_state["steps"][-1]
+        assert last["tool"]=="windows_click_element" and last["status"]=="failed",last
+        assert last["result"]["_verification"]["action_executed"] is False,last
+        assert api.post(closed_tick).status_code==409
+        with core.db() as connection:
+            event_count=connection.execute(
+                "SELECT COUNT(*) FROM events WHERE workspace_id=? AND task_id=? AND event_type=?",
+                ("demo",closed_id,"computer.ui_preflight_blocked")).fetchone()[0]
+        assert event_count>=1,"Preflight denial needs persistent audit evidence"
+        print("REAL HOSTED WINDOWS APP-CLOSE PREFLIGHT PASS: observed UIA Button, owner "
+              "approved, WinForms process terminated, NO native click dispatched, "
+              "run stopped for review with SQLite audit; OWNER_WINDOWS_PASS not claimed")
     finally:
         core.DATABASE=saved_db
         executor.PAUSED=False

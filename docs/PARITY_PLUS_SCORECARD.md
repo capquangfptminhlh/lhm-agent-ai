@@ -94,3 +94,13 @@ Ví dụ báo cáo tốt: “T05/CODED + CI_PASS: Alt+Tab chuyển foreground tr
 - **Bất biến:** thao tác browser/Windows đã gửi đi nhưng không có cả cặp snapshot trước/sau, hoặc cửa sổ đích đổi HWND/PID/process, thì run phải thành `awaiting_reconciliation`, step `needs_review`; không chạy bước tiếp hay retry thao tác mơ hồ.
 - **Đơn vị kiểm thử:** `tests/test_computer_ui_reconciliation.py` kiểm tra cửa sổ biến mất sau khi fill, đường chạy bình thường, PID đổi và thiếu preflight. Đây là bài test offline mô phỏng response, **không phải thực thi Windows/AVD thật**.
 - **Còn thiếu:** khi CI đạt, phải nghiệm thu T10 bằng thao tác Windows thật (cố ý đóng ứng dụng giữa chừng, chứng minh dừng an toàn, audit trước/sau); chưa đạt replay, ảnh/vision và đủ 10 bài P4.
+
+## I. G6/P3 — chặn trước thao tác nếu mất đích (07/11/2026)
+
+- Bản kế tiếp PR #81: yêu cầu snapshot hợp lệ **trước** mọi thao tác browser click/fill và Windows thao tác theo HWND. Nếu ứng dụng đã đóng, URL browser không đọc được hoặc UIA lỗi thì không phát lệnh mutation.
+- Ghi bước `failed` với `action_executed=false`, phiên `needs_review`, audit `computer.ui_preflight_blocked` để người điều hành kiểm tra. Không tự thử lại.
+- Sau thao tác vẫn giữ hậu kiểm và `awaiting_reconciliation` nếu hậu kiểm không chắc chắn như PR #81.
+- Các thao tác toàn desktop không có HWND vẫn sử dụng cổng xin phép riêng, không bị diễn giải nhầm là đã có UI preflight.
+- Test trong `tests/test_computer_ui_reconciliation.py` mô phỏng browser đóng, snapshot thiếu URL, Notepad đã đóng trước khi click, và đường chạy bình thường. Đây là **kiểm thử offline**, chưa phải T10 trên Windows của chủ.
+- Bổ sung `scripts/windows_agent_multistep_e2e.py`: trên GitHub-hosted Windows tạo WinForms thật, quan sát UIA Button, duyệt thao tác, **đóng tiến trình thật trước click**, xác minh chỉ có `windows_snapshot`, không có `windows_click_element`, audit SQLite đầy đủ. Đây là kiểm thử Windows GUI cô lập, vẫn **không phải** `OWNER_WINDOWS_PASS`.
+- Trạng thái ở commit: **CODED**, chờ xác minh CI; `OWNER_WINDOWS_PASS`, P4 và Parity chưa có chứng cứ.

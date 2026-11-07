@@ -75,6 +75,64 @@ class ComputerUiReconciliationTests(unittest.TestCase):
         self.assertIsNone(result["_verification"]["post"])
         self.assertEqual(self.client.post("/computer/runs/" + rid + "/tick").status_code, 409)
 
+    def test_closed_browser_before_action_blocks_without_mutation(self):
+        rid = self._approved_fill("lost-preflight-003")
+        with patch.object(agent, "runner_call", AsyncMock(
+                side_effect=RuntimeError("browser closed"))) as runner:
+            result = self.client.post("/computer/runs/" + rid + "/tick")
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["status"], "needs_review")
+        self.assertEqual(result.json()["step_status"], "failed")
+        self.assertIs(result.json()["action_executed"], False)
+        self.assertEqual(runner.await_count, 1, "Never call browser_fill after failed snapshot")
+        self.assertEqual(runner.await_args.args[1], "browser_snapshot")
+        saved = self.client.get("/computer/runs/" + rid).json()
+        self.assertEqual(saved["steps"][-1]["status"], "failed")
+        self.assertIs(saved["steps"][-1]["result"]["_verification"]["action_executed"], False)
+        self.assertEqual(self.client.post("/computer/runs/" + rid + "/tick").status_code, 409)
+
+    def test_missing_url_preflight_blocks_browser_fill_before_action(self):
+        rid = self._approved_fill("bad-browser-preflight-004")
+        with patch.object(agent, "runner_call", AsyncMock(
+                return_value={"title": "Opening..."})) as runner:
+            result = self.client.post("/computer/runs/" + rid + "/tick")
+        self.assertEqual(result.json()["status"], "needs_review")
+        self.assertEqual(runner.await_count, 1)
+        self.assertEqual(runner.await_args.args[1], "browser_snapshot")
+
+    def test_closed_windows_app_blocks_approved_semantic_click(self):
+        from fastapi import HTTPException
+        response = self.client.post("/workspaces/demo/computer/runs", json={
+            "role": "research", "objective": "Nhấn nút trong Notepad nếu còn mở",
+            "max_steps": 8, "idempotency_key": "ui-state-closed-windows-005",
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        rid = response.json()["id"]
+        args = {"hwnd": 123, "automation_id": "save", "control_type": "Button", "label": "Lưu"}
+        with patch.dict(os.environ, {"LHM_DESKTOP_NATIVE": "1"}):
+            with patch.object(agent, "_next_action", AsyncMock(
+                    return_value=("windows_click_element", args))):
+                pending = self.client.post("/computer/runs/" + rid + "/tick")
+            self.assertEqual(pending.json()["status"], "awaiting_approval")
+            approval = self.client.post(
+                "/computer/runs/" + rid + "/steps/" + pending.json()["step_id"] + "/approve")
+            self.assertEqual(approval.status_code, 200, approval.text)
+            with patch.object(agent, "runner_call", AsyncMock(
+                    side_effect=HTTPException(404, "Window is not visible"))) as runner:
+                halted = self.client.post("/computer/runs/" + rid + "/tick")
+        self.assertEqual(halted.json()["status"], "needs_review")
+        self.assertIs(halted.json()["action_executed"], False)
+        self.assertEqual(runner.await_count, 1)
+        self.assertEqual(runner.await_args.args[1], "windows_snapshot")
+        self.assertEqual(self.client.post("/computer/runs/" + rid + "/tick").status_code, 409)
+
+    def test_desktop_absolute_tools_keep_separate_consent_gate(self):
+        # They lack a selected HWND, so this patch must not change their
+        # existing explicit full-screen consent + manual approval policy.
+        self.assertNotIn("windows_desktop_click", agent.UI_PREFLIGHT_TOOLS)
+        self.assertNotIn("windows_desktop_drag", agent.UI_PREFLIGHT_TOOLS)
+
+
     def test_valid_pre_and_post_preserve_supervised_workflow(self):
         rid = self._approved_fill("valid-postflight-002")
         state = {"url": "https://example.com/form", "title": "Test form"}
