@@ -684,6 +684,11 @@ def _fill_browser_find(hwnd: int,args: dict) -> dict:
             raise HTTPException(409,"Browser Find input changed; refresh UIA snapshot")
         _foreground(hwnd)  # Recheck process owner/foreground before filling
         candidates[1][2].set_edit_text(text)
+        # This only compares the field we just wrote, in memory. Never
+        # persist or return an Edit value. A dispatch receipt alone is
+        # not proof that Chromium actually accepted the text.
+        if candidates[1][2].get_value()!=text:
+            raise HTTPException(502,"Browser Find field did not retain input")
     except HTTPException:
         raise
     except Exception as exc:
@@ -691,7 +696,8 @@ def _fill_browser_find(hwnd: int,args: dict) -> dict:
     # UIA SetValue is local browser-chrome input only, not proof that DOM
     # search moved or that any external network effect occurred.
     return {"filled":True,"characters":len(text),"hwnd":hwnd,
-            "target":"browser_find","search_result_verified":False}
+            "target":"browser_find","field_value_verified":True,
+            "search_result_verified":False}
 
 
 def execute(tool: str,args: dict):
