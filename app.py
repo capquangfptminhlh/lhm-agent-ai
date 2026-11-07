@@ -103,6 +103,19 @@ async def local_only_or_auth(request: Request, call_next):
                 return JSONResponse({"detail": "Cross-origin writes blocked"}, status_code=403)
     elif (request.client.host if request.client else "") not in {"127.0.0.1", "::1", "localhost", "testclient"}:
         return JSONResponse({"detail": "Configure LHM_ADMIN_TOKEN; localhost access only"}, status_code=403)
+    else:
+        # Without a token the loopback peer address is not enough: a DNS-rebound
+        # website reaches 127.0.0.1 too, but its Host header names its own domain.
+        host = request.headers.get("host", "").lower()
+        if urlsplit("//" + host).hostname not in {"127.0.0.1", "::1", "localhost", "testserver", "testclient"}:
+            return JSONResponse({"detail": "Configure LHM_ADMIN_TOKEN; localhost access only"}, status_code=403)
+        # Any page in the owner's browser can POST a body-less form to localhost.
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+                return JSONResponse({"detail": "Cross-site requests blocked"}, status_code=403)
+            origin = request.headers.get("origin")
+            if origin and urlsplit(origin).netloc.lower() != host:
+                return JSONResponse({"detail": "Cross-origin writes blocked"}, status_code=403)
     return await call_next(request)
 
 
