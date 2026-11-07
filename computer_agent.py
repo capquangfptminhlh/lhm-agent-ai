@@ -344,7 +344,7 @@ def _replay_verification(result_json: str | None) -> dict:
             info["requires_owner_reconciliation"]=True
         return info
     method=verify.get("method")
-    method=method if method in _REPLAY_METHODS else "unavailable"
+    method=method if isinstance(method,str) and method in _REPLAY_METHODS else "unavailable"
     ok=verify.get("ok")
     if ok is True and verify.get("partial") is not True:
         level="deterministic_pass" if method=="read_back" else "observed_only"
