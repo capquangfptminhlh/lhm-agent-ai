@@ -65,7 +65,7 @@ class FindUiAGuards(unittest.TestCase):
                                 return_value=self.win)
         self.popup.start()
         self.input_patch=patch.object(native,"_type_browser_ascii_keys",
-            side_effect=lambda text,hwnd:self.find.set_edit_text(text))
+            side_effect=lambda text,hwnd,**kwargs:self.find.set_edit_text(text))
         self.input=self.input_patch.start()
 
     def tearDown(self):
