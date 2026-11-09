@@ -206,6 +206,62 @@ class NativeLaunchAndUwpTests(unittest.TestCase):
         self.assertTrue(agent._approval_required("windows_launch", {"mode": "supervised"}))
 
 
+class VietnameseTypingTests(unittest.TestCase):
+    """Owner run 2026-11-09, P4 #1: Win11 Notepad turned SendInput Unicode
+    into "Xin chào,......"; text now goes to the edit control directly."""
+
+    TOP, EDITOR, SITE = 7605136, 4196792, 68864
+
+    def fake_user32(self, focus, windows):
+        test = self
+        classes = {h: c for h, c, _ in windows}
+        visible = {h for h, _, v in windows if v}
+        sent = []
+
+        class U:
+            def GetWindowThreadProcessId(self, hwnd, _):
+                return 42
+            def GetGUIThreadInfo(self, thread, ref):
+                ref._obj.hwndFocus = focus
+                return 1
+            def IsChild(self, parent, child):
+                return parent.value == test.TOP and child.value in classes
+            def GetClassNameW(self, hwnd, buf, size):
+                buf.value = classes.get(hwnd.value, "")
+            def IsWindowVisible(self, hwnd):
+                return hwnd in visible
+            def SendMessageTimeoutW(self, hwnd, msg, wparam, lparam, flags, timeout, res):
+                sent.append((hwnd.value, msg, wparam, wn.ctypes.wstring_at(lparam)))
+                return 1
+        return U(), sent
+
+    def windows(self, editors=1):
+        return [(self.SITE, "InputSiteWindowClass", True)] + \
+               [(self.EDITOR + i, "RichEditD2DPT", True) for i in range(editors)]
+
+    def type_with(self, u, text):
+        with patch.object(wn, "_user32", return_value=u), \
+             patch.object(wn, "_descendants", return_value=[h for h in (self.SITE, self.EDITOR, self.EDITOR + 1)]), \
+             patch.object(wn, "_type_unicode") as fallback, patch.object(wn.time, "sleep"):
+            method = wn._type_text(self.TOP, text)
+        return method, fallback
+
+    def test_winui_input_site_focus_targets_the_single_editor_with_line_breaks(self):
+        u, sent = self.fake_user32(self.SITE, self.windows())
+        method, fallback = self.type_with(u, "Xin chào, đây là bài một.\nDòng hai")
+        self.assertEqual(method, "em_replacesel")
+        fallback.assert_not_called()
+        self.assertEqual(sent, [(self.EDITOR, wn.EM_REPLACESEL, 1, "Xin chào, đây là bài một.\r\nDòng hai")])
+
+    def test_ambiguous_or_foreign_focus_falls_back_without_guessing(self):
+        for focus, windows in ((self.SITE, self.windows(editors=2)), (999, self.windows())):
+            u, sent = self.fake_user32(focus, windows)
+            method, fallback = self.type_with(u, "abc")
+            self.assertEqual(method, "send_input")
+            fallback.assert_called_once_with("abc")
+            self.assertEqual(sent, [])
+
+
 class SaveDialogVisibilityTests(unittest.TestCase):
     """Owner run 2026-11-05, P4 #1: 15 WinUI PopupHost windows hid Save as."""
 

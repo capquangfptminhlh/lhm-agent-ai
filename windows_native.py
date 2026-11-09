@@ -52,6 +52,11 @@ def _user32():
     u.GetWindowTextLengthW.argtypes=[wintypes.HWND]
     u.GetWindowTextW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
     u.GetClassNameW.argtypes=[wintypes.HWND,wintypes.LPWSTR,ctypes.c_int]
+    u.IsChild.argtypes=[wintypes.HWND,wintypes.HWND]
+    u.GetGUIThreadInfo.argtypes=[wintypes.DWORD,ctypes.c_void_p]
+    u.SendMessageTimeoutW.argtypes=[wintypes.HWND,wintypes.UINT,wintypes.WPARAM,wintypes.LPARAM,
+                                    wintypes.UINT,wintypes.UINT,ctypes.POINTER(ctypes.c_size_t)]
+    u.SendMessageTimeoutW.restype=ctypes.c_ssize_t
     u.GetWindow.argtypes=[wintypes.HWND,wintypes.UINT]
     u.GetWindow.restype=wintypes.HWND
     u.GetWindowRect.argtypes=[wintypes.HWND,ctypes.POINTER(wintypes.RECT)]
@@ -341,6 +346,84 @@ def _drag_absolute(u,sx,sy,ex,ey):
             _time.sleep(0.016)
     finally:
         u.mouse_event(MOUSE_LEFT_UP,0,0,0,0)
+
+
+# Windows 11 Notepad (WinUI RichEditD2DPT) mangles KEYEVENTF_UNICODE input:
+# owner P4 run 2026-11-09 turned "Xin chào, đây là bài một." into
+# "Xin chào,................" while a Tk text box got it right. Text sent
+# with EM_REPLACESEL to the focused edit control arrives intact, so prefer it
+# whenever the window's focused control is a standard text control.
+TEXT_CONTROL_CLASSES=("Edit","RichEditD2DPT","RICHEDIT50W","RichEdit20W","RichEdit20A")
+
+
+class _GUITHREADINFO(ctypes.Structure):
+    _fields_=[("cbSize",wintypes.DWORD),("flags",wintypes.DWORD),
+              ("hwndActive",wintypes.HWND),("hwndFocus",wintypes.HWND),
+              ("hwndCapture",wintypes.HWND),("hwndMenuOwner",wintypes.HWND),
+              ("hwndMoveSize",wintypes.HWND),("hwndCaret",wintypes.HWND),
+              ("rcCaret",wintypes.RECT)]
+
+def _focused_text_control(u,hwnd):
+    """The focused text control inside allowlisted top-level window `hwnd`,
+    or None. Never returns a control that belongs to another window."""
+    thread=u.GetWindowThreadProcessId(wintypes.HWND(hwnd),None)
+    info=_GUITHREADINFO(); info.cbSize=ctypes.sizeof(info)
+    if not thread or not u.GetGUIThreadInfo(thread,ctypes.byref(info)):
+        return None
+    focus=int(info.hwndFocus or 0)
+    if not focus or not (focus==hwnd or u.IsChild(wintypes.HWND(hwnd),wintypes.HWND(focus))):
+        return None
+    cls=_class_name(u,focus)
+    if cls in TEXT_CONTROL_CLASSES:
+        return focus
+    if cls==WINUI_INPUT_SITE:
+        # WinUI Notepad moves Win32 focus to its input site ~0.2 s after
+        # activation; the editor is then the window's single visible
+        # RichEditD2DPT. Ambiguous (several visible) means: do not guess.
+        editors=[h for h in _descendants(u,hwnd)
+                 if _class_name(u,h)=="RichEditD2DPT" and u.IsWindowVisible(h)]
+        return editors[0] if len(editors)==1 else None
+    return None
+
+WINUI_INPUT_SITE="InputSiteWindowClass"
+EM_REPLACESEL=0x00C2
+
+def _descendants(u,hwnd):
+    found=[]
+    callback_type=ctypes.WINFUNCTYPE(wintypes.BOOL,wintypes.HWND,wintypes.LPARAM)
+    def visitor(child,_):
+        if len(found)<200: found.append(int(child))
+        return True
+    u.EnumChildWindows(wintypes.HWND(hwnd),callback_type(visitor),0)
+    return found
+
+def _send_chars(u,control,text):
+    """Insert `text` at the control's caret (replacing any selection, exactly
+    like typing) with one undoable EM_REPLACESEL. Unlike WM_CHAR CR, this also
+    keeps line breaks in RichEditD2DPT; the system marshals the string."""
+    text=text.replace(chr(13)+chr(10),chr(10)).replace(chr(10),chr(13)+chr(10))
+    buf=ctypes.create_unicode_buffer(text)
+    res=ctypes.c_size_t(0)
+    if not u.SendMessageTimeoutW(wintypes.HWND(control),EM_REPLACESEL,1,
+                                 ctypes.cast(buf,ctypes.c_void_p).value,
+                                 0x0002,2000,ctypes.byref(res)):
+        raise HTTPException(502,"Target text control stopped responding")
+
+def _type_text(hwnd,text):
+    """Type into `hwnd`; returns the delivery method for the audit log."""
+    u=_user32()
+    # Focus lands asynchronously after _foreground_or_refocus; on the owner PC
+    # the first poll right after activation saw no focused control yet.
+    control=None
+    for _ in range(10):
+        control=_focused_text_control(u,hwnd)
+        if control:break
+        time.sleep(0.05)
+    if control:
+        _send_chars(u,control,text)
+        return "em_replacesel"
+    _type_unicode(text)
+    return "send_input"
 
 
 def _type_unicode(text):
@@ -650,9 +733,9 @@ def execute(tool: str,args: dict):
         if not isinstance(text,str) or not text or len(text)>MAX_TEXT or any(
             ord(ch)<32 and ch not in ("\n","\t") for ch in text):
             raise HTTPException(422,"Text must be <=750 printable characters")
-        _type_unicode(text)
+        method=_type_text(hwnd,text)
         # Do not echo typed text; it could be confidential.
-        return {"typed":True,"characters":len(text),"hwnd":hwnd}
+        return {"typed":True,"characters":len(text),"hwnd":hwnd,"method":method}
     if tool=="windows_scroll":
         i=_foreground_or_refocus(hwnd)
         amount=args.get("steps",3)
